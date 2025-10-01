@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/m-mizutani/goerr/v2"
 	"github.com/urfave/cli/v3"
 )
 
@@ -36,17 +37,9 @@ func (c *Logger) Flags() []cli.Flag {
 // Configure configures and returns a logger
 func (c *Logger) Configure() (*slog.Logger, error) {
 	var level slog.Level
-	switch c.Level {
-	case "debug":
-		level = slog.LevelDebug
-	case "info":
-		level = slog.LevelInfo
-	case "warn":
-		level = slog.LevelWarn
-	case "error":
-		level = slog.LevelError
-	default:
-		level = slog.LevelInfo
+	if err := level.UnmarshalText([]byte(c.Level)); err != nil {
+		// Return an error for invalid log levels to alert the user of a configuration mistake
+		return nil, goerr.Wrap(err, "invalid log level", goerr.V("level", c.Level))
 	}
 
 	opts := &slog.HandlerOptions{

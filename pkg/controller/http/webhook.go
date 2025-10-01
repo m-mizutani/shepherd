@@ -93,7 +93,8 @@ func (h *WebhookHandler) Handle(w http.ResponseWriter, r *http.Request) {
 			event.Sender = *e.Sender.Login
 		}
 	default:
-		event.Type = model.EventTypeUnknown
+		// Do nothing for unhandled event types. The event.Type is already set
+		// from the header, and downstream logic can decide how to handle it.
 	}
 
 	// Process event via UseCase

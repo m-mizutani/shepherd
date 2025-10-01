@@ -71,7 +71,7 @@ func cmdServe() *cli.Command {
 			}
 
 			// Graceful shutdown
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			shutdownCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 			defer cancel()
 
 			if err := server.Shutdown(shutdownCtx); err != nil {
