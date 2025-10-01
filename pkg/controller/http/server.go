@@ -57,10 +57,10 @@ func NewServer(
 	router := chi.NewRouter()
 
 	// Global middleware
+	router.Use(middleware.Recoverer)
 	router.Use(middleware.RequestID)
 	router.Use(middleware.RealIP)
 	router.Use(LoggingMiddleware(ctx))
-	router.Use(middleware.Recoverer)
 
 	// Health check
 	router.Get("/health", handleHealth)
