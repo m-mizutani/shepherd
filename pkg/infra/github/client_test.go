@@ -1,8 +1,6 @@
 package github_test
 
 import (
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"strconv"
 	"testing"
@@ -12,16 +10,7 @@ import (
 	githubinfra "github.com/m-mizutani/shepherd/pkg/infra/github"
 )
 
-func TestClient_DownloadZipball_Success(t *testing.T) {
-	// Create mock HTTP server
-	zipContent := []byte("fake zip content")
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/zip")
-		w.WriteHeader(http.StatusOK)
-		w.Write(zipContent)
-	}))
-	defer server.Close()
-
+func TestNewClient(t *testing.T) {
 	// This test requires GitHub App credentials from environment variables
 	appID := os.Getenv("TEST_GITHUB_APP_ID")
 	installationID := os.Getenv("TEST_GITHUB_INSTALLATION_ID")
