@@ -65,8 +65,10 @@ go mod tidy
 ### Testing
 - Test files must match source file names: `foo.go` → `foo_test.go`
 - Use table-driven tests where appropriate
-- Mock interfaces using `moq` tool
+- Use `github.com/m-mizutani/gt` test framework - testify is prohibited
+- Mock interfaces using simple mock implementations (no external mock libraries)
 - Aim for 80%+ code coverage
+- Integration tests should use TEST_ prefixed environment variables for credentials
 
 ### Configuration
 - All configuration through `github.com/urfave/cli/v3`
@@ -118,8 +120,19 @@ Always refer to these documents when implementing features.
 |----------|-------------|----------|---------|
 | `SHEPHERD_ADDR` | Server address | No | `localhost:8080` |
 | `SHEPHERD_GITHUB_WEBHOOK_SECRET` | GitHub webhook secret for signature verification | Yes | - |
+| `SHEPHERD_GITHUB_APP_ID` | GitHub App ID for authentication | Yes | - |
+| `SHEPHERD_GITHUB_INSTALLATION_ID` | GitHub App Installation ID | Yes | - |
+| `SHEPHERD_GITHUB_PRIVATE_KEY` | GitHub App private key (PEM format) | Yes | - |
 | `SHEPHERD_LOG_LEVEL` | Log level (debug/info/warn/error) | No | `info` |
 | `SHEPHERD_LOG_JSON` | Output logs in JSON format | No | `false` |
+
+### Test Environment Variables
+
+| Variable | Description | Required for Tests | Default |
+|----------|-------------|-------------------|---------|
+| `TEST_GITHUB_APP_ID` | GitHub App ID for integration tests | No | - |
+| `TEST_GITHUB_INSTALLATION_ID` | GitHub App Installation ID for integration tests | No | - |
+| `TEST_GITHUB_PRIVATE_KEY` | GitHub App private key for integration tests | No | - |
 
 ## Project Structure
 
