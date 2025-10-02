@@ -13,3 +13,9 @@ type WebhookUseCase interface {
 	// ProcessEvent processes a webhook event
 	ProcessEvent(ctx context.Context, event *model.WebhookEvent) error
 }
+
+// ReleaseUseCase defines operations for release event processing
+type ReleaseUseCase interface {
+	// ProcessRelease processes a release event and downloads the source code
+	ProcessRelease(ctx context.Context, info *model.ReleaseInfo) (*model.DownloadResult, error)
+}
