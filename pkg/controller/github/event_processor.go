@@ -105,39 +105,20 @@ func (p *EventProcessor) processReleaseEvent(ctx context.Context, payload interf
 
 // extractReleaseInfo extracts release information from a GitHub release event
 func (p *EventProcessor) extractReleaseInfo(event *github.ReleaseEvent) (*model.ReleaseInfo, error) {
-	if event.Repo == nil {
+	if event.GetRepo() == nil {
 		return nil, fmt.Errorf("missing repository information in release event")
 	}
 
-	if event.Release == nil {
+	if event.GetRelease() == nil {
 		return nil, fmt.Errorf("missing release information in release event")
 	}
 
-	owner := ""
-	if event.Repo.Owner != nil && event.Repo.Owner.Login != nil {
-		owner = *event.Repo.Owner.Login
-	}
-
-	repo := ""
-	if event.Repo.Name != nil {
-		repo = *event.Repo.Name
-	}
-
-	tagName := ""
-	if event.Release.TagName != nil {
-		tagName = *event.Release.TagName
-	}
-
-	releaseName := ""
-	if event.Release.Name != nil {
-		releaseName = *event.Release.Name
-	}
-
-	// Get commit SHA from target_commitish
-	commitSHA := ""
-	if event.Release.TargetCommitish != nil {
-		commitSHA = *event.Release.TargetCommitish
-	}
+	// Use Get*() helper methods for concise and nil-safe field access
+	owner := event.GetRepo().GetOwner().GetLogin()
+	repo := event.GetRepo().GetName()
+	tagName := event.GetRelease().GetTagName()
+	releaseName := event.GetRelease().GetName()
+	commitSHA := event.GetRelease().GetTargetCommitish()
 
 	if owner == "" || repo == "" || commitSHA == "" {
 		return nil, fmt.Errorf("missing required fields: owner=%s, repo=%s, commit_sha=%s", owner, repo, commitSHA)

@@ -49,8 +49,8 @@ func (c *client) DownloadZipball(ctx context.Context, owner, repo, ref string) (
 		return nil, fmt.Errorf("failed to create download request for %s: %w", url.String(), err)
 	}
 
-	// Use the same client transport for authentication
-	httpClient := &http.Client{Transport: c.githubClient.Client().Transport}
+	// Use the same client for authentication
+	httpClient := c.githubClient.Client()
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to download zipball from %s: %w", url.String(), err)
