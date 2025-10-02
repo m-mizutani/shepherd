@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/google/go-github/v75/github"
 	"github.com/m-mizutani/ctxlog"
@@ -76,6 +77,20 @@ func (p *EventProcessor) processReleaseEvent(ctx context.Context, payload interf
 		)
 		return err
 	}
+
+	// Clean up temporary directory after processing
+	defer func() {
+		if result != nil && result.TempDir != "" {
+			if removeErr := os.RemoveAll(result.TempDir); removeErr != nil {
+				logger.Warn("Failed to clean up temporary directory",
+					"temp_dir", result.TempDir,
+					"error", removeErr,
+				)
+			} else {
+				logger.Debug("Cleaned up temporary directory", "temp_dir", result.TempDir)
+			}
+		}
+	}()
 
 	logger.Info("Successfully processed release",
 		"owner", releaseInfo.Owner,
