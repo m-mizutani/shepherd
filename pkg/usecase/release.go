@@ -88,6 +88,21 @@ func (uc *releaseUseCase) extractZip(ctx context.Context, zipData []byte) (*mode
 		return nil, fmt.Errorf("failed to create temporary directory: %w", err)
 	}
 
+	// Track success to determine if we should clean up on error
+	var success bool
+	defer func() {
+		if !success {
+			if removeErr := os.RemoveAll(tempDir); removeErr != nil {
+				logger.Warn("Failed to clean up temporary directory on error",
+					"temp_dir", tempDir,
+					"error", removeErr,
+				)
+			} else {
+				logger.Debug("Cleaned up temporary directory on error", "temp_dir", tempDir)
+			}
+		}
+	}()
+
 	// Set appropriate permissions
 	if err := os.Chmod(tempDir, 0700); err != nil {
 		return nil, fmt.Errorf("failed to set directory permissions for %s: %w", tempDir, err)
@@ -114,6 +129,8 @@ func (uc *releaseUseCase) extractZip(ctx context.Context, zipData []byte) (*mode
 		totalSize += int64(file.UncompressedSize64)
 	}
 
+	// Mark as successful to prevent cleanup
+	success = true
 	return &model.DownloadResult{
 		TempDir: tempDir,
 		Files:   extractedFiles,
