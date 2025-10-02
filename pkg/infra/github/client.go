@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 
 	"github.com/bradleyfalzon/ghinstallation/v2"
 	"github.com/google/go-github/v75/github"
@@ -32,15 +31,6 @@ func NewClient(appID, installationID int64, privateKey []byte) (interfaces.GitHu
 	}, nil
 }
 
-// NewClientFromConfig creates a new GitHub client from configuration
-func NewClientFromConfig(appID, installationID int64, privateKeyPath string) (interfaces.GitHubClient, error) {
-	privateKey, err := loadPrivateKey(privateKeyPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load private key: %w", err)
-	}
-
-	return NewClient(appID, installationID, privateKey)
-}
 
 // DownloadZipball downloads the source code zipball for a specific commit
 func (c *client) DownloadZipball(ctx context.Context, owner, repo, ref string) ([]byte, error) {
@@ -78,20 +68,4 @@ func (c *client) DownloadZipball(ctx context.Context, owner, repo, ref string) (
 	}
 
 	return data, nil
-}
-
-// loadPrivateKey loads private key from file path or returns the content directly
-func loadPrivateKey(privateKeyPath string) ([]byte, error) {
-	// Check if it's a file path
-	if _, err := os.Stat(privateKeyPath); err == nil {
-		// It's a file path
-		data, err := os.ReadFile(privateKeyPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read private key file %s: %w", privateKeyPath, err)
-		}
-		return data, nil
-	}
-
-	// Assume it's the private key content directly
-	return []byte(privateKeyPath), nil
 }

@@ -38,14 +38,8 @@ func TestClient_DownloadZipball_Success(t *testing.T) {
 	installationIDInt, err := strconv.ParseInt(installationID, 10, 64)
 	gt.NoError(t, err)
 
-	t.Run("load private key from content", func(t *testing.T) {
+	t.Run("create client with private key", func(t *testing.T) {
 		client, err := githubinfra.NewClient(appIDInt, installationIDInt, []byte(privateKey))
-		gt.NoError(t, err)
-		gt.Value(t, client).NotNil()
-	})
-
-	t.Run("load private key from content string", func(t *testing.T) {
-		client, err := githubinfra.NewClientFromConfig(appIDInt, installationIDInt, privateKey)
 		gt.NoError(t, err)
 		gt.Value(t, client).NotNil()
 	})
