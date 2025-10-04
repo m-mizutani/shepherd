@@ -100,6 +100,10 @@ go mod tidy
 - Support pull_request, release, and push events
 - Use `SourceInfo` model for extensible event handling
 - Return 200 OK immediately after successful verification
+- Webhook event processing is asynchronous using `pkg/utils/async.Dispatch`
+  - Signature verification is synchronous (security requirement)
+  - Actual event processing happens in background goroutine
+  - Errors and panics are logged, not returned to webhook caller
 
 ## Spec-Driven Development
 
@@ -163,6 +167,29 @@ To add support for a new event type:
 | `TEST_GITHUB_INSTALLATION_ID` | GitHub App Installation ID for integration tests | No | - |
 | `TEST_GITHUB_PRIVATE_KEY` | GitHub App private key for integration tests | No | - |
 
+## Asynchronous Processing
+
+The project uses the `pkg/utils/async` package for asynchronous task execution:
+
+### async.Dispatch
+```go
+async.Dispatch(ctx context.Context, handler func(ctx context.Context) error)
+```
+
+**Features:**
+- Executes handler in a new goroutine
+- Creates background context independent of request lifecycle
+- Preserves `ctxlog` logger from original context
+- Automatically recovers from panics and logs them
+- Logs errors returned by handler
+
+**Usage:**
+```go
+async.Dispatch(ctx, func(asyncCtx context.Context) error {
+    return usecase.ProcessEvent(asyncCtx, event)
+})
+```
+
 ## Project Structure
 
 ```
@@ -181,6 +208,9 @@ shepherd/
 │   │       └── middleware.go # Middleware
 │   ├── usecase/
 │   │   └── webhook.go        # Webhook business logic
+│   ├── utils/
+│   │   └── async/            # Asynchronous processing utilities
+│   │       └── dispatch.go   # Async dispatcher
 │   └── domain/
 │       ├── model/            # Domain models
 │       ├── interfaces/       # Interface definitions
