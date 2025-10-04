@@ -253,3 +253,35 @@ func TestEventProcessor_ExtractPushInfo_MissingFields(t *testing.T) {
 	// Verify mock was not called
 	gt.Number(t, len(mockSourceUC.processCalls)).Equal(0)
 }
+
+func TestEventProcessor_ExtractPushInfo_NilHeadCommit(t *testing.T) {
+	ctx := context.Background()
+
+	// Setup mock use case that should not be called
+	mockSourceUC := &MockSourceCodeUseCase{}
+
+	// Create event processor
+	processor := githubcontroller.NewEventProcessor(nil, mockSourceUC)
+
+	// Create push event with nil head_commit (branch/tag deletion scenario)
+	owner := "test-owner"
+	repo := "test-repo"
+	ref := "refs/heads/deleted-branch"
+
+	pushEvent := &github.PushEvent{
+		Ref: &ref,
+		Repo: &github.PushEventRepository{
+			Owner: &github.User{Login: &owner},
+			Name:  &repo,
+		},
+		HeadCommit: nil, // Nil when branch/tag is deleted
+	}
+
+	// Process the event - should return error
+	err := processor.ProcessEvent(ctx, "push", pushEvent)
+	gt.Error(t, err)
+	gt.String(t, err.Error()).Contains("missing head commit")
+
+	// Verify mock was not called
+	gt.Number(t, len(mockSourceUC.processCalls)).Equal(0)
+}

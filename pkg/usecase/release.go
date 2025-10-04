@@ -170,8 +170,9 @@ func (uc *eventUseCase) extractZip(ctx context.Context, zipData []byte) (*model.
 		}
 	}()
 
-	// Set appropriate permissions (0700 for owner-only access)
-	if err := os.Chmod(tempDir, 0700); err != nil { // #nosec G302 -- 0700 is intentional for security
+	// Set appropriate permissions (0700 for owner-only access to directory)
+	// Directories require execute permission to access contents
+	if err := os.Chmod(tempDir, 0700); err != nil { // nolint:gosec // G302: 0700 required for directory access
 		return nil, fmt.Errorf("failed to set directory permissions for %s: %w", tempDir, err)
 	}
 
@@ -200,6 +201,7 @@ func (uc *eventUseCase) extractZip(ctx context.Context, zipData []byte) (*model.
 		}
 
 		// Check total size to prevent decompression bombs
+		// #nosec G115 -- overflow is checked above with maxInt64 check
 		newTotal := totalSize + int64(file.UncompressedSize64)
 		if newTotal > maxTotalSize {
 			return nil, fmt.Errorf("total uncompressed size too large: %d bytes exceeds limit of %d", newTotal, maxTotalSize)
@@ -244,7 +246,7 @@ func (uc *eventUseCase) extractFile(file *zip.File, destDir string) error {
 	}
 
 	// Create parent directories
-	if err := os.MkdirAll(filepath.Dir(destPath), 0750); err != nil { // #nosec G301 -- 0750 is secure for parent dirs
+	if err := os.MkdirAll(filepath.Dir(destPath), 0700); err != nil { // nolint:gosec // G301: 0700 is secure for directories
 		return fmt.Errorf("failed to create parent directories %s: %w", filepath.Dir(destPath), err)
 	}
 

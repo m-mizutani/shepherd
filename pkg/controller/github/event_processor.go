@@ -202,11 +202,17 @@ func (p *EventProcessor) extractPushInfo(event *github.PushEvent) (*model.Source
 		return nil, fmt.Errorf("missing repository information in push event")
 	}
 
+	// Check for nil head_commit (can be null when branch/tag is deleted)
+	headCommit := event.GetHeadCommit()
+	if headCommit == nil {
+		return nil, fmt.Errorf("push event is missing head commit (branch/tag may have been deleted)")
+	}
+
 	// Use Get*() helper methods for concise and nil-safe field access
 	owner := event.GetRepo().GetOwner().GetLogin()
 	repo := event.GetRepo().GetName()
 	ref := event.GetRef()
-	commitSHA := event.GetHeadCommit().GetID()
+	commitSHA := headCommit.GetID()
 	pusher := event.GetPusher().GetName()
 
 	if owner == "" || repo == "" || commitSHA == "" {
