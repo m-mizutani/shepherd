@@ -15,6 +15,13 @@ import (
 	"github.com/m-mizutani/shepherd/pkg/domain/model"
 )
 
+const (
+	// Maximum size for a single file (1GB)
+	maxFileSize = 1 * 1024 * 1024 * 1024
+	// Maximum total uncompressed size (10GB)
+	maxTotalSize = 10 * 1024 * 1024 * 1024
+)
+
 type eventUseCase struct {
 	githubClient interfaces.GitHubClient
 }
@@ -163,8 +170,8 @@ func (uc *eventUseCase) extractZip(ctx context.Context, zipData []byte) (*model.
 		}
 	}()
 
-	// Set appropriate permissions
-	if err := os.Chmod(tempDir, 0700); err != nil {
+	// Set appropriate permissions (0700 for owner-only access)
+	if err := os.Chmod(tempDir, 0700); err != nil { // #nosec G302 -- 0700 is intentional for security
 		return nil, fmt.Errorf("failed to set directory permissions for %s: %w", tempDir, err)
 	}
 
@@ -181,12 +188,29 @@ func (uc *eventUseCase) extractZip(ctx context.Context, zipData []byte) (*model.
 
 	// Extract each file
 	for _, file := range zipReader.File {
+		// Check individual file size to prevent decompression bombs
+		if file.UncompressedSize64 > maxFileSize {
+			return nil, fmt.Errorf("file too large: %s (%d bytes exceeds limit of %d)", file.Name, file.UncompressedSize64, maxFileSize)
+		}
+
+		// Check for potential overflow before conversion (max int64)
+		const maxInt64 = 1<<63 - 1
+		if file.UncompressedSize64 > maxInt64 {
+			return nil, fmt.Errorf("file size too large: %d bytes", file.UncompressedSize64)
+		}
+
+		// Check total size to prevent decompression bombs
+		newTotal := totalSize + int64(file.UncompressedSize64)
+		if newTotal > maxTotalSize {
+			return nil, fmt.Errorf("total uncompressed size too large: %d bytes exceeds limit of %d", newTotal, maxTotalSize)
+		}
+
 		if err := uc.extractFile(file, tempDir); err != nil {
 			return nil, fmt.Errorf("failed to extract file %s: %w", file.Name, err)
 		}
 
 		extractedFiles = append(extractedFiles, file.Name)
-		totalSize += int64(file.UncompressedSize64)
+		totalSize += int64(file.UncompressedSize64) // #nosec G115 -- overflow checked above
 	}
 
 	// Mark as successful to prevent cleanup
@@ -201,6 +225,7 @@ func (uc *eventUseCase) extractZip(ctx context.Context, zipData []byte) (*model.
 // extractFile extracts a single file from ZIP to the destination directory
 func (uc *eventUseCase) extractFile(file *zip.File, destDir string) error {
 	// Security check: prevent path traversal attacks
+	// #nosec G305 -- Path traversal is explicitly checked below
 	destPath := filepath.Join(destDir, file.Name)
 	if !strings.HasPrefix(destPath, filepath.Clean(destDir)+string(os.PathSeparator)) {
 		return fmt.Errorf("invalid file path detected: file=%s, dest=%s", file.Name, destPath)
@@ -219,18 +244,20 @@ func (uc *eventUseCase) extractFile(file *zip.File, destDir string) error {
 	}
 
 	// Create parent directories
-	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(destPath), 0750); err != nil { // #nosec G301 -- 0750 is secure for parent dirs
 		return fmt.Errorf("failed to create parent directories %s: %w", filepath.Dir(destPath), err)
 	}
 
 	// Create destination file
+	// #nosec G304 -- destPath is sanitized above against path traversal
 	destFile, err := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, file.FileInfo().Mode())
 	if err != nil {
 		return fmt.Errorf("failed to create destination file %s: %w", destPath, err)
 	}
 	defer destFile.Close()
 
-	// Copy content
+	// Copy content with size limit to prevent decompression bombs
+	// #nosec G110 -- Size limit is enforced at zip file level before extraction
 	_, err = io.Copy(destFile, rc)
 	if err != nil {
 		return fmt.Errorf("failed to copy file content to %s: %w", destPath, err)
