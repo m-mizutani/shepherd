@@ -26,7 +26,7 @@ COPY . /app
 # Build the application with cache mounts
 RUN --mount=type=cache,target=/root/.cache/go-mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    go build -ldflags="-w -s" -o shepherd
+    go build -ldflags="-w -s -X github.com/m-mizutani/shepherd/pkg/domain/types.Version=${BUILD_VERSION}" -o shepherd
 
 # Final stage
 FROM gcr.io/distroless/base:nonroot

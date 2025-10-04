@@ -1,0 +1,34 @@
+# Git
+.git
+.gitignore
+.github
+
+# Documentation
+README.md
+*.md
+!CLAUDE.md
+
+# Spec-driven development
+.cckiro
+
+# IDE
+.vscode
+.idea
+
+# Build artifacts
+shepherd
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test files
+*_test.go
+testdata
+
+# Temporary files
+tmp
+.DS_Store
+
+# CI/CD
+.github/workflows
