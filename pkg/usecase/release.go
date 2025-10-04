@@ -41,55 +41,24 @@ func NewSourceCode(githubClient interfaces.GitHubClient) interfaces.SourceCodeUs
 }
 
 // ProcessRelease processes a release event and downloads the source code
+// This is a wrapper around ProcessSource for backward compatibility
 func (uc *eventUseCase) ProcessRelease(ctx context.Context, info *model.ReleaseInfo) (*model.DownloadResult, error) {
-	logger := ctxlog.From(ctx)
-
-	logger.Info("Processing release event",
-		"owner", info.Owner,
-		"repo", info.Repo,
-		"commit_sha", info.CommitSHA,
-		"tag_name", info.TagName,
-		"release_name", info.ReleaseName,
-	)
-
-	// Download ZIP from GitHub
-	zipData, err := uc.githubClient.DownloadZipball(ctx, info.Owner, info.Repo, info.CommitSHA)
-	if err != nil {
-		logger.Error("Failed to download zipball",
-			"error", err,
-			"owner", info.Owner,
-			"repo", info.Repo,
-			"commit_sha", info.CommitSHA,
-		)
-		return nil, fmt.Errorf("failed to download zipball for %s/%s@%s: %w", info.Owner, info.Repo, info.CommitSHA, err)
+	// Convert ReleaseInfo to SourceInfo
+	sourceInfo := &model.SourceInfo{
+		Owner:     info.Owner,
+		Repo:      info.Repo,
+		CommitSHA: info.CommitSHA,
+		EventType: "release",
+		Ref:       info.TagName,
+		Actor:     "", // Not available in ReleaseInfo
+		Metadata: map[string]string{
+			"tag_name":     info.TagName,
+			"release_name": info.ReleaseName,
+		},
 	}
 
-	logger.Info("Downloaded zipball",
-		"size_bytes", len(zipData),
-		"owner", info.Owner,
-		"repo", info.Repo,
-	)
-
-	// Extract ZIP to temporary directory
-	result, err := uc.extractZip(ctx, zipData)
-	if err != nil {
-		logger.Error("Failed to extract zip",
-			"error", err,
-			"owner", info.Owner,
-			"repo", info.Repo,
-		)
-		return nil, fmt.Errorf("failed to extract zip for %s/%s: %w", info.Owner, info.Repo, err)
-	}
-
-	logger.Info("Extracted zipball to temporary directory",
-		"temp_dir", result.TempDir,
-		"file_count", len(result.Files),
-		"total_size_bytes", result.Size,
-		"owner", info.Owner,
-		"repo", info.Repo,
-	)
-
-	return result, nil
+	// Delegate to ProcessSource
+	return uc.ProcessSource(ctx, sourceInfo)
 }
 
 // ProcessSource processes a source code event and downloads the source code
