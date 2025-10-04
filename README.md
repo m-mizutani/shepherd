@@ -4,7 +4,7 @@ A GitHub App webhook handler written in Go that receives and processes GitHub ev
 
 ## Features
 
-- ✅ GitHub webhook event handling (Pull Requests, Releases)
+- ✅ GitHub webhook event handling (Pull Requests, Releases, Push)
 - ✅ HMAC-SHA256 signature verification
 - ✅ Clean Architecture (Domain/UseCase/Controller/CLI layers)
 - ✅ Structured logging with `slog`
@@ -61,6 +61,7 @@ export SHEPHERD_GITHUB_WEBHOOK_SECRET="your-webhook-secret"
 4. Subscribe to events:
    - Pull requests (opened)
    - Releases (released)
+   - Push
 
 ## Development
 

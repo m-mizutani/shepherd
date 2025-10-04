@@ -6,6 +6,7 @@ on:
       - 'go.mod'
       - 'go.sum'
       - '.golangci.yml'
+      - '.github/workflows/lint.yml'
 
 jobs:
   golangci:
@@ -35,9 +36,9 @@ jobs:
             ${{ runner.os }}-go-
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v7
         with:
-          version: latest
+          version: v2.5.0
           args: --timeout 10m ./...
           # Skip downloading if cache is available
           skip-cache: false

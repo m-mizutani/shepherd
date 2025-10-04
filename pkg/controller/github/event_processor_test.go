@@ -31,6 +31,24 @@ func (m *MockReleaseUseCase) ProcessRelease(ctx context.Context, releaseInfo *mo
 	return nil, errors.New("mock not configured")
 }
 
+// MockSourceCodeUseCase is a mock implementation of SourceCodeUseCase
+type MockSourceCodeUseCase struct {
+	processSourceFunc func(ctx context.Context, sourceInfo *model.SourceInfo) (*model.DownloadResult, error)
+	processCalls      []MockSourceCall
+}
+
+type MockSourceCall struct {
+	SourceInfo *model.SourceInfo
+}
+
+func (m *MockSourceCodeUseCase) ProcessSource(ctx context.Context, sourceInfo *model.SourceInfo) (*model.DownloadResult, error) {
+	m.processCalls = append(m.processCalls, MockSourceCall{SourceInfo: sourceInfo})
+	if m.processSourceFunc != nil {
+		return m.processSourceFunc(ctx, sourceInfo)
+	}
+	return nil, errors.New("mock not configured")
+}
+
 func TestEventProcessor_ProcessReleaseEvent_CleanupTempDir(t *testing.T) {
 	ctx := context.Background()
 
@@ -54,7 +72,7 @@ func TestEventProcessor_ProcessReleaseEvent_CleanupTempDir(t *testing.T) {
 	}
 
 	// Create event processor
-	processor := githubcontroller.NewEventProcessor(mockUC)
+	processor := githubcontroller.NewEventProcessor(mockUC, nil)
 
 	// Create test release event
 	action := "released"
@@ -103,7 +121,7 @@ func TestEventProcessor_ProcessReleaseEvent_Error(t *testing.T) {
 	}
 
 	// Create event processor
-	processor := githubcontroller.NewEventProcessor(mockUC)
+	processor := githubcontroller.NewEventProcessor(mockUC, nil)
 
 	// Create test release event
 	action := "released"
@@ -142,12 +160,128 @@ func TestEventProcessor_ProcessEvent_UnsupportedEventType(t *testing.T) {
 	mockUC := &MockReleaseUseCase{}
 
 	// Create event processor
-	processor := githubcontroller.NewEventProcessor(mockUC)
+	processor := githubcontroller.NewEventProcessor(mockUC, nil)
 
 	// Process unsupported event type
-	err := processor.ProcessEvent(ctx, "push", nil)
+	err := processor.ProcessEvent(ctx, "issues", nil)
 	gt.NoError(t, err)
 
 	// Verify mock was not called
 	gt.Number(t, len(mockUC.processCalls)).Equal(0)
+}
+
+func TestEventProcessor_ProcessPushEvent(t *testing.T) {
+	ctx := context.Background()
+
+	// Create a temporary directory for testing
+	tempDir, err := os.MkdirTemp("", "shepherd-test-*")
+	gt.NoError(t, err)
+
+	// Setup mock use case
+	mockSourceUC := &MockSourceCodeUseCase{
+		processSourceFunc: func(ctx context.Context, sourceInfo *model.SourceInfo) (*model.DownloadResult, error) {
+			return &model.DownloadResult{
+				TempDir: tempDir,
+				Files:   []string{"test.txt"},
+				Size:    100,
+			}, nil
+		},
+	}
+
+	// Create event processor
+	processor := githubcontroller.NewEventProcessor(nil, mockSourceUC)
+
+	// Create test push event
+	owner := "test-owner"
+	repo := "test-repo"
+	ref := "refs/heads/main"
+	commitSHA := "abc123"
+	pusher := "test-user"
+	before := "def456"
+
+	pushEvent := &github.PushEvent{
+		Ref: &ref,
+		Before: &before,
+		Repo: &github.PushEventRepository{
+			Owner: &github.User{Login: &owner},
+			Name:  &repo,
+		},
+		HeadCommit: &github.HeadCommit{
+			ID: &commitSHA,
+		},
+		Pusher: &github.CommitAuthor{
+			Name: &pusher,
+		},
+	}
+
+	// Process the event
+	err = processor.ProcessEvent(ctx, "push", pushEvent)
+	gt.NoError(t, err)
+
+	// Verify that the temporary directory has been cleaned up
+	_, err = os.Stat(tempDir)
+	gt.Value(t, os.IsNotExist(err)).Equal(true)
+
+	// Verify mock was called with correct parameters
+	gt.Number(t, len(mockSourceUC.processCalls)).Equal(1)
+	gt.Value(t, mockSourceUC.processCalls[0].SourceInfo.Owner).Equal("test-owner")
+	gt.Value(t, mockSourceUC.processCalls[0].SourceInfo.Repo).Equal("test-repo")
+	gt.Value(t, mockSourceUC.processCalls[0].SourceInfo.CommitSHA).Equal("abc123")
+	gt.Value(t, mockSourceUC.processCalls[0].SourceInfo.EventType).Equal("push")
+	gt.Value(t, mockSourceUC.processCalls[0].SourceInfo.Ref).Equal("refs/heads/main")
+	gt.Value(t, mockSourceUC.processCalls[0].SourceInfo.Actor).Equal("test-user")
+}
+
+func TestEventProcessor_ExtractPushInfo_MissingFields(t *testing.T) {
+	ctx := context.Background()
+
+	// Setup mock use case that should not be called
+	mockSourceUC := &MockSourceCodeUseCase{}
+
+	// Create event processor
+	processor := githubcontroller.NewEventProcessor(nil, mockSourceUC)
+
+	// Create push event with missing repository
+	pushEvent := &github.PushEvent{
+		Repo: nil,
+	}
+
+	// Process the event - should return error
+	err := processor.ProcessEvent(ctx, "push", pushEvent)
+	gt.Error(t, err)
+
+	// Verify mock was not called
+	gt.Number(t, len(mockSourceUC.processCalls)).Equal(0)
+}
+
+func TestEventProcessor_ExtractPushInfo_NilHeadCommit(t *testing.T) {
+	ctx := context.Background()
+
+	// Setup mock use case that should not be called
+	mockSourceUC := &MockSourceCodeUseCase{}
+
+	// Create event processor
+	processor := githubcontroller.NewEventProcessor(nil, mockSourceUC)
+
+	// Create push event with nil head_commit (branch/tag deletion scenario)
+	owner := "test-owner"
+	repo := "test-repo"
+	ref := "refs/heads/deleted-branch"
+
+	pushEvent := &github.PushEvent{
+		Ref: &ref,
+		Repo: &github.PushEventRepository{
+			Owner: &github.User{Login: &owner},
+			Name:  &repo,
+		},
+		HeadCommit: nil, // Nil when branch/tag is deleted
+	}
+
+	// Process the event - should return error
+	err := processor.ProcessEvent(ctx, "push", pushEvent)
+	gt.Error(t, err)
+	gt.String(t, err.Error()).Contains("missing head commit")
+
+	// Verify mock was not called
+	gt.Number(t, len(mockSourceUC.processCalls)).Equal(0)
 }

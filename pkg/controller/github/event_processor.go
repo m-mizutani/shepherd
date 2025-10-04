@@ -13,13 +13,15 @@ import (
 
 // EventProcessor processes GitHub webhook events
 type EventProcessor struct {
-	releaseUC interfaces.ReleaseUseCase
+	releaseUC    interfaces.ReleaseUseCase
+	sourceCodeUC interfaces.SourceCodeUseCase
 }
 
 // NewEventProcessor creates a new GitHub event processor
-func NewEventProcessor(releaseUC interfaces.ReleaseUseCase) *EventProcessor {
+func NewEventProcessor(releaseUC interfaces.ReleaseUseCase, sourceCodeUC interfaces.SourceCodeUseCase) *EventProcessor {
 	return &EventProcessor{
-		releaseUC: releaseUC,
+		releaseUC:    releaseUC,
+		sourceCodeUC: sourceCodeUC,
 	}
 }
 
@@ -30,6 +32,8 @@ func (p *EventProcessor) ProcessEvent(ctx context.Context, eventType string, pay
 	switch eventType {
 	case "release":
 		return p.processReleaseEvent(ctx, payload)
+	case "push":
+		return p.processPushEvent(ctx, payload)
 	default:
 		logger.Info("Ignoring unsupported event type", "event_type", eventType)
 		return nil
@@ -130,5 +134,109 @@ func (p *EventProcessor) extractReleaseInfo(event *github.ReleaseEvent) (*model.
 		CommitSHA:   commitSHA,
 		TagName:     tagName,
 		ReleaseName: releaseName,
+	}, nil
+}
+
+// processPushEvent processes a GitHub push event
+func (p *EventProcessor) processPushEvent(ctx context.Context, payload interface{}) error {
+	logger := ctxlog.From(ctx)
+
+	pushEvent, ok := payload.(*github.PushEvent)
+	if !ok {
+		logger.Warn("Invalid push event payload")
+		return nil
+	}
+
+	// Extract push information
+	sourceInfo, err := p.extractPushInfo(pushEvent)
+	if err != nil {
+		logger.Error("Failed to extract push info", "error", err)
+		return err
+	}
+
+	logger.Info("Processing push event",
+		"owner", sourceInfo.Owner,
+		"repo", sourceInfo.Repo,
+		"ref", sourceInfo.Ref,
+		"commit_sha", sourceInfo.CommitSHA,
+	)
+
+	// Process push through use case
+	result, err := p.sourceCodeUC.ProcessSource(ctx, sourceInfo)
+	if err != nil {
+		logger.Error("Failed to process push", "error", err,
+			"owner", sourceInfo.Owner,
+			"repo", sourceInfo.Repo,
+		)
+		return err
+	}
+
+	// Clean up temporary directory after processing
+	defer func() {
+		if result != nil && result.TempDir != "" {
+			if removeErr := os.RemoveAll(result.TempDir); removeErr != nil {
+				logger.Warn("Failed to clean up temporary directory",
+					"temp_dir", result.TempDir,
+					"error", removeErr,
+				)
+			} else {
+				logger.Debug("Cleaned up temporary directory", "temp_dir", result.TempDir)
+			}
+		}
+	}()
+
+	logger.Info("Successfully processed push",
+		"owner", sourceInfo.Owner,
+		"repo", sourceInfo.Repo,
+		"temp_dir", result.TempDir,
+		"file_count", len(result.Files),
+		"total_size", result.Size,
+	)
+
+	return nil
+}
+
+// extractPushInfo extracts source information from a GitHub push event
+func (p *EventProcessor) extractPushInfo(event *github.PushEvent) (*model.SourceInfo, error) {
+	if event.GetRepo() == nil {
+		return nil, fmt.Errorf("missing repository information in push event")
+	}
+
+	// Check for nil head_commit (can be null when branch/tag is deleted)
+	headCommit := event.GetHeadCommit()
+	if headCommit == nil {
+		return nil, fmt.Errorf("push event is missing head commit (branch/tag may have been deleted)")
+	}
+
+	// Use Get*() helper methods for concise and nil-safe field access
+	owner := event.GetRepo().GetOwner().GetLogin()
+	repo := event.GetRepo().GetName()
+	ref := event.GetRef()
+	commitSHA := headCommit.GetID()
+	pusher := event.GetPusher().GetName()
+
+	if owner == "" || repo == "" || commitSHA == "" {
+		return nil, fmt.Errorf("missing required fields: owner=%s, repo=%s, commit_sha=%s", owner, repo, commitSHA)
+	}
+
+	metadata := make(map[string]string)
+	if event.Before != nil {
+		metadata["before"] = *event.Before
+	}
+	if event.Created != nil {
+		metadata["created"] = fmt.Sprintf("%v", *event.Created)
+	}
+	if event.Deleted != nil {
+		metadata["deleted"] = fmt.Sprintf("%v", *event.Deleted)
+	}
+
+	return &model.SourceInfo{
+		Owner:     owner,
+		Repo:      repo,
+		CommitSHA: commitSHA,
+		EventType: "push",
+		Ref:       ref,
+		Actor:     pusher,
+		Metadata:  metadata,
 	}, nil
 }

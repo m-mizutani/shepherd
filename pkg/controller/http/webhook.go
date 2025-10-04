@@ -43,7 +43,11 @@ func (h *WebhookHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		writeError(w, goerr.Wrap(err, "failed to read request body"), http.StatusBadRequest)
 		return
 	}
-	defer r.Body.Close()
+	defer func() {
+		if closeErr := r.Body.Close(); closeErr != nil {
+			logger.Warn("Failed to close request body", "error", closeErr)
+		}
+	}()
 
 	// Verify signature
 	signature := r.Header.Get("X-Hub-Signature-256")

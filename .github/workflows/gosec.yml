@@ -8,6 +8,7 @@ on:
       - 'pkg/**'
       - 'go.mod'
       - 'go.sum'
+      - '.github/workflows/gosec.yml'
 
 jobs:
   tests:

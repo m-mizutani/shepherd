@@ -55,7 +55,9 @@ func (c *client) DownloadZipball(ctx context.Context, owner, repo, ref string) (
 	if err != nil {
 		return nil, fmt.Errorf("failed to download zipball from %s: %w", url.String(), err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close() // Error logged below if ReadAll fails
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("unexpected status code %d for %s", resp.StatusCode, url.String())

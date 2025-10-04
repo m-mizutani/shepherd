@@ -61,10 +61,18 @@ func TestWebhookEvent_IsSupportedEvent(t *testing.T) {
 			expected: false,
 		},
 		{
+			name: "Push event - supported",
+			event: &model.WebhookEvent{
+				Type:   model.EventTypePush,
+				Action: "",
+			},
+			expected: true,
+		},
+		{
 			name: "Different event type",
 			event: &model.WebhookEvent{
-				Type:   model.WebhookEventType("push"),
-				Action: "created",
+				Type:   model.WebhookEventType("issues"),
+				Action: "opened",
 			},
 			expected: false,
 		},

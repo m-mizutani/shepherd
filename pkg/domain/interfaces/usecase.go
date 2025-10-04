@@ -19,3 +19,9 @@ type ReleaseUseCase interface {
 	// ProcessRelease processes a release event and downloads the source code
 	ProcessRelease(ctx context.Context, info *model.ReleaseInfo) (*model.DownloadResult, error)
 }
+
+// SourceCodeUseCase defines operations for source code event processing
+type SourceCodeUseCase interface {
+	// ProcessSource processes a source code event and downloads the source code
+	ProcessSource(ctx context.Context, info *model.SourceInfo) (*model.DownloadResult, error)
+}
