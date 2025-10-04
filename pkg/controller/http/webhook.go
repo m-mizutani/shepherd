@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -15,6 +16,7 @@ import (
 	"github.com/m-mizutani/goerr/v2"
 	"github.com/m-mizutani/shepherd/pkg/domain/interfaces"
 	"github.com/m-mizutani/shepherd/pkg/domain/model"
+	"github.com/m-mizutani/shepherd/pkg/utils/async"
 )
 
 // WebhookHandler handles GitHub webhooks
@@ -101,12 +103,10 @@ func (h *WebhookHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		// from the header, and downstream logic can decide how to handle it.
 	}
 
-	// Process event via UseCase
-	if err := h.webhookUC.ProcessEvent(ctx, event); err != nil {
-		logger.Error("Failed to process webhook event", "error", err)
-		writeError(w, err, http.StatusInternalServerError)
-		return
-	}
+	// Process event via UseCase asynchronously
+	async.Dispatch(ctx, func(asyncCtx context.Context) error {
+		return h.webhookUC.ProcessEvent(asyncCtx, event)
+	})
 
 	// Success response
 	w.Header().Set("Content-Type", "application/json")
