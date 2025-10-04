@@ -200,7 +200,9 @@ func TestWebhookHandler_Integration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to send request: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close() // Error ignored in test
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("Status code = %v, want %v", resp.StatusCode, http.StatusOK)

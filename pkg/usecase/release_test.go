@@ -87,7 +87,9 @@ func TestReleaseUseCase_ProcessRelease_Success(t *testing.T) {
 	gt.String(t, string(content)).Contains("Test Repository")
 
 	// Cleanup
-	defer os.RemoveAll(result.TempDir)
+	defer func() {
+		_ = os.RemoveAll(result.TempDir) // Error ignored in test cleanup
+	}()
 
 	// Verify mock was called
 	mockClient.AssertExpectations(t)
@@ -235,7 +237,7 @@ func TestReleaseUseCase_ProcessRelease_WithRealRepo(t *testing.T) {
 	// Clean up temporary directory when test completes
 	defer func() {
 		if result != nil && result.TempDir != "" {
-			os.RemoveAll(result.TempDir)
+			_ = os.RemoveAll(result.TempDir) // Error ignored in test cleanup
 		}
 	}()
 

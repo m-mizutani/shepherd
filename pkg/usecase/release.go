@@ -238,7 +238,9 @@ func (uc *eventUseCase) extractFile(file *zip.File, destDir string) error {
 	if err != nil {
 		return fmt.Errorf("failed to open file %s in zip: %w", file.Name, err)
 	}
-	defer rc.Close()
+	defer func() {
+		_ = rc.Close() // Error ignored as we're reading, not writing
+	}()
 
 	// Create directory if needed
 	if file.FileInfo().IsDir() {
@@ -256,7 +258,12 @@ func (uc *eventUseCase) extractFile(file *zip.File, destDir string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create destination file %s: %w", destPath, err)
 	}
-	defer destFile.Close()
+	defer func() {
+		if closeErr := destFile.Close(); closeErr != nil {
+			// Log error but don't fail - file content already written
+			_ = closeErr
+		}
+	}()
 
 	// Copy content with size limit to prevent decompression bombs
 	// #nosec G110 -- Size limit is enforced at zip file level before extraction
