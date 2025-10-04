@@ -8,6 +8,7 @@ type WebhookEventType string
 const (
 	EventTypePullRequest WebhookEventType = "pull_request"
 	EventTypeRelease     WebhookEventType = "release"
+	EventTypePush        WebhookEventType = "push"
 	EventTypeUnknown     WebhookEventType = "unknown"
 )
 
@@ -29,6 +30,8 @@ func (e *WebhookEvent) IsSupportedEvent() bool {
 		return e.Action == "opened"
 	case EventTypeRelease:
 		return e.Action == "released"
+	case EventTypePush:
+		return true
 	default:
 		return false
 	}

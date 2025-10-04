@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Shepherd is a GitHub App webhook handler written in Go. It receives and processes GitHub webhook events (Pull Requests and Releases) with signature verification and structured logging.
+Shepherd is a GitHub App webhook handler written in Go. It receives and processes GitHub webhook events (Pull Requests, Releases, and Push) with signature verification and structured logging.
 
 ## Architecture
 
@@ -97,7 +97,8 @@ go mod tidy
 ### GitHub Webhook Integration
 - Always verify webhook signatures using HMAC-SHA256
 - Use `github.com/google/go-github/v75/github` for payload parsing
-- Support pull_request and release events
+- Support pull_request, release, and push events
+- Use `SourceInfo` model for extensible event handling
 - Return 200 OK immediately after successful verification
 
 ## Spec-Driven Development
@@ -113,6 +114,34 @@ Always refer to these documents when implementing features.
 
 - `GET /health` - Health check endpoint
 - `POST /hooks/github/app` - GitHub webhook receiver (requires signature verification)
+  - Supported events: pull_request (opened), release (released), push
+
+## Event Handling
+
+### SourceInfo Model
+The `SourceInfo` model provides a unified structure for handling different GitHub events:
+
+```go
+type SourceInfo struct {
+    Owner     string            // Repository owner
+    Repo      string            // Repository name
+    CommitSHA string            // Commit SHA
+    EventType string            // Event type: "release", "push", etc.
+    Ref       string            // Git ref (branch/tag)
+    Actor     string            // User who triggered the event
+    Metadata  map[string]string // Event-specific metadata
+}
+```
+
+### Adding New Event Types
+To add support for a new event type:
+
+1. Add event type constant to `pkg/domain/model/webhook.go`
+2. Update `IsSupportedEvent()` method
+3. Implement `extractXxxInfo()` method in `pkg/controller/github/event_processor.go`
+4. Implement `processXxxEvent()` method in `pkg/controller/github/event_processor.go`
+5. Add case to `ProcessEvent()` switch statement
+6. Use existing `SourceCodeUseCase.ProcessSource()` for code download/extraction
 
 ## Environment Variables
 

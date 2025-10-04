@@ -15,19 +15,26 @@ import (
 	"github.com/m-mizutani/shepherd/pkg/domain/model"
 )
 
-type releaseUseCase struct {
+type eventUseCase struct {
 	githubClient interfaces.GitHubClient
 }
 
 // NewRelease creates a new instance of ReleaseUseCase
 func NewRelease(githubClient interfaces.GitHubClient) interfaces.ReleaseUseCase {
-	return &releaseUseCase{
+	return &eventUseCase{
+		githubClient: githubClient,
+	}
+}
+
+// NewSourceCode creates a new instance of SourceCodeUseCase
+func NewSourceCode(githubClient interfaces.GitHubClient) interfaces.SourceCodeUseCase {
+	return &eventUseCase{
 		githubClient: githubClient,
 	}
 }
 
 // ProcessRelease processes a release event and downloads the source code
-func (uc *releaseUseCase) ProcessRelease(ctx context.Context, info *model.ReleaseInfo) (*model.DownloadResult, error) {
+func (uc *eventUseCase) ProcessRelease(ctx context.Context, info *model.ReleaseInfo) (*model.DownloadResult, error) {
 	logger := ctxlog.From(ctx)
 
 	logger.Info("Processing release event",
@@ -78,8 +85,61 @@ func (uc *releaseUseCase) ProcessRelease(ctx context.Context, info *model.Releas
 	return result, nil
 }
 
+// ProcessSource processes a source code event and downloads the source code
+func (uc *eventUseCase) ProcessSource(ctx context.Context, info *model.SourceInfo) (*model.DownloadResult, error) {
+	logger := ctxlog.From(ctx)
+
+	logger.Info("Processing source code event",
+		"owner", info.Owner,
+		"repo", info.Repo,
+		"commit_sha", info.CommitSHA,
+		"event_type", info.EventType,
+		"ref", info.Ref,
+		"actor", info.Actor,
+	)
+
+	// Download ZIP from GitHub
+	zipData, err := uc.githubClient.DownloadZipball(ctx, info.Owner, info.Repo, info.CommitSHA)
+	if err != nil {
+		logger.Error("Failed to download zipball",
+			"error", err,
+			"owner", info.Owner,
+			"repo", info.Repo,
+			"commit_sha", info.CommitSHA,
+		)
+		return nil, fmt.Errorf("failed to download zipball for %s/%s@%s: %w", info.Owner, info.Repo, info.CommitSHA, err)
+	}
+
+	logger.Info("Downloaded zipball",
+		"size_bytes", len(zipData),
+		"owner", info.Owner,
+		"repo", info.Repo,
+	)
+
+	// Extract ZIP to temporary directory
+	result, err := uc.extractZip(ctx, zipData)
+	if err != nil {
+		logger.Error("Failed to extract zip",
+			"error", err,
+			"owner", info.Owner,
+			"repo", info.Repo,
+		)
+		return nil, fmt.Errorf("failed to extract zip for %s/%s: %w", info.Owner, info.Repo, err)
+	}
+
+	logger.Info("Extracted zipball to temporary directory",
+		"temp_dir", result.TempDir,
+		"file_count", len(result.Files),
+		"total_size_bytes", result.Size,
+		"owner", info.Owner,
+		"repo", info.Repo,
+	)
+
+	return result, nil
+}
+
 // extractZip extracts ZIP data to a temporary directory
-func (uc *releaseUseCase) extractZip(ctx context.Context, zipData []byte) (*model.DownloadResult, error) {
+func (uc *eventUseCase) extractZip(ctx context.Context, zipData []byte) (*model.DownloadResult, error) {
 	logger := ctxlog.From(ctx)
 
 	// Create temporary directory
@@ -139,7 +199,7 @@ func (uc *releaseUseCase) extractZip(ctx context.Context, zipData []byte) (*mode
 }
 
 // extractFile extracts a single file from ZIP to the destination directory
-func (uc *releaseUseCase) extractFile(file *zip.File, destDir string) error {
+func (uc *eventUseCase) extractFile(file *zip.File, destDir string) error {
 	// Security check: prevent path traversal attacks
 	destPath := filepath.Join(destDir, file.Name)
 	if !strings.HasPrefix(destPath, filepath.Clean(destDir)+string(os.PathSeparator)) {
