@@ -15,6 +15,66 @@ import (
 	"github.com/m-mizutani/shepherd/pkg/utils/async"
 )
 
+// safeBuffer is a thread-safe buffer for concurrent logging
+type safeBuffer struct {
+	b bytes.Buffer
+	m sync.Mutex
+}
+
+func (sb *safeBuffer) Write(p []byte) (int, error) {
+	sb.m.Lock()
+	defer sb.m.Unlock()
+	return sb.b.Write(p)
+}
+
+func (sb *safeBuffer) String() string {
+	sb.m.Lock()
+	defer sb.m.Unlock()
+	return sb.b.String()
+}
+
+// syncHandler is a slog.Handler that signals when a log is written
+type syncHandler struct {
+	handler slog.Handler
+	done    chan struct{}
+}
+
+func newSyncHandler(buf *safeBuffer) *syncHandler {
+	return &syncHandler{
+		handler: slog.NewTextHandler(buf, &slog.HandlerOptions{
+			Level: slog.LevelError,
+		}),
+		done: make(chan struct{}, 1),
+	}
+}
+
+func (h *syncHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	return h.handler.Enabled(ctx, level)
+}
+
+func (h *syncHandler) Handle(ctx context.Context, r slog.Record) error {
+	err := h.handler.Handle(ctx, r)
+	select {
+	case h.done <- struct{}{}:
+	default:
+	}
+	return err
+}
+
+func (h *syncHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return &syncHandler{
+		handler: h.handler.WithAttrs(attrs),
+		done:    h.done,
+	}
+}
+
+func (h *syncHandler) WithGroup(name string) slog.Handler {
+	return &syncHandler{
+		handler: h.handler.WithGroup(name),
+		done:    h.done,
+	}
+}
+
 func TestDispatch(t *testing.T) {
 	t.Run("executes handler asynchronously", func(t *testing.T) {
 		ctx := context.Background()
@@ -66,10 +126,9 @@ func TestDispatch(t *testing.T) {
 	})
 
 	t.Run("recovers from panic with stack trace", func(t *testing.T) {
-		var logBuf bytes.Buffer
-		logger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{
-			Level: slog.LevelError,
-		}))
+		logBuf := &safeBuffer{}
+		handler := newSyncHandler(logBuf)
+		logger := slog.New(handler)
 
 		ctx := context.Background()
 		ctx = ctxlog.With(ctx, logger)
@@ -85,8 +144,13 @@ func TestDispatch(t *testing.T) {
 
 		select {
 		case <-done:
-			// Wait a bit for log to be written
-			time.Sleep(100 * time.Millisecond)
+			// Wait for log to be written
+			select {
+			case <-handler.done:
+				// Log has been written
+			case <-time.After(1 * time.Second):
+				t.Fatal("log was not written within timeout")
+			}
 
 			logOutput := logBuf.String()
 
