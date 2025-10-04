@@ -22,10 +22,10 @@ func Dispatch(ctx context.Context, handler func(ctx context.Context) error) {
 	newCtx := newBackgroundContext(ctx)
 
 	go func() {
+		logger := ctxlog.From(newCtx)
 		defer func() {
 			if r := recover(); r != nil {
 				stack := debug.Stack()
-				logger := ctxlog.From(newCtx)
 				logger.Error("panic in async handler",
 					"recover", r,
 					"stack", string(stack))
@@ -33,7 +33,6 @@ func Dispatch(ctx context.Context, handler func(ctx context.Context) error) {
 		}()
 
 		if err := handler(newCtx); err != nil {
-			logger := ctxlog.From(newCtx)
 			logger.Error("error in async handler", "error", err)
 		}
 	}()
