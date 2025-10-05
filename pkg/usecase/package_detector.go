@@ -37,8 +37,6 @@ type PackageDetector struct {
 	userTemplate *template.Template
 }
 
-type packageDetector = PackageDetector
-
 // NewPackageDetector creates a new PackageDetectorUseCase instance
 func NewPackageDetector(
 	llmClient gollem.LLMClient,
@@ -50,7 +48,7 @@ func NewPackageDetector(
 		return nil, goerr.Wrap(err, "failed to parse user prompt template")
 	}
 
-	return &packageDetector{
+	return &PackageDetector{
 		llmClient:    llmClient,
 		githubClient: githubClient,
 		userTemplate: tmpl,
@@ -58,7 +56,7 @@ func NewPackageDetector(
 }
 
 // DetectPackageUpdate processes a pull_request opened event
-func (uc *packageDetector) DetectPackageUpdate(ctx context.Context, event *model.WebhookEvent) error {
+func (uc *PackageDetector) DetectPackageUpdate(ctx context.Context, event *model.WebhookEvent) error {
 	logger := ctxlog.From(ctx)
 
 	// Parse GitHub event payload
@@ -120,7 +118,7 @@ func truncateText(text string, maxLen int) string {
 }
 
 // DetectFromPRInfo detects package updates from PR information using LLM
-func (uc *packageDetector) DetectFromPRInfo(ctx context.Context, prInfo *model.PRInfo) (*model.PackageUpdateDetection, error) {
+func (uc *PackageDetector) DetectFromPRInfo(ctx context.Context, prInfo *model.PRInfo) (*model.PackageUpdateDetection, error) {
 	logger := ctxlog.From(ctx)
 
 	// Truncate PR body to prevent excessive LLM costs
@@ -169,7 +167,7 @@ func (uc *packageDetector) DetectFromPRInfo(ctx context.Context, prInfo *model.P
 }
 
 // postComment posts a comment to the PR with detection results
-func (uc *packageDetector) postComment(ctx context.Context, detection *model.PackageUpdateDetection, prInfo *model.PRInfo) error {
+func (uc *PackageDetector) postComment(ctx context.Context, detection *model.PackageUpdateDetection, prInfo *model.PRInfo) error {
 	logger := ctxlog.From(ctx)
 
 	comment := formatComment(detection)
@@ -277,10 +275,7 @@ func extractFile(file *zip.File, destPath string) error {
 		return goerr.Wrap(err, "failed to open file in zip")
 	}
 	defer func() {
-		if closeErr := rc.Close(); closeErr != nil {
-			// Log close error but don't override the main error
-			// This is acceptable as the file has already been read
-		}
+		_ = rc.Close() // Ignore error as the file has already been read
 	}()
 
 	// Create destination file
@@ -290,10 +285,7 @@ func extractFile(file *zip.File, destPath string) error {
 		return goerr.Wrap(err, "failed to create destination file")
 	}
 	defer func() {
-		if closeErr := dest.Close(); closeErr != nil {
-			// Log close error but don't override the main error
-			// This is acceptable as the data has already been written
-		}
+		_ = dest.Close() // Ignore error as the data has already been written
 	}()
 
 	// Copy content with size limit to prevent decompression bombs
@@ -356,10 +348,7 @@ func resolveGoModuleRepo(ctx context.Context, modulePath, version string) (*GoMo
 		return nil, goerr.Wrap(err, "failed to fetch Go proxy info", goerr.V("url", proxyURL))
 	}
 	defer func() {
-		if closeErr := resp.Body.Close(); closeErr != nil {
-			// Log close error but don't override the main error
-			// This is acceptable as the response has already been read
-		}
+		_ = resp.Body.Close() // Ignore error as the response has already been read
 	}()
 
 	if resp.StatusCode != http.StatusOK {
@@ -418,12 +407,12 @@ func resolveGoVersion(version string) string {
 }
 
 // ExtractGoPackageSource extracts Go package source code for a specific version (exposed for testing)
-func (uc *packageDetector) ExtractGoPackageSource(ctx context.Context, packageName, version string) (tmpDir string, cleanup func(), err error) {
+func (uc *PackageDetector) ExtractGoPackageSource(ctx context.Context, packageName, version string) (tmpDir string, cleanup func(), err error) {
 	return uc.extractGoPackageSource(ctx, packageName, version)
 }
 
 // extractGoPackageSource extracts Go package source code for a specific version
-func (uc *packageDetector) extractGoPackageSource(ctx context.Context, packageName, version string) (tmpDir string, cleanup func(), err error) {
+func (uc *PackageDetector) extractGoPackageSource(ctx context.Context, packageName, version string) (tmpDir string, cleanup func(), err error) {
 	logger := ctxlog.From(ctx)
 
 	// Resolve module to repository information
@@ -486,7 +475,7 @@ func (uc *packageDetector) extractGoPackageSource(ctx context.Context, packageNa
 }
 
 // ExtractPackageVersionSources extracts package source code for before and after versions
-func (uc *packageDetector) ExtractPackageVersionSources(ctx context.Context, detection *model.PackageUpdateDetection, prInfo *model.PRInfo) error {
+func (uc *PackageDetector) ExtractPackageVersionSources(ctx context.Context, detection *model.PackageUpdateDetection, prInfo *model.PRInfo) error {
 	logger := ctxlog.From(ctx)
 
 	// Check if it's a package update
