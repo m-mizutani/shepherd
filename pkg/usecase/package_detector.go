@@ -153,7 +153,7 @@ func (uc *packageDetector) postComment(ctx context.Context, detection *model.Pac
 	)
 
 	_, _, err := uc.githubClient.Issues.CreateComment(ctx, prInfo.Owner, prInfo.Repo, prInfo.Number, &github.IssueComment{
-		Body: github.String(comment),
+		Body: github.Ptr(comment),
 	})
 	if err != nil {
 		return goerr.Wrap(err, "failed to create comment")

@@ -51,15 +51,15 @@ func TestPackageDetector_DetectPackageUpdate(t *testing.T) {
 
 		// Create test event
 		prEvent := &github.PullRequestEvent{
-			Action: github.String("opened"),
+			Action: github.Ptr("opened"),
 			PullRequest: &github.PullRequest{
-				Number: github.Int(123),
-				Title:  github.String("Add new feature"),
-				Body:   github.String("This PR adds a new feature"),
+				Number: github.Ptr(123),
+				Title:  github.Ptr("Add new feature"),
+				Body:   github.Ptr("This PR adds a new feature"),
 			},
 			Repo: &github.Repository{
-				Owner: &github.User{Login: github.String("test-owner")},
-				Name:  github.String("test-repo"),
+				Owner: &github.User{Login: github.Ptr("test-owner")},
+				Name:  github.Ptr("test-repo"),
 			},
 		}
 		payload, err := json.Marshal(prEvent)
@@ -111,15 +111,15 @@ func TestPackageDetector_DetectPackageUpdate(t *testing.T) {
 
 		// Create test event
 		prEvent := &github.PullRequestEvent{
-			Action: github.String("opened"),
+			Action: github.Ptr("opened"),
 			PullRequest: &github.PullRequest{
-				Number: github.Int(456),
-				Title:  github.String("Add new feature"),
-				Body:   github.String("This PR adds a new feature"),
+				Number: github.Ptr(456),
+				Title:  github.Ptr("Add new feature"),
+				Body:   github.Ptr("This PR adds a new feature"),
 			},
 			Repo: &github.Repository{
-				Owner: &github.User{Login: github.String("test-owner")},
-				Name:  github.String("test-repo"),
+				Owner: &github.User{Login: github.Ptr("test-owner")},
+				Name:  github.Ptr("test-repo"),
 			},
 		}
 		payload, err := json.Marshal(prEvent)

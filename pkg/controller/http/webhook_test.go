@@ -265,12 +265,12 @@ func TestWebhookHandler_PROpenedWithPackageDetection(t *testing.T) {
 		var commentReq struct {
 			Body string `json:"body"`
 		}
-		json.NewDecoder(r.Body).Decode(&commentReq)
+		_ = json.NewDecoder(r.Body).Decode(&commentReq)
 		capturedCommentBody = commentReq.Body
 
 		// Mock GitHub API response for creating comment
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"id":   1,
 			"body": commentReq.Body,
 		})
