@@ -25,3 +25,11 @@ type SourceCodeUseCase interface {
 	// ProcessSource processes a source code event and downloads the source code
 	ProcessSource(ctx context.Context, info *model.SourceInfo) (*model.DownloadResult, error)
 }
+
+// PackageDetectorUseCase defines operations for package update detection
+type PackageDetectorUseCase interface {
+	// DetectPackageUpdate processes a pull_request opened event and detects package updates
+	DetectPackageUpdate(ctx context.Context, event *model.WebhookEvent) error
+	// DetectFromPRInfo analyzes PR information using LLM and returns the detection result
+	DetectFromPRInfo(ctx context.Context, prInfo *model.PRInfo) (*model.PackageUpdateDetection, error)
+}

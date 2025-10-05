@@ -42,6 +42,7 @@ type Server struct {
 func NewServer(
 	ctx context.Context,
 	webhookUC interfaces.WebhookUseCase,
+	pkgDetectorUC interfaces.PackageDetectorUseCase,
 	opts ...Option,
 ) (*Server, error) {
 	// Default configuration
@@ -66,7 +67,7 @@ func NewServer(
 	router.Get("/health", handleHealth)
 
 	// Webhook endpoint
-	webhookHandler := NewWebhookHandler(cfg.webhookSecret, webhookUC)
+	webhookHandler := NewWebhookHandler(cfg.webhookSecret, webhookUC, pkgDetectorUC)
 	router.Post("/hooks/github/app", webhookHandler.Handle)
 
 	server := &Server{

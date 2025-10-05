@@ -5,15 +5,26 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	_ "embed"
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/google/go-github/v75/github"
+	"github.com/m-mizutani/gollem"
+	"github.com/m-mizutani/gollem/mock"
+	"github.com/m-mizutani/gt"
 	controller "github.com/m-mizutani/shepherd/pkg/controller/http"
+	"github.com/m-mizutani/shepherd/pkg/domain/model"
 	"github.com/m-mizutani/shepherd/pkg/usecase"
 )
+
+//go:embed testdata/pr_opened_event.json
+var prOpenedEventJSON []byte
 
 // generateSignature generates HMAC-SHA256 signature for testing
 func generateSignature(secret string, payload []byte) string {
@@ -25,7 +36,7 @@ func generateSignature(secret string, payload []byte) string {
 func TestWebhookHandler_SignatureVerification(t *testing.T) {
 	secret := "test-secret"
 	uc := usecase.NewWebhook()
-	handler := controller.NewWebhookHandler(secret, uc)
+	handler := controller.NewWebhookHandler(secret, uc, nil)
 
 	tests := []struct {
 		name           string
@@ -80,7 +91,7 @@ func TestWebhookHandler_SignatureVerification(t *testing.T) {
 func TestWebhookHandler_EventParsing(t *testing.T) {
 	secret := "test-secret"
 	uc := usecase.NewWebhook()
-	handler := controller.NewWebhookHandler(secret, uc)
+	handler := controller.NewWebhookHandler(secret, uc, nil)
 
 	tests := []struct {
 		name           string
@@ -163,6 +174,7 @@ func TestWebhookHandler_Integration(t *testing.T) {
 	server, err := controller.NewServer(
 		ctx,
 		uc,
+		nil, // pkgDetectorUC not needed for integration test
 		controller.WithAddr("localhost:0"),
 		controller.WithWebhookSecret(secret),
 	)
@@ -207,4 +219,105 @@ func TestWebhookHandler_Integration(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("Status code = %v, want %v", resp.StatusCode, http.StatusOK)
 	}
+}
+
+func TestWebhookHandler_PROpenedWithPackageDetection(t *testing.T) {
+	secret := "test-secret"
+
+	// Mock detection result
+	detectionResult := model.PackageUpdateDetection{
+		IsPackageUpdate: true,
+		Language:        "Go",
+		Packages: []model.PackageUpdate{
+			{
+				Name:        "github.com/m-mizutani/ctxlog",
+				FromVersion: "v0.0.7",
+				ToVersion:   "v0.0.8",
+			},
+		},
+	}
+	jsonData, _ := json.Marshal(detectionResult)
+
+	// Mock LLM client using gollem/mock - capture input for verification
+	var capturedLLMInput string
+	mockLLM := &mock.LLMClientMock{
+		NewSessionFunc: func(ctx context.Context, options ...gollem.SessionOption) (gollem.Session, error) {
+			return &mock.SessionMock{
+				GenerateContentFunc: func(ctx context.Context, input ...gollem.Input) (*gollem.Response, error) {
+					// Capture the input text for verification
+					for _, in := range input {
+						if textInput, ok := in.(gollem.Text); ok {
+							capturedLLMInput = string(textInput)
+						}
+					}
+					return &gollem.Response{
+						Texts: []string{string(jsonData)},
+					}, nil
+				},
+			}, nil
+		},
+	}
+
+	// Mock GitHub client - capture comment body for verification
+	var capturedCommentBody string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Capture comment body from request
+		var commentReq struct {
+			Body string `json:"body"`
+		}
+		json.NewDecoder(r.Body).Decode(&commentReq)
+		capturedCommentBody = commentReq.Body
+
+		// Mock GitHub API response for creating comment
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"id":   1,
+			"body": commentReq.Body,
+		})
+	}))
+	defer ts.Close()
+
+	mockGitHub, _ := github.NewClient(nil).WithEnterpriseURLs(ts.URL, ts.URL)
+
+	// Create real package detector usecase with mocks
+	pkgDetectorUC, err := usecase.NewPackageDetector(mockLLM, mockGitHub)
+	gt.NoError(t, err)
+
+	uc := usecase.NewWebhook()
+	handler := controller.NewWebhookHandler(secret, uc, pkgDetectorUC)
+
+	// Use embedded real PR opened event JSON
+	payload := prOpenedEventJSON
+	signature := generateSignature(secret, payload)
+
+	req := httptest.NewRequest(http.MethodPost, "/hooks/github/app", bytes.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-GitHub-Event", "pull_request")
+	req.Header.Set("X-GitHub-Delivery", "test-pr-opened-delivery")
+	req.Header.Set("X-Hub-Signature-256", signature)
+
+	w := httptest.NewRecorder()
+	handler.Handle(w, req)
+
+	// Verify HTTP response
+	gt.Equal(t, w.Code, http.StatusOK)
+
+	// Give async processing time to complete
+	// Note: async.Dispatch runs in a goroutine, so we need to wait briefly
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify LLM was called
+	gt.V(t, len(mockLLM.NewSessionCalls())).NotEqual(0)
+
+	// Verify LLM received expected input (PR title and body)
+	gt.V(t, capturedLLMInput).NotEqual("")
+	gt.V(t, strings.Contains(capturedLLMInput, "feat(async): implement asynchronous processing for webhook events")).Equal(true)
+
+	// Verify GitHub comment was posted with expected content
+	gt.V(t, capturedCommentBody).NotEqual("")
+	gt.V(t, strings.Contains(capturedCommentBody, "## 📦 Package Update Detection")).Equal(true)
+	gt.V(t, strings.Contains(capturedCommentBody, "**Language**: Go")).Equal(true)
+	gt.V(t, strings.Contains(capturedCommentBody, "github.com/m-mizutani/ctxlog")).Equal(true)
+	gt.V(t, strings.Contains(capturedCommentBody, "v0.0.7")).Equal(true)
+	gt.V(t, strings.Contains(capturedCommentBody, "v0.0.8")).Equal(true)
 }

@@ -21,15 +21,17 @@ import (
 
 // WebhookHandler handles GitHub webhooks
 type WebhookHandler struct {
-	secret    string
-	webhookUC interfaces.WebhookUseCase
+	secret        string
+	webhookUC     interfaces.WebhookUseCase
+	pkgDetectorUC interfaces.PackageDetectorUseCase
 }
 
 // NewWebhookHandler creates a new WebhookHandler
-func NewWebhookHandler(secret string, webhookUC interfaces.WebhookUseCase) *WebhookHandler {
+func NewWebhookHandler(secret string, webhookUC interfaces.WebhookUseCase, pkgDetectorUC interfaces.PackageDetectorUseCase) *WebhookHandler {
 	return &WebhookHandler{
-		secret:    secret,
-		webhookUC: webhookUC,
+		secret:        secret,
+		webhookUC:     webhookUC,
+		pkgDetectorUC: pkgDetectorUC,
 	}
 }
 
@@ -87,6 +89,13 @@ func (h *WebhookHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		}
 		if e.Sender != nil && e.Sender.Login != nil {
 			event.Sender = *e.Sender.Login
+		}
+
+		// Handle PR opened event for package detection
+		if e.Action != nil && *e.Action == "opened" {
+			async.Dispatch(ctx, func(asyncCtx context.Context) error {
+				return h.pkgDetectorUC.DetectPackageUpdate(asyncCtx, event)
+			})
 		}
 	case *github.ReleaseEvent:
 		if e.Action != nil {
