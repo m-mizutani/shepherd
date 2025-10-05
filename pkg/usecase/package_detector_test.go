@@ -42,11 +42,8 @@ func TestPackageDetector_DetectPackageUpdate(t *testing.T) {
 			},
 		}
 
-		// Create mock GitHub client
-		mockGitHub := github.NewClient(nil)
-
-		// Create use case
-		uc, err := usecase.NewPackageDetector(mockClient, mockGitHub)
+		// Create use case (GitHub client not used in this test)
+		uc, err := usecase.NewPackageDetector(mockClient, nil)
 		gt.NoError(t, err)
 
 		// Create test event
@@ -102,11 +99,8 @@ func TestPackageDetector_DetectPackageUpdate(t *testing.T) {
 			},
 		}
 
-		// Create mock GitHub client
-		mockGitHub := github.NewClient(nil)
-
-		// Create use case
-		uc, err := usecase.NewPackageDetector(mockClient, mockGitHub)
+		// Create use case (GitHub client not used in this test)
+		uc, err := usecase.NewPackageDetector(mockClient, nil)
 		gt.NoError(t, err)
 
 		// Create test event
@@ -145,9 +139,8 @@ func TestPackageDetector_DetectPackageUpdate(t *testing.T) {
 				return &mock.SessionMock{}, nil
 			},
 		}
-		mockGitHub := github.NewClient(nil)
 
-		uc, err := usecase.NewPackageDetector(mockClient, mockGitHub)
+		uc, err := usecase.NewPackageDetector(mockClient, nil)
 		gt.NoError(t, err)
 		gt.V(t, uc).NotNil()
 	})
@@ -186,11 +179,8 @@ func TestPackageDetector_DetectPackageUpdate(t *testing.T) {
 			},
 		}
 
-		// Create mock GitHub client
-		mockGitHub := github.NewClient(nil)
-
-		// Create use case
-		uc, err := usecase.NewPackageDetector(mockClient, mockGitHub)
+		// Create use case (GitHub client not used in this test)
+		uc, err := usecase.NewPackageDetector(mockClient, nil)
 		gt.NoError(t, err)
 
 		prInfo := &model.PRInfo{
@@ -243,11 +233,8 @@ func TestPackageDetector_DetectFromPRInfo_Integration(t *testing.T) {
 	)
 	gt.NoError(t, err)
 
-	// Create mock GitHub client (not used in AnalyzePR)
-	mockGitHub := github.NewClient(nil)
-
-	// Create use case
-	uc, err := usecase.NewPackageDetector(geminiClient, mockGitHub)
+	// Create use case (GitHub client not used in this test)
+	uc, err := usecase.NewPackageDetector(geminiClient, nil)
 	gt.NoError(t, err)
 
 	tests := []struct {

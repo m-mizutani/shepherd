@@ -25,14 +25,14 @@ var userPromptTemplate string
 
 type packageDetector struct {
 	llmClient    gollem.LLMClient
-	githubClient *github.Client
+	githubClient interfaces.GitHubClient
 	userTemplate *template.Template
 }
 
 // NewPackageDetector creates a new PackageDetectorUseCase instance
 func NewPackageDetector(
 	llmClient gollem.LLMClient,
-	githubClient *github.Client,
+	githubClient interfaces.GitHubClient,
 ) (interfaces.PackageDetectorUseCase, error) {
 	// Parse user prompt template
 	tmpl, err := template.New("user").Parse(userPromptTemplate)
@@ -152,7 +152,7 @@ func (uc *packageDetector) postComment(ctx context.Context, detection *model.Pac
 		"number", prInfo.Number,
 	)
 
-	_, _, err := uc.githubClient.Issues.CreateComment(ctx, prInfo.Owner, prInfo.Repo, prInfo.Number, &github.IssueComment{
+	_, _, err := uc.githubClient.CreateComment(ctx, prInfo.Owner, prInfo.Repo, prInfo.Number, &github.IssueComment{
 		Body: github.Ptr(comment),
 	})
 	if err != nil {

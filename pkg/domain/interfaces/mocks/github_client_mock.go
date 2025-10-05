@@ -5,6 +5,7 @@ package mocks
 
 import (
 	"context"
+	"github.com/google/go-github/v75/github"
 	"github.com/m-mizutani/shepherd/pkg/domain/interfaces"
 	"sync"
 )
@@ -19,6 +20,9 @@ var _ interfaces.GitHubClient = &GitHubClientMock{}
 //
 //		// make and configure a mocked interfaces.GitHubClient
 //		mockedGitHubClient := &GitHubClientMock{
+//			CreateCommentFunc: func(ctx context.Context, owner string, repo string, number int, comment *github.IssueComment) (*github.IssueComment, *github.Response, error) {
+//				panic("mock out the CreateComment method")
+//			},
 //			DownloadZipballFunc: func(ctx context.Context, owner string, repo string, ref string) ([]byte, error) {
 //				panic("mock out the DownloadZipball method")
 //			},
@@ -29,11 +33,27 @@ var _ interfaces.GitHubClient = &GitHubClientMock{}
 //
 //	}
 type GitHubClientMock struct {
+	// CreateCommentFunc mocks the CreateComment method.
+	CreateCommentFunc func(ctx context.Context, owner string, repo string, number int, comment *github.IssueComment) (*github.IssueComment, *github.Response, error)
+
 	// DownloadZipballFunc mocks the DownloadZipball method.
 	DownloadZipballFunc func(ctx context.Context, owner string, repo string, ref string) ([]byte, error)
 
 	// calls tracks calls to the methods.
 	calls struct {
+		// CreateComment holds details about calls to the CreateComment method.
+		CreateComment []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// Owner is the owner argument value.
+			Owner string
+			// Repo is the repo argument value.
+			Repo string
+			// Number is the number argument value.
+			Number int
+			// Comment is the comment argument value.
+			Comment *github.IssueComment
+		}
 		// DownloadZipball holds details about calls to the DownloadZipball method.
 		DownloadZipball []struct {
 			// Ctx is the ctx argument value.
@@ -46,7 +66,56 @@ type GitHubClientMock struct {
 			Ref string
 		}
 	}
+	lockCreateComment   sync.RWMutex
 	lockDownloadZipball sync.RWMutex
+}
+
+// CreateComment calls CreateCommentFunc.
+func (mock *GitHubClientMock) CreateComment(ctx context.Context, owner string, repo string, number int, comment *github.IssueComment) (*github.IssueComment, *github.Response, error) {
+	if mock.CreateCommentFunc == nil {
+		panic("GitHubClientMock.CreateCommentFunc: method is nil but GitHubClient.CreateComment was just called")
+	}
+	callInfo := struct {
+		Ctx     context.Context
+		Owner   string
+		Repo    string
+		Number  int
+		Comment *github.IssueComment
+	}{
+		Ctx:     ctx,
+		Owner:   owner,
+		Repo:    repo,
+		Number:  number,
+		Comment: comment,
+	}
+	mock.lockCreateComment.Lock()
+	mock.calls.CreateComment = append(mock.calls.CreateComment, callInfo)
+	mock.lockCreateComment.Unlock()
+	return mock.CreateCommentFunc(ctx, owner, repo, number, comment)
+}
+
+// CreateCommentCalls gets all the calls that were made to CreateComment.
+// Check the length with:
+//
+//	len(mockedGitHubClient.CreateCommentCalls())
+func (mock *GitHubClientMock) CreateCommentCalls() []struct {
+	Ctx     context.Context
+	Owner   string
+	Repo    string
+	Number  int
+	Comment *github.IssueComment
+} {
+	var calls []struct {
+		Ctx     context.Context
+		Owner   string
+		Repo    string
+		Number  int
+		Comment *github.IssueComment
+	}
+	mock.lockCreateComment.RLock()
+	calls = mock.calls.CreateComment
+	mock.lockCreateComment.RUnlock()
+	return calls
 }
 
 // DownloadZipball calls DownloadZipballFunc.

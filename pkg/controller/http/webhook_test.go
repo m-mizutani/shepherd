@@ -19,6 +19,7 @@ import (
 	"github.com/m-mizutani/gollem/mock"
 	"github.com/m-mizutani/gt"
 	controller "github.com/m-mizutani/shepherd/pkg/controller/http"
+	"github.com/m-mizutani/shepherd/pkg/domain/interfaces/mocks"
 	"github.com/m-mizutani/shepherd/pkg/domain/model"
 	"github.com/m-mizutani/shepherd/pkg/usecase"
 )
@@ -264,27 +265,16 @@ func TestWebhookHandler_PROpenedWithPackageDetection(t *testing.T) {
 
 	// Mock GitHub client - capture comment body for verification
 	var capturedCommentBody string
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Capture comment body from request
-		var commentReq struct {
-			Body string `json:"body"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&commentReq)
-		capturedCommentBody = commentReq.Body
-
-		// Mock GitHub API response for creating comment
-		w.WriteHeader(http.StatusCreated)
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"id":   1,
-			"body": commentReq.Body,
-		})
-
-		// Signal completion of async processing
-		wg.Done()
-	}))
-	defer ts.Close()
-
-	mockGitHub, _ := github.NewClient(nil).WithEnterpriseURLs(ts.URL, ts.URL)
+	mockGitHub := &mocks.GitHubClientMock{
+		CreateCommentFunc: func(ctx context.Context, owner, repo string, number int, comment *github.IssueComment) (*github.IssueComment, *github.Response, error) {
+			if comment.Body != nil {
+				capturedCommentBody = *comment.Body
+			}
+			// Signal completion of async processing
+			wg.Done()
+			return &github.IssueComment{}, &github.Response{}, nil
+		},
+	}
 
 	// Create real package detector usecase with mocks
 	pkgDetectorUC, err := usecase.NewPackageDetector(mockLLM, mockGitHub)
