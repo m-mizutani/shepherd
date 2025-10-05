@@ -92,7 +92,7 @@ func (h *WebhookHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Handle PR opened event for package detection
-		if e.Action != nil && *e.Action == "opened" {
+		if h.pkgDetectorUC != nil && e.Action != nil && *e.Action == "opened" {
 			async.Dispatch(ctx, func(asyncCtx context.Context) error {
 				return h.pkgDetectorUC.DetectPackageUpdate(asyncCtx, event)
 			})

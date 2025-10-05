@@ -11,8 +11,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
-	"time"
 
 	"github.com/google/go-github/v75/github"
 	"github.com/m-mizutani/gollem"
@@ -238,6 +238,10 @@ func TestWebhookHandler_PROpenedWithPackageDetection(t *testing.T) {
 	}
 	jsonData, _ := json.Marshal(detectionResult)
 
+	// WaitGroup to synchronize async processing
+	var wg sync.WaitGroup
+	wg.Add(1)
+
 	// Mock LLM client using gollem/mock - capture input for verification
 	var capturedLLMInput string
 	mockLLM := &mock.LLMClientMock{
@@ -274,6 +278,9 @@ func TestWebhookHandler_PROpenedWithPackageDetection(t *testing.T) {
 			"id":   1,
 			"body": commentReq.Body,
 		})
+
+		// Signal completion of async processing
+		wg.Done()
 	}))
 	defer ts.Close()
 
@@ -302,9 +309,8 @@ func TestWebhookHandler_PROpenedWithPackageDetection(t *testing.T) {
 	// Verify HTTP response
 	gt.Equal(t, w.Code, http.StatusOK)
 
-	// Give async processing time to complete
-	// Note: async.Dispatch runs in a goroutine, so we need to wait briefly
-	time.Sleep(100 * time.Millisecond)
+	// Wait for async processing to complete
+	wg.Wait()
 
 	// Verify LLM was called
 	gt.V(t, len(mockLLM.NewSessionCalls())).NotEqual(0)

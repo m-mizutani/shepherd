@@ -73,7 +73,9 @@ go mod tidy
 ### Configuration
 - All configuration through `github.com/urfave/cli/v3`
 - Environment variables must use `SHEPHERD_` prefix
-- Never use `os.Getenv()` directly - use cli/v3 flags with `EnvVars` field
+- **IMPORTANT**: Never use `os.Getenv()` or `os.LookupEnv()` directly in production code
+  - Always use cli/v3 flags with `EnvVars` field to read environment variables
+  - Exception: Tests can use `os.Getenv()` for `TEST_` prefixed variables only
 - Use Optional Function Pattern for complex configurations
 
 ### Controller Layer
@@ -94,7 +96,31 @@ go mod tidy
 - No external dependencies except standard library
 - Define clear interfaces for UseCase dependencies
 
-### GitHub Webhook Integration
+### GitHub Integration
+
+#### GitHub App Authentication
+- **IMPORTANT**: Always use GitHub App authentication, never personal access tokens
+- Use `github.com/bradleyfalzon/ghinstallation/v2` for GitHub App authentication
+- Required environment variables (via cli/v3):
+  - `SHEPHERD_GITHUB_APP_ID`: GitHub App ID
+  - `SHEPHERD_GITHUB_INSTALLATION_ID`: Installation ID
+  - `SHEPHERD_GITHUB_PRIVATE_KEY`: Private key in PEM format
+- **NEVER** use the following patterns:
+  - `github.NewClient(nil).WithAuthToken()` with personal tokens
+  - `os.Getenv("GITHUB_TOKEN")` for authentication
+- Proper GitHub client creation pattern:
+  ```go
+  import "github.com/bradleyfalzon/ghinstallation/v2"
+
+  // Create GitHub App transport
+  itr, err := ghinstallation.New(http.DefaultTransport, appID, installationID, privateKey)
+
+  // Create authenticated GitHub client
+  githubClient := github.NewClient(&http.Client{Transport: itr})
+  ```
+- Reference implementation: `pkg/infra/github/client.go`
+
+#### Webhook Integration
 - Always verify webhook signatures using HMAC-SHA256
 - Use `github.com/google/go-github/v75/github` for payload parsing
 - Support pull_request, release, and push events
