@@ -1,11 +1,18 @@
 package usecase
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"text/template"
 
@@ -23,7 +30,8 @@ var systemPrompt string
 //go:embed prompts/package_detection_user.md
 var userPromptTemplate string
 
-type packageDetector struct {
+// PackageDetector implements PackageDetectorUseCase
+type PackageDetector struct {
 	llmClient    gollem.LLMClient
 	githubClient interfaces.GitHubClient
 	userTemplate *template.Template
@@ -40,7 +48,7 @@ func NewPackageDetector(
 		return nil, goerr.Wrap(err, "failed to parse user prompt template")
 	}
 
-	return &packageDetector{
+	return &PackageDetector{
 		llmClient:    llmClient,
 		githubClient: githubClient,
 		userTemplate: tmpl,
@@ -48,7 +56,7 @@ func NewPackageDetector(
 }
 
 // DetectPackageUpdate processes a pull_request opened event
-func (uc *packageDetector) DetectPackageUpdate(ctx context.Context, event *model.WebhookEvent) error {
+func (uc *PackageDetector) DetectPackageUpdate(ctx context.Context, event *model.WebhookEvent) error {
 	logger := ctxlog.From(ctx)
 
 	// Parse GitHub event payload
@@ -90,6 +98,12 @@ func (uc *packageDetector) DetectPackageUpdate(ctx context.Context, event *model
 			logger.Error("Failed to post comment", "error", err)
 			return goerr.Wrap(err, "failed to post comment")
 		}
+
+		// Extract package source code for version comparison
+		if err := uc.ExtractPackageVersionSources(ctx, detection, prInfo); err != nil {
+			logger.Error("Failed to extract package version sources", "error", err)
+			// Don't return error - this is an enhancement feature, not critical
+		}
 	}
 
 	return nil
@@ -104,7 +118,7 @@ func truncateText(text string, maxLen int) string {
 }
 
 // DetectFromPRInfo detects package updates from PR information using LLM
-func (uc *packageDetector) DetectFromPRInfo(ctx context.Context, prInfo *model.PRInfo) (*model.PackageUpdateDetection, error) {
+func (uc *PackageDetector) DetectFromPRInfo(ctx context.Context, prInfo *model.PRInfo) (*model.PackageUpdateDetection, error) {
 	logger := ctxlog.From(ctx)
 
 	// Truncate PR body to prevent excessive LLM costs
@@ -153,7 +167,7 @@ func (uc *packageDetector) DetectFromPRInfo(ctx context.Context, prInfo *model.P
 }
 
 // postComment posts a comment to the PR with detection results
-func (uc *packageDetector) postComment(ctx context.Context, detection *model.PackageUpdateDetection, prInfo *model.PRInfo) error {
+func (uc *PackageDetector) postComment(ctx context.Context, detection *model.PackageUpdateDetection, prInfo *model.PRInfo) error {
 	logger := ctxlog.From(ctx)
 
 	comment := formatComment(detection)
@@ -195,4 +209,347 @@ func formatComment(detection *model.PackageUpdateDetection) string {
 	sb.WriteString("🤖 Detected by Shepherd\n")
 
 	return sb.String()
+}
+
+// unzipToTempDir extracts zip data to a temporary directory
+func unzipToTempDir(zipData []byte) (string, error) {
+	// Create temporary directory
+	tmpDir, err := os.MkdirTemp("", "shepherd-package-*")
+	if err != nil {
+		return "", goerr.Wrap(err, "failed to create temporary directory")
+	}
+
+	// Helper function to cleanup and return error
+	cleanupAndReturn := func(err error) (string, error) {
+		if removeErr := os.RemoveAll(tmpDir); removeErr != nil {
+			// If cleanup fails, wrap both errors
+			return "", goerr.Wrap(err, "failed to extract zip (cleanup also failed)", goerr.V("cleanup_error", removeErr.Error()))
+		}
+		return "", err
+	}
+
+	// Create zip reader from bytes
+	zipReader, err := zip.NewReader(bytes.NewReader(zipData), int64(len(zipData)))
+	if err != nil {
+		return cleanupAndReturn(goerr.Wrap(err, "failed to create zip reader"))
+	}
+
+	// Extract all files
+	for _, file := range zipReader.File {
+		// Security check: prevent Zip Slip attack (G305)
+		// Validate that the file path is within the temp directory before using it
+		destPath := filepath.Join(tmpDir, file.Name) // #nosec G305 -- validated below
+		cleanPath := filepath.Clean(destPath)
+		if !strings.HasPrefix(cleanPath, filepath.Clean(tmpDir)+string(os.PathSeparator)) {
+			return cleanupAndReturn(goerr.New("invalid file path in zip", goerr.V("path", file.Name)))
+		}
+
+		if file.FileInfo().IsDir() {
+			// Create directory
+			if err := os.MkdirAll(destPath, file.Mode()); err != nil {
+				return cleanupAndReturn(goerr.Wrap(err, "failed to create directory", goerr.V("path", destPath)))
+			}
+			continue
+		}
+
+		// Create parent directory if needed
+		// #nosec G301 -- 0755 is appropriate for temporary directories that will be deleted
+		if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+			return cleanupAndReturn(goerr.Wrap(err, "failed to create parent directory", goerr.V("path", filepath.Dir(destPath))))
+		}
+
+		// Extract file
+		if err := extractFile(file, destPath); err != nil {
+			return cleanupAndReturn(goerr.Wrap(err, "failed to extract file", goerr.V("path", destPath)))
+		}
+	}
+
+	return tmpDir, nil
+}
+
+// extractFile extracts a single file from zip archive
+func extractFile(file *zip.File, destPath string) error {
+	// Open file in zip
+	rc, err := file.Open()
+	if err != nil {
+		return goerr.Wrap(err, "failed to open file in zip")
+	}
+	defer func() {
+		_ = rc.Close() // Ignore error as the file has already been read
+	}()
+
+	// Create destination file
+	// #nosec G304 -- destPath is validated against Zip Slip in unzipToTempDir
+	dest, err := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, file.Mode())
+	if err != nil {
+		return goerr.Wrap(err, "failed to create destination file")
+	}
+	defer func() {
+		_ = dest.Close() // Ignore error as the data has already been written
+	}()
+
+	// Copy content with size limit to prevent decompression bombs
+	// Limit to 100MB per file to prevent DoS attacks
+	const maxFileSize = 100 * 1024 * 1024 // 100MB
+	limitedReader := io.LimitReader(rc, maxFileSize)
+
+	// #nosec G110 -- using LimitReader to prevent decompression bomb attacks
+	written, err := io.Copy(dest, limitedReader)
+	if err != nil {
+		return goerr.Wrap(err, "failed to copy file content")
+	}
+
+	// Check if we hit the size limit
+	if written == maxFileSize {
+		// Try to read one more byte to see if there's more data
+		var oneByte [1]byte
+		if n, _ := rc.Read(oneByte[:]); n > 0 {
+			return goerr.New("file size exceeds maximum allowed size", goerr.V("max_size", maxFileSize))
+		}
+	}
+
+	return nil
+}
+
+// GoModuleInfo represents VCS repository information for a Go module
+type GoModuleInfo struct {
+	RepoURL string // Repository URL (e.g., "https://github.com/m-mizutani/goerr")
+	Host    string // VCS host (e.g., "github.com")
+	Owner   string // Repository owner (e.g., "m-mizutani")
+	Repo    string // Repository name (e.g., "goerr")
+}
+
+// goProxyInfoResponse represents the response from Go proxy /@v/<version>.info endpoint
+type goProxyInfoResponse struct {
+	Version string `json:"Version"`
+	Time    string `json:"Time"`
+	Origin  *struct {
+		VCS  string `json:"VCS"`
+		URL  string `json:"URL"`
+		Ref  string `json:"Ref"`
+		Hash string `json:"Hash"`
+	} `json:"Origin"`
+}
+
+// resolveGoModuleRepo resolves Go module path and version to VCS repository information
+func resolveGoModuleRepo(ctx context.Context, modulePath, version string) (*GoModuleInfo, error) {
+	// Construct Go proxy API URL
+	proxyURL := fmt.Sprintf("https://proxy.golang.org/%s/@v/%s.info", modulePath, url.PathEscape(version))
+
+	// Create HTTP request
+	req, err := http.NewRequestWithContext(ctx, "GET", proxyURL, nil)
+	if err != nil {
+		return nil, goerr.Wrap(err, "failed to create HTTP request", goerr.V("url", proxyURL))
+	}
+
+	// Execute request
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, goerr.Wrap(err, "failed to fetch Go proxy info", goerr.V("url", proxyURL))
+	}
+	defer func() {
+		_ = resp.Body.Close() // Ignore error as the response has already been read
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, goerr.New("unexpected status code from Go proxy", goerr.V("status", resp.StatusCode), goerr.V("url", proxyURL))
+	}
+
+	// Parse JSON response
+	var proxyInfo goProxyInfoResponse
+	if err := json.NewDecoder(resp.Body).Decode(&proxyInfo); err != nil {
+		return nil, goerr.Wrap(err, "failed to parse Go proxy response", goerr.V("url", proxyURL))
+	}
+
+	// Extract repository URL from Origin
+	if proxyInfo.Origin == nil || proxyInfo.Origin.URL == "" {
+		return nil, goerr.New("no origin URL in Go proxy response", goerr.V("module", modulePath), goerr.V("version", version))
+	}
+
+	// Parse repository URL
+	moduleInfo, err := parseRepoURL(proxyInfo.Origin.URL)
+	if err != nil {
+		return nil, goerr.Wrap(err, "failed to parse repository URL", goerr.V("url", proxyInfo.Origin.URL))
+	}
+
+	return moduleInfo, nil
+}
+
+// parseRepoURL parses repository URL to extract host, owner, and repo
+func parseRepoURL(repoURL string) (*GoModuleInfo, error) {
+	// Parse URL
+	u, err := url.Parse(repoURL)
+	if err != nil {
+		return nil, goerr.Wrap(err, "failed to parse URL")
+	}
+
+	// Extract path components
+	// Expected format: https://github.com/owner/repo or https://github.com/owner/repo.git
+	pathPattern := regexp.MustCompile(`^/([^/]+)/([^/]+?)(?:\.git)?$`)
+	matches := pathPattern.FindStringSubmatch(u.Path)
+	if len(matches) != 3 {
+		return nil, goerr.New("invalid repository URL format", goerr.V("url", repoURL), goerr.V("path", u.Path))
+	}
+
+	return &GoModuleInfo{
+		RepoURL: repoURL,
+		Host:    u.Host,
+		Owner:   matches[1],
+		Repo:    matches[2],
+	}, nil
+}
+
+// resolveGoVersion resolves Go version string to git ref
+func resolveGoVersion(version string) string {
+	// Currently returns the version as-is
+	// Future: handle pseudo-versions, retracted versions, etc.
+	return version
+}
+
+// ExtractGoPackageSource extracts Go package source code for a specific version (exposed for testing)
+func (uc *PackageDetector) ExtractGoPackageSource(ctx context.Context, packageName, version string) (tmpDir string, cleanup func(), err error) {
+	return uc.extractGoPackageSource(ctx, packageName, version)
+}
+
+// extractGoPackageSource extracts Go package source code for a specific version
+func (uc *PackageDetector) extractGoPackageSource(ctx context.Context, packageName, version string) (tmpDir string, cleanup func(), err error) {
+	logger := ctxlog.From(ctx)
+
+	// Resolve module to repository information
+	moduleInfo, err := resolveGoModuleRepo(ctx, packageName, version)
+	if err != nil {
+		return "", nil, goerr.Wrap(err, "failed to resolve Go module repository", goerr.V("package", packageName), goerr.V("version", version))
+	}
+
+	logger.Debug("Resolved Go module to repository",
+		"package", packageName,
+		"version", version,
+		"host", moduleInfo.Host,
+		"owner", moduleInfo.Owner,
+		"repo", moduleInfo.Repo,
+	)
+
+	// Check if the repository is hosted on GitHub
+	if moduleInfo.Host != "github.com" {
+		return "", nil, goerr.New("unsupported VCS host (only GitHub is supported)", goerr.V("host", moduleInfo.Host), goerr.V("package", packageName))
+	}
+
+	// Resolve version to git ref
+	ref := resolveGoVersion(version)
+
+	// Download zipball from GitHub
+	zipData, err := uc.githubClient.DownloadZipball(ctx, moduleInfo.Owner, moduleInfo.Repo, ref)
+	if err != nil {
+		return "", nil, goerr.Wrap(err, "failed to download zipball from GitHub", goerr.V("owner", moduleInfo.Owner), goerr.V("repo", moduleInfo.Repo), goerr.V("ref", ref))
+	}
+
+	logger.Debug("Downloaded zipball from GitHub",
+		"owner", moduleInfo.Owner,
+		"repo", moduleInfo.Repo,
+		"ref", ref,
+		"size", len(zipData),
+	)
+
+	// Extract zipball to temporary directory
+	tmpDir, err = unzipToTempDir(zipData)
+	if err != nil {
+		return "", nil, goerr.Wrap(err, "failed to extract zipball to temporary directory")
+	}
+
+	logger.Info("Extracted Go package source to temporary directory",
+		"package", packageName,
+		"version", version,
+		"tmpDir", tmpDir,
+	)
+
+	// Create cleanup function
+	cleanup = func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			logger.Warn("Failed to remove temporary directory", "tmpDir", tmpDir, "error", err)
+		} else {
+			logger.Debug("Removed temporary directory", "tmpDir", tmpDir)
+		}
+	}
+
+	return tmpDir, cleanup, nil
+}
+
+// ExtractPackageVersionSources extracts package source code for before and after versions
+func (uc *PackageDetector) ExtractPackageVersionSources(ctx context.Context, detection *model.PackageUpdateDetection, prInfo *model.PRInfo) error {
+	logger := ctxlog.From(ctx)
+
+	// Check if it's a package update
+	if !detection.IsPackageUpdate {
+		logger.Debug("Not a package update, skipping source extraction")
+		return nil
+	}
+
+	// Language detection - only process Go language
+	language := strings.ToLower(detection.Language)
+	if language != "go" {
+		logger.Info("Unsupported language for source extraction, skipping",
+			"language", detection.Language,
+		)
+		return nil
+	}
+
+	logger.Info("Starting Go package source extraction",
+		"language", detection.Language,
+		"package_count", len(detection.Packages),
+	)
+
+	// Process each package
+	for i, pkg := range detection.Packages {
+		logger.Info("Processing package",
+			"index", i+1,
+			"total", len(detection.Packages),
+			"package", pkg.Name,
+			"from_version", pkg.FromVersion,
+			"to_version", pkg.ToVersion,
+		)
+
+		// Wrap in anonymous function to ensure defer cleanup happens at end of each iteration
+		func() {
+			// Extract FromVersion source
+			fromDir, fromCleanup, err := uc.extractGoPackageSource(ctx, pkg.Name, pkg.FromVersion)
+			if err != nil {
+				logger.Error("Failed to extract source for FromVersion",
+					"package", pkg.Name,
+					"version", pkg.FromVersion,
+					"error", err,
+				)
+				// Return to continue processing other packages
+				return
+			}
+			defer fromCleanup()
+
+			// Extract ToVersion source
+			toDir, toCleanup, err := uc.extractGoPackageSource(ctx, pkg.Name, pkg.ToVersion)
+			if err != nil {
+				logger.Error("Failed to extract source for ToVersion",
+					"package", pkg.Name,
+					"version", pkg.ToVersion,
+					"error", err,
+				)
+				// fromCleanup will be called by defer when this function returns
+				return
+			}
+			defer toCleanup()
+
+			logger.Info("Successfully extracted package sources",
+				"package", pkg.Name,
+				"from_version", pkg.FromVersion,
+				"from_dir", fromDir,
+				"to_version", pkg.ToVersion,
+				"to_dir", toDir,
+			)
+
+			// TODO: Future enhancement - analyze differences between fromDir and toDir
+			// TODO: Future enhancement - generate summary using LLM
+		}()
+	}
+
+	logger.Info("Completed Go package source extraction")
+
+	return nil
 }

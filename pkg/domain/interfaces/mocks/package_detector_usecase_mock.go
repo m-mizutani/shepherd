@@ -26,6 +26,9 @@ var _ interfaces.PackageDetectorUseCase = &PackageDetectorUseCaseMock{}
 //			DetectPackageUpdateFunc: func(ctx context.Context, event *model.WebhookEvent) error {
 //				panic("mock out the DetectPackageUpdate method")
 //			},
+//			ExtractPackageVersionSourcesFunc: func(ctx context.Context, detection *model.PackageUpdateDetection, prInfo *model.PRInfo) error {
+//				panic("mock out the ExtractPackageVersionSources method")
+//			},
 //		}
 //
 //		// use mockedPackageDetectorUseCase in code that requires interfaces.PackageDetectorUseCase
@@ -38,6 +41,9 @@ type PackageDetectorUseCaseMock struct {
 
 	// DetectPackageUpdateFunc mocks the DetectPackageUpdate method.
 	DetectPackageUpdateFunc func(ctx context.Context, event *model.WebhookEvent) error
+
+	// ExtractPackageVersionSourcesFunc mocks the ExtractPackageVersionSources method.
+	ExtractPackageVersionSourcesFunc func(ctx context.Context, detection *model.PackageUpdateDetection, prInfo *model.PRInfo) error
 
 	// calls tracks calls to the methods.
 	calls struct {
@@ -55,9 +61,19 @@ type PackageDetectorUseCaseMock struct {
 			// Event is the event argument value.
 			Event *model.WebhookEvent
 		}
+		// ExtractPackageVersionSources holds details about calls to the ExtractPackageVersionSources method.
+		ExtractPackageVersionSources []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// Detection is the detection argument value.
+			Detection *model.PackageUpdateDetection
+			// PrInfo is the prInfo argument value.
+			PrInfo *model.PRInfo
+		}
 	}
-	lockDetectFromPRInfo    sync.RWMutex
-	lockDetectPackageUpdate sync.RWMutex
+	lockDetectFromPRInfo             sync.RWMutex
+	lockDetectPackageUpdate          sync.RWMutex
+	lockExtractPackageVersionSources sync.RWMutex
 }
 
 // DetectFromPRInfo calls DetectFromPRInfoFunc.
@@ -129,5 +145,45 @@ func (mock *PackageDetectorUseCaseMock) DetectPackageUpdateCalls() []struct {
 	mock.lockDetectPackageUpdate.RLock()
 	calls = mock.calls.DetectPackageUpdate
 	mock.lockDetectPackageUpdate.RUnlock()
+	return calls
+}
+
+// ExtractPackageVersionSources calls ExtractPackageVersionSourcesFunc.
+func (mock *PackageDetectorUseCaseMock) ExtractPackageVersionSources(ctx context.Context, detection *model.PackageUpdateDetection, prInfo *model.PRInfo) error {
+	if mock.ExtractPackageVersionSourcesFunc == nil {
+		panic("PackageDetectorUseCaseMock.ExtractPackageVersionSourcesFunc: method is nil but PackageDetectorUseCase.ExtractPackageVersionSources was just called")
+	}
+	callInfo := struct {
+		Ctx       context.Context
+		Detection *model.PackageUpdateDetection
+		PrInfo    *model.PRInfo
+	}{
+		Ctx:       ctx,
+		Detection: detection,
+		PrInfo:    prInfo,
+	}
+	mock.lockExtractPackageVersionSources.Lock()
+	mock.calls.ExtractPackageVersionSources = append(mock.calls.ExtractPackageVersionSources, callInfo)
+	mock.lockExtractPackageVersionSources.Unlock()
+	return mock.ExtractPackageVersionSourcesFunc(ctx, detection, prInfo)
+}
+
+// ExtractPackageVersionSourcesCalls gets all the calls that were made to ExtractPackageVersionSources.
+// Check the length with:
+//
+//	len(mockedPackageDetectorUseCase.ExtractPackageVersionSourcesCalls())
+func (mock *PackageDetectorUseCaseMock) ExtractPackageVersionSourcesCalls() []struct {
+	Ctx       context.Context
+	Detection *model.PackageUpdateDetection
+	PrInfo    *model.PRInfo
+} {
+	var calls []struct {
+		Ctx       context.Context
+		Detection *model.PackageUpdateDetection
+		PrInfo    *model.PRInfo
+	}
+	mock.lockExtractPackageVersionSources.RLock()
+	calls = mock.calls.ExtractPackageVersionSources
+	mock.lockExtractPackageVersionSources.RUnlock()
 	return calls
 }
