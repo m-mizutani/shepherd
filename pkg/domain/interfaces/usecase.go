@@ -32,4 +32,6 @@ type PackageDetectorUseCase interface {
 	DetectPackageUpdate(ctx context.Context, event *model.WebhookEvent) error
 	// DetectFromPRInfo analyzes PR information using LLM and returns the detection result
 	DetectFromPRInfo(ctx context.Context, prInfo *model.PRInfo) (*model.PackageUpdateDetection, error)
+	// ExtractPackageVersionSources extracts package source code for before and after versions
+	ExtractPackageVersionSources(ctx context.Context, detection *model.PackageUpdateDetection, prInfo *model.PRInfo) error
 }
