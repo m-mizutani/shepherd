@@ -504,9 +504,9 @@ func TestPackageDetector_ExtractPackageVersionSources(t *testing.T) {
 
 		// Add a test file
 		f, _ := w.Create("test-repo/README.md")
-		f.Write([]byte("# Test README"))
+		_, _ = f.Write([]byte("# Test README"))
 
-		w.Close()
+		_ = w.Close()
 		return buf.Bytes()
 	}
 
@@ -617,9 +617,9 @@ func TestPackageDetector_ExtractPackageVersionSources(t *testing.T) {
 
 		// Try to create a file outside the extraction directory
 		f, _ := w.Create("../../../etc/passwd")
-		f.Write([]byte("malicious content"))
+		_, _ = f.Write([]byte("malicious content"))
 
-		w.Close()
+		_ = w.Close()
 		maliciousZip := buf.Bytes()
 
 		// This test verifies that unzipToTempDir handles malicious zips

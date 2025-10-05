@@ -224,7 +224,7 @@ func unzipToTempDir(zipData []byte) (string, error) {
 	// Create zip reader from bytes
 	zipReader, err := zip.NewReader(bytes.NewReader(zipData), int64(len(zipData)))
 	if err != nil {
-		os.RemoveAll(tmpDir)
+		_ = os.RemoveAll(tmpDir)
 		return "", goerr.Wrap(err, "failed to create zip reader")
 	}
 
@@ -234,14 +234,14 @@ func unzipToTempDir(zipData []byte) (string, error) {
 		destPath := filepath.Join(tmpDir, file.Name)
 		cleanPath := filepath.Clean(destPath)
 		if !strings.HasPrefix(cleanPath, filepath.Clean(tmpDir)+string(os.PathSeparator)) {
-			os.RemoveAll(tmpDir)
+			_ = os.RemoveAll(tmpDir)
 			return "", goerr.New("invalid file path in zip", goerr.V("path", file.Name))
 		}
 
 		if file.FileInfo().IsDir() {
 			// Create directory
 			if err := os.MkdirAll(destPath, file.Mode()); err != nil {
-				os.RemoveAll(tmpDir)
+				_ = os.RemoveAll(tmpDir)
 				return "", goerr.Wrap(err, "failed to create directory", goerr.V("path", destPath))
 			}
 			continue
@@ -249,13 +249,13 @@ func unzipToTempDir(zipData []byte) (string, error) {
 
 		// Create parent directory if needed
 		if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
-			os.RemoveAll(tmpDir)
+			_ = os.RemoveAll(tmpDir)
 			return "", goerr.Wrap(err, "failed to create parent directory", goerr.V("path", filepath.Dir(destPath)))
 		}
 
 		// Extract file
 		if err := extractFile(file, destPath); err != nil {
-			os.RemoveAll(tmpDir)
+			_ = os.RemoveAll(tmpDir)
 			return "", goerr.Wrap(err, "failed to extract file", goerr.V("path", destPath))
 		}
 	}
@@ -270,14 +270,18 @@ func extractFile(file *zip.File, destPath string) error {
 	if err != nil {
 		return goerr.Wrap(err, "failed to open file in zip")
 	}
-	defer rc.Close()
+	defer func() {
+		_ = rc.Close()
+	}()
 
 	// Create destination file
 	dest, err := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, file.Mode())
 	if err != nil {
 		return goerr.Wrap(err, "failed to create destination file")
 	}
-	defer dest.Close()
+	defer func() {
+		_ = dest.Close()
+	}()
 
 	// Copy content
 	if _, err := io.Copy(dest, rc); err != nil {
@@ -323,7 +327,9 @@ func resolveGoModuleRepo(ctx context.Context, modulePath, version string) (*GoMo
 	if err != nil {
 		return nil, goerr.Wrap(err, "failed to fetch Go proxy info", goerr.V("url", proxyURL))
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, goerr.New("unexpected status code from Go proxy", goerr.V("status", resp.StatusCode), goerr.V("url", proxyURL))
