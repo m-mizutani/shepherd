@@ -71,3 +71,8 @@ func (c *client) DownloadZipball(ctx context.Context, owner, repo, ref string) (
 
 	return data, nil
 }
+
+// CreateComment creates a comment on a pull request or issue
+func (c *client) CreateComment(ctx context.Context, owner, repo string, number int, comment *github.IssueComment) (*github.IssueComment, *github.Response, error) {
+	return c.githubClient.Issues.CreateComment(ctx, owner, repo, number, comment)
+}

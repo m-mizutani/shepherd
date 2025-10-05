@@ -1,0 +1,15 @@
+version: '3'
+
+tasks:
+  mock:
+    desc: Generate mocks for interfaces using moq
+    cmds:
+      - mkdir -p pkg/domain/interfaces/mocks
+      - moq -out pkg/domain/interfaces/mocks/package_detector_usecase_mock.go -pkg mocks ./pkg/domain/interfaces PackageDetectorUseCase
+      - moq -out pkg/domain/interfaces/mocks/github_client_mock.go -pkg mocks ./pkg/domain/interfaces GitHubClient
+    sources:
+      - pkg/domain/interfaces/usecase.go
+      - pkg/domain/interfaces/github.go
+    generates:
+      - pkg/domain/interfaces/mocks/package_detector_usecase_mock.go
+      - pkg/domain/interfaces/mocks/github_client_mock.go

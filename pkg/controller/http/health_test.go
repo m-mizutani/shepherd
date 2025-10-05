@@ -19,6 +19,7 @@ func TestHealthEndpoint(t *testing.T) {
 	server, err := controller.NewServer(
 		ctx,
 		uc,
+		nil, // pkgDetectorUC not needed for health check test
 		controller.WithAddr("localhost:0"),
 		controller.WithWebhookSecret("test-secret"),
 	)

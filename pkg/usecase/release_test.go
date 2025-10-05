@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/google/go-github/v75/github"
 	"github.com/m-mizutani/gt"
 
 	"github.com/m-mizutani/shepherd/pkg/domain/model"
@@ -35,6 +36,11 @@ func (m *MockGitHubClient) DownloadZipball(ctx context.Context, owner, repo, ref
 		return m.downloadZipballFunc(ctx, owner, repo, ref)
 	}
 	return nil, errors.New("mock not configured")
+}
+
+func (m *MockGitHubClient) CreateComment(ctx context.Context, owner, repo string, number int, comment *github.IssueComment) (*github.IssueComment, *github.Response, error) {
+	// Not used in release tests
+	return nil, nil, nil
 }
 
 func (m *MockGitHubClient) AssertExpectations(t *testing.T) {

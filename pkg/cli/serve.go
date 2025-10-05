@@ -11,8 +11,10 @@ import (
 
 	"github.com/m-mizutani/ctxlog"
 	"github.com/m-mizutani/goerr/v2"
+	"github.com/m-mizutani/gollem/llm/gemini"
 	"github.com/m-mizutani/shepherd/pkg/cli/config"
 	controller "github.com/m-mizutani/shepherd/pkg/controller/http"
+	githubinfra "github.com/m-mizutani/shepherd/pkg/infra/github"
 	"github.com/m-mizutani/shepherd/pkg/usecase"
 	"github.com/urfave/cli/v3"
 )
@@ -21,9 +23,10 @@ func cmdServe() *cli.Command {
 	var (
 		serverCfg config.Server
 		githubCfg config.GitHub
+		geminiCfg config.Gemini
 	)
 
-	flags := append(serverCfg.Flags(), githubCfg.Flags()...)
+	flags := append(append(serverCfg.Flags(), githubCfg.Flags()...), geminiCfg.Flags()...)
 
 	return &cli.Command{
 		Name:    "serve",
@@ -37,13 +40,38 @@ func cmdServe() *cli.Command {
 				slog.String("addr", serverCfg.Addr),
 			)
 
+			// Create Gemini client with ADC
+			geminiClient, err := gemini.New(ctx, geminiCfg.Location, geminiCfg.ProjectID,
+				gemini.WithModel(geminiCfg.Model),
+			)
+			if err != nil {
+				return goerr.Wrap(err, "failed to create gemini client")
+			}
+
+			// Create GitHub client with App authentication
+			githubClient, err := githubinfra.NewClient(
+				githubCfg.AppID,
+				githubCfg.InstallationID,
+				[]byte(githubCfg.PrivateKey),
+			)
+			if err != nil {
+				return goerr.Wrap(err, "failed to create GitHub client")
+			}
+
 			// Create use cases
 			webhookUC := usecase.NewWebhook()
+
+			// Create package detector use case
+			pkgDetectorUC, err := usecase.NewPackageDetector(geminiClient, githubClient)
+			if err != nil {
+				return goerr.Wrap(err, "failed to create package detector use case")
+			}
 
 			// Create HTTP server with options
 			server, err := controller.NewServer(
 				ctx,
 				webhookUC,
+				pkgDetectorUC,
 				controller.WithAddr(serverCfg.Addr),
 				controller.WithWebhookSecret(githubCfg.WebhookSecret),
 			)
