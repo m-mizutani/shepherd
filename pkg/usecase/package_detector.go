@@ -95,15 +95,27 @@ func (uc *packageDetector) DetectPackageUpdate(ctx context.Context, event *model
 	return nil
 }
 
+// truncateText truncates text to a maximum length
+func truncateText(text string, maxLen int) string {
+	if len(text) <= maxLen {
+		return text
+	}
+	return text[:maxLen] + "...(truncated)"
+}
+
 // DetectFromPRInfo detects package updates from PR information using LLM
 func (uc *packageDetector) DetectFromPRInfo(ctx context.Context, prInfo *model.PRInfo) (*model.PackageUpdateDetection, error) {
 	logger := ctxlog.From(ctx)
+
+	// Truncate PR body to prevent excessive LLM costs
+	const maxBodyLength = 5000
+	truncatedBody := truncateText(prInfo.Body, maxBodyLength)
 
 	// Format user prompt using template
 	var buf bytes.Buffer
 	if err := uc.userTemplate.Execute(&buf, map[string]string{
 		"Title": prInfo.Title,
-		"Body":  prInfo.Body,
+		"Body":  truncatedBody,
 	}); err != nil {
 		return nil, goerr.Wrap(err, "failed to execute user prompt template")
 	}

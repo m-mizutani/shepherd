@@ -389,3 +389,101 @@ func TestPackageDetector_DetectFromPRInfo_Integration(t *testing.T) {
 		})
 	}
 }
+
+func TestTruncateText(t *testing.T) {
+	// Access unexported function through reflection or make it exported
+	// For simplicity, we'll test the behavior through DetectFromPRInfo
+	ctx := context.Background()
+
+	t.Run("Long PR body is truncated", func(t *testing.T) {
+		// Create a very long PR body
+		longBody := strings.Repeat("This is a very long PR description. ", 1000) // ~37,000 chars
+
+		var capturedPrompt string
+		mockLLM := &mock.LLMClientMock{
+			NewSessionFunc: func(ctx context.Context, options ...gollem.SessionOption) (gollem.Session, error) {
+				return &mock.SessionMock{
+					GenerateContentFunc: func(ctx context.Context, input ...gollem.Input) (*gollem.Response, error) {
+						// Capture the prompt to verify truncation
+						for _, in := range input {
+							if textInput, ok := in.(gollem.Text); ok {
+								capturedPrompt = string(textInput)
+							}
+						}
+						// Return valid JSON response
+						result := model.PackageUpdateDetection{
+							IsPackageUpdate: false,
+						}
+						jsonData, _ := json.Marshal(result)
+						return &gollem.Response{
+							Texts: []string{string(jsonData)},
+						}, nil
+					},
+				}, nil
+			},
+		}
+
+		uc, err := usecase.NewPackageDetector(mockLLM, nil)
+		gt.NoError(t, err)
+
+		prInfo := &model.PRInfo{
+			Owner:  "test-owner",
+			Repo:   "test-repo",
+			Number: 1,
+			Title:  "Test PR",
+			Body:   longBody,
+		}
+
+		_, err = uc.DetectFromPRInfo(ctx, prInfo)
+		gt.NoError(t, err)
+
+		// Verify that the prompt contains truncation marker
+		gt.V(t, strings.Contains(capturedPrompt, "...(truncated)")).Equal(true)
+		// Verify the original long body was not sent in full
+		gt.V(t, strings.Contains(capturedPrompt, longBody)).Equal(false)
+	})
+
+	t.Run("Short PR body is not truncated", func(t *testing.T) {
+		shortBody := "This is a short PR description."
+
+		var capturedPrompt string
+		mockLLM := &mock.LLMClientMock{
+			NewSessionFunc: func(ctx context.Context, options ...gollem.SessionOption) (gollem.Session, error) {
+				return &mock.SessionMock{
+					GenerateContentFunc: func(ctx context.Context, input ...gollem.Input) (*gollem.Response, error) {
+						for _, in := range input {
+							if textInput, ok := in.(gollem.Text); ok {
+								capturedPrompt = string(textInput)
+							}
+						}
+						result := model.PackageUpdateDetection{
+							IsPackageUpdate: false,
+						}
+						jsonData, _ := json.Marshal(result)
+						return &gollem.Response{
+							Texts: []string{string(jsonData)},
+						}, nil
+					},
+				}, nil
+			},
+		}
+
+		uc, err := usecase.NewPackageDetector(mockLLM, nil)
+		gt.NoError(t, err)
+
+		prInfo := &model.PRInfo{
+			Owner:  "test-owner",
+			Repo:   "test-repo",
+			Number: 1,
+			Title:  "Test PR",
+			Body:   shortBody,
+		}
+
+		_, err = uc.DetectFromPRInfo(ctx, prInfo)
+		gt.NoError(t, err)
+
+		// Verify that the short body was sent in full (no truncation marker)
+		gt.V(t, strings.Contains(capturedPrompt, "...(truncated)")).Equal(false)
+		gt.V(t, strings.Contains(capturedPrompt, shortBody)).Equal(true)
+	})
+}
