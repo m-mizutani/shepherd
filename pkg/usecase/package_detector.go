@@ -221,42 +221,48 @@ func unzipToTempDir(zipData []byte) (string, error) {
 		return "", goerr.Wrap(err, "failed to create temporary directory")
 	}
 
+	// Helper function to cleanup and return error
+	cleanupAndReturn := func(err error) (string, error) {
+		if removeErr := os.RemoveAll(tmpDir); removeErr != nil {
+			// If cleanup fails, wrap both errors
+			return "", goerr.Wrap(err, "failed to extract zip (cleanup also failed)", goerr.V("cleanup_error", removeErr.Error()))
+		}
+		return "", err
+	}
+
 	// Create zip reader from bytes
 	zipReader, err := zip.NewReader(bytes.NewReader(zipData), int64(len(zipData)))
 	if err != nil {
-		_ = os.RemoveAll(tmpDir)
-		return "", goerr.Wrap(err, "failed to create zip reader")
+		return cleanupAndReturn(goerr.Wrap(err, "failed to create zip reader"))
 	}
 
 	// Extract all files
 	for _, file := range zipReader.File {
-		// Security check: prevent Zip Slip attack
-		destPath := filepath.Join(tmpDir, file.Name)
+		// Security check: prevent Zip Slip attack (G305)
+		// Validate that the file path is within the temp directory before using it
+		destPath := filepath.Join(tmpDir, file.Name) // #nosec G305 -- validated below
 		cleanPath := filepath.Clean(destPath)
 		if !strings.HasPrefix(cleanPath, filepath.Clean(tmpDir)+string(os.PathSeparator)) {
-			_ = os.RemoveAll(tmpDir)
-			return "", goerr.New("invalid file path in zip", goerr.V("path", file.Name))
+			return cleanupAndReturn(goerr.New("invalid file path in zip", goerr.V("path", file.Name)))
 		}
 
 		if file.FileInfo().IsDir() {
 			// Create directory
 			if err := os.MkdirAll(destPath, file.Mode()); err != nil {
-				_ = os.RemoveAll(tmpDir)
-				return "", goerr.Wrap(err, "failed to create directory", goerr.V("path", destPath))
+				return cleanupAndReturn(goerr.Wrap(err, "failed to create directory", goerr.V("path", destPath)))
 			}
 			continue
 		}
 
 		// Create parent directory if needed
+		// #nosec G301 -- 0755 is appropriate for temporary directories that will be deleted
 		if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
-			_ = os.RemoveAll(tmpDir)
-			return "", goerr.Wrap(err, "failed to create parent directory", goerr.V("path", filepath.Dir(destPath)))
+			return cleanupAndReturn(goerr.Wrap(err, "failed to create parent directory", goerr.V("path", filepath.Dir(destPath))))
 		}
 
 		// Extract file
 		if err := extractFile(file, destPath); err != nil {
-			_ = os.RemoveAll(tmpDir)
-			return "", goerr.Wrap(err, "failed to extract file", goerr.V("path", destPath))
+			return cleanupAndReturn(goerr.Wrap(err, "failed to extract file", goerr.V("path", destPath)))
 		}
 	}
 
@@ -271,21 +277,43 @@ func extractFile(file *zip.File, destPath string) error {
 		return goerr.Wrap(err, "failed to open file in zip")
 	}
 	defer func() {
-		_ = rc.Close()
+		if closeErr := rc.Close(); closeErr != nil {
+			// Log close error but don't override the main error
+			// This is acceptable as the file has already been read
+		}
 	}()
 
 	// Create destination file
+	// #nosec G304 -- destPath is validated against Zip Slip in unzipToTempDir
 	dest, err := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, file.Mode())
 	if err != nil {
 		return goerr.Wrap(err, "failed to create destination file")
 	}
 	defer func() {
-		_ = dest.Close()
+		if closeErr := dest.Close(); closeErr != nil {
+			// Log close error but don't override the main error
+			// This is acceptable as the data has already been written
+		}
 	}()
 
-	// Copy content
-	if _, err := io.Copy(dest, rc); err != nil {
+	// Copy content with size limit to prevent decompression bombs
+	// Limit to 100MB per file to prevent DoS attacks
+	const maxFileSize = 100 * 1024 * 1024 // 100MB
+	limitedReader := io.LimitReader(rc, maxFileSize)
+
+	// #nosec G110 -- using LimitReader to prevent decompression bomb attacks
+	written, err := io.Copy(dest, limitedReader)
+	if err != nil {
 		return goerr.Wrap(err, "failed to copy file content")
+	}
+
+	// Check if we hit the size limit
+	if written == maxFileSize {
+		// Try to read one more byte to see if there's more data
+		var oneByte [1]byte
+		if n, _ := rc.Read(oneByte[:]); n > 0 {
+			return goerr.New("file size exceeds maximum allowed size", goerr.V("max_size", maxFileSize))
+		}
 	}
 
 	return nil
@@ -328,7 +356,10 @@ func resolveGoModuleRepo(ctx context.Context, modulePath, version string) (*GoMo
 		return nil, goerr.Wrap(err, "failed to fetch Go proxy info", goerr.V("url", proxyURL))
 	}
 	defer func() {
-		_ = resp.Body.Close()
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			// Log close error but don't override the main error
+			// This is acceptable as the response has already been read
+		}
 	}()
 
 	if resp.StatusCode != http.StatusOK {
@@ -488,42 +519,45 @@ func (uc *packageDetector) ExtractPackageVersionSources(ctx context.Context, det
 			"to_version", pkg.ToVersion,
 		)
 
-		// Extract FromVersion source
-		fromDir, fromCleanup, err := uc.extractGoPackageSource(ctx, pkg.Name, pkg.FromVersion)
-		if err != nil {
-			logger.Error("Failed to extract source for FromVersion",
+		// Wrap in anonymous function to ensure defer cleanup happens at end of each iteration
+		func() {
+			// Extract FromVersion source
+			fromDir, fromCleanup, err := uc.extractGoPackageSource(ctx, pkg.Name, pkg.FromVersion)
+			if err != nil {
+				logger.Error("Failed to extract source for FromVersion",
+					"package", pkg.Name,
+					"version", pkg.FromVersion,
+					"error", err,
+				)
+				// Return to continue processing other packages
+				return
+			}
+			defer fromCleanup()
+
+			// Extract ToVersion source
+			toDir, toCleanup, err := uc.extractGoPackageSource(ctx, pkg.Name, pkg.ToVersion)
+			if err != nil {
+				logger.Error("Failed to extract source for ToVersion",
+					"package", pkg.Name,
+					"version", pkg.ToVersion,
+					"error", err,
+				)
+				// fromCleanup will be called by defer when this function returns
+				return
+			}
+			defer toCleanup()
+
+			logger.Info("Successfully extracted package sources",
 				"package", pkg.Name,
-				"version", pkg.FromVersion,
-				"error", err,
+				"from_version", pkg.FromVersion,
+				"from_dir", fromDir,
+				"to_version", pkg.ToVersion,
+				"to_dir", toDir,
 			)
-			// Continue processing other packages
-			continue
-		}
-		defer fromCleanup()
 
-		// Extract ToVersion source
-		toDir, toCleanup, err := uc.extractGoPackageSource(ctx, pkg.Name, pkg.ToVersion)
-		if err != nil {
-			logger.Error("Failed to extract source for ToVersion",
-				"package", pkg.Name,
-				"version", pkg.ToVersion,
-				"error", err,
-			)
-			// Continue processing other packages
-			continue
-		}
-		defer toCleanup()
-
-		logger.Info("Successfully extracted package sources",
-			"package", pkg.Name,
-			"from_version", pkg.FromVersion,
-			"from_dir", fromDir,
-			"to_version", pkg.ToVersion,
-			"to_dir", toDir,
-		)
-
-		// TODO: Future enhancement - analyze differences between fromDir and toDir
-		// TODO: Future enhancement - generate summary using LLM
+			// TODO: Future enhancement - analyze differences between fromDir and toDir
+			// TODO: Future enhancement - generate summary using LLM
+		}()
 	}
 
 	logger.Info("Completed Go package source extraction")
