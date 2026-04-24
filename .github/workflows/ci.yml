@@ -1,0 +1,96 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  go-test:
+    name: Go Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      - run: go test ./...
+
+  go-build:
+    name: Go Build
+    runs-on: ubuntu-latest
+    needs: [go-test]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: frontend
+      - run: pnpm build
+        working-directory: frontend
+      - run: go build -o shepherd .
+
+  frontend-check:
+    name: Frontend Check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm tsc --noEmit
+
+  e2e:
+    name: E2E Test
+    runs-on: ubuntu-latest
+    needs: [go-test, frontend-check]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: frontend/e2e/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: frontend/e2e
+      - run: pnpm exec playwright install --with-deps chromium
+        working-directory: frontend/e2e
+      - run: pnpm exec playwright test
+        working-directory: frontend/e2e
+        env:
+          CI: true
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-test-results
+          path: frontend/e2e/test-results/
+          retention-days: 7

@@ -1,0 +1,96 @@
+[workspace]
+id = "support"
+name = "Support Team"
+
+[ticket]
+default_status = "open"
+closed_statuses = ["resolved", "closed"]
+
+[slack]
+channel_id = "C0123456789"
+
+[[statuses]]
+id = "open"
+name = "Open"
+color = "#22c55e"
+
+[[statuses]]
+id = "in-progress"
+name = "In Progress"
+color = "#3b82f6"
+
+[[statuses]]
+id = "waiting"
+name = "Waiting"
+color = "#f59e0b"
+
+[[statuses]]
+id = "resolved"
+name = "Resolved"
+color = "#6b7280"
+
+[[statuses]]
+id = "closed"
+name = "Closed"
+color = "#374151"
+
+[labels]
+ticket = "Ticket"
+title = "Title"
+description = "Description"
+
+[[fields]]
+id = "priority"
+name = "Priority"
+type = "select"
+required = true
+description = "Ticket priority level"
+
+  [[fields.options]]
+  id = "high"
+  name = "High"
+  color = "#ef4444"
+
+  [[fields.options]]
+  id = "medium"
+  name = "Medium"
+  color = "#f59e0b"
+
+  [[fields.options]]
+  id = "low"
+  name = "Low"
+  color = "#22c55e"
+
+[[fields]]
+id = "category"
+name = "Category"
+type = "select"
+required = false
+description = "Ticket category"
+
+  [[fields.options]]
+  id = "bug"
+  name = "Bug"
+  color = "#ef4444"
+
+  [[fields.options]]
+  id = "feature"
+  name = "Feature Request"
+  color = "#3b82f6"
+
+  [[fields.options]]
+  id = "question"
+  name = "Question"
+  color = "#8b5cf6"
+
+[[fields]]
+id = "due-date"
+name = "Due Date"
+type = "date"
+required = false
+
+[[fields]]
+id = "reference-url"
+name = "Reference URL"
+type = "url"
+required = false
