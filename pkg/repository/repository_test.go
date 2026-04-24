@@ -15,7 +15,7 @@ func runTest(t *testing.T, name string, testFn func(t *testing.T, repo interface
 
 	t.Run("Memory/"+name, func(t *testing.T) {
 		repo := memory.New()
-		defer repo.Close()
+		defer func() { _ = repo.Close() }()
 		testFn(t, repo)
 	})
 
@@ -24,7 +24,7 @@ func runTest(t *testing.T, name string, testFn func(t *testing.T, repo interface
 		if repo == nil {
 			return
 		}
-		defer repo.Close()
+		defer func() { _ = repo.Close() }()
 		testFn(t, repo)
 	})
 }

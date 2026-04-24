@@ -34,7 +34,7 @@ var _ AuthUseCaseInterface = (*AuthUseCase)(nil)
 
 func NewAuthUseCase(repo interfaces.Repository, clientID, clientSecret, callbackURL string) *AuthUseCase {
 	jwkCache := jwk.NewCache(context.Background())
-	jwkCache.Register(slackJWKSURL, jwk.WithHTTPClient(slackHTTPClient))
+	_ = jwkCache.Register(slackJWKSURL, jwk.WithHTTPClient(slackHTTPClient))
 
 	return &AuthUseCase{
 		repo:         repo,

@@ -52,5 +52,5 @@ func HandleHTTP(ctx context.Context, w http.ResponseWriter, err error, statusCod
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
-	fmt.Fprintf(w, `{"error":%q}`, err.Error())
+	_, _ = fmt.Fprintf(w, `{"error":%q}`, err.Error())
 }
