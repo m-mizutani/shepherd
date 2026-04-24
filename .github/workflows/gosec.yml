@@ -24,3 +24,4 @@ jobs:
           args: -exclude-generated ./...
         env:
           GOTOOLCHAIN: auto
+          GOFLAGS: -buildvcs=false
