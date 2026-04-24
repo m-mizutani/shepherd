@@ -2,7 +2,7 @@ package usecase
 
 import (
 	"context"
-	"fmt"
+	"net/url"
 	"time"
 
 	"github.com/google/uuid"
@@ -64,7 +64,7 @@ func (uc *SlackUseCase) HandleNewMessage(ctx context.Context, channelID, userID,
 		return goerr.Wrap(err, "failed to create ticket from slack message")
 	}
 
-	ticketURL := fmt.Sprintf("%s/ws/%s/tickets/%s", uc.baseURL, wsID, created.ID)
+	ticketURL, _ := url.JoinPath(uc.baseURL, "ws", wsID, "tickets", created.ID)
 	if err := uc.slack.ReplyTicketCreated(ctx, channelID, messageTS, created.SeqNum, ticketURL); err != nil {
 		return goerr.Wrap(err, "failed to reply ticket created")
 	}

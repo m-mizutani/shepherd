@@ -111,10 +111,6 @@ func (a *AppConfig) Validate() error {
 			goerr.V(WorkspaceIDKey, wsID))
 	}
 
-	if a.Ticket.DefaultStatus == "" && len(a.Statuses) > 0 {
-		a.Ticket.DefaultStatus = a.Statuses[0].ID
-	}
-
 	return nil
 }
 
@@ -165,10 +161,15 @@ func (a *AppConfig) ToDomainFieldSchema() *domainConfig.FieldSchema {
 		labels.Description = "Description"
 	}
 
+	defaultStatusID := a.Ticket.DefaultStatus
+	if defaultStatusID == "" && len(statuses) > 0 {
+		defaultStatusID = statuses[0].ID
+	}
+
 	return &domainConfig.FieldSchema{
 		Statuses: statuses,
 		TicketConfig: domainConfig.TicketConfig{
-			DefaultStatusID: a.Ticket.DefaultStatus,
+			DefaultStatusID: defaultStatusID,
 			ClosedStatusIDs: a.Ticket.ClosedStatuses,
 		},
 		Fields: fields,

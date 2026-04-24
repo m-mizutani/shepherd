@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/lestrrat-go/jwx/v2/jwk"
 	"github.com/lestrrat-go/jwx/v2/jwt"
@@ -16,23 +17,32 @@ import (
 	"github.com/m-mizutani/shepherd/pkg/utils/safe"
 )
 
+var slackHTTPClient = &http.Client{Timeout: 30 * time.Second}
+
+const slackJWKSURL = "https://slack.com/openid/connect/keys"
+
 type AuthUseCase struct {
 	repo         interfaces.Repository
 	clientID     string
 	clientSecret string
 	callbackURL  string
 	cache        *authCache
+	jwkCache     *jwk.Cache
 }
 
 var _ AuthUseCaseInterface = (*AuthUseCase)(nil)
 
 func NewAuthUseCase(repo interfaces.Repository, clientID, clientSecret, callbackURL string) *AuthUseCase {
+	jwkCache := jwk.NewCache(context.Background())
+	jwkCache.Register(slackJWKSURL, jwk.WithHTTPClient(slackHTTPClient))
+
 	return &AuthUseCase{
 		repo:         repo,
 		clientID:     clientID,
 		clientSecret: clientSecret,
 		callbackURL:  callbackURL,
 		cache:        newAuthCache(),
+		jwkCache:     jwkCache,
 	}
 }
 
@@ -98,7 +108,7 @@ func (uc *AuthUseCase) exchangeCodeForToken(ctx context.Context, code string) (*
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.ContentLength = int64(len(encoded))
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := slackHTTPClient.Do(req)
 	if err != nil {
 		return nil, goerr.Wrap(err, "failed to make token request")
 	}
@@ -118,7 +128,7 @@ func (uc *AuthUseCase) exchangeCodeForToken(ctx context.Context, code string) (*
 }
 
 func (uc *AuthUseCase) decodeIDToken(ctx context.Context, idTokenStr string) (*slackIDToken, error) {
-	keySet, err := jwk.Fetch(ctx, "https://slack.com/openid/connect/keys")
+	keySet, err := uc.jwkCache.Get(ctx, slackJWKSURL)
 	if err != nil {
 		return nil, goerr.Wrap(err, "failed to fetch Slack's public keys")
 	}

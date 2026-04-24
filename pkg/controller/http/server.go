@@ -88,11 +88,13 @@ func spaHandler(staticFS fs.FS) http.HandlerFunc {
 		}
 
 		if file, err := staticFS.Open(urlPath); err != nil {
-			if indexFile, err := staticFS.Open("index.html"); err == nil {
-				defer safe.Close(r.Context(), indexFile)
-				w.Header().Set("Content-Type", "text/html")
-				safe.Copy(r.Context(), w, indexFile)
-				return
+			if !strings.Contains(urlPath, ".") {
+				if indexFile, err := staticFS.Open("index.html"); err == nil {
+					defer safe.Close(r.Context(), indexFile)
+					w.Header().Set("Content-Type", "text/html")
+					safe.Copy(r.Context(), w, indexFile)
+					return
+				}
 			}
 			http.NotFound(w, r)
 			return
