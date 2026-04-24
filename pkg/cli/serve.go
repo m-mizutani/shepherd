@@ -93,8 +93,9 @@ func cmdServe() *cli.Command {
 			httpServer := httpController.New(registry, repo, authUC, serverOpts...)
 
 			server := &http.Server{
-				Addr:    addr,
-				Handler: httpServer,
+				Addr:              addr,
+				Handler:           httpServer,
+				ReadHeaderTimeout: 10 * time.Second,
 			}
 
 			errCh := make(chan error, 1)

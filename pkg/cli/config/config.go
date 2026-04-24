@@ -239,7 +239,7 @@ func LoadWorkspaceConfigs(paths []string) ([]*WorkspaceConfig, error) {
 }
 
 func loadSingleWorkspaceConfig(path string) (*WorkspaceConfig, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- config paths are from trusted CLI flags, not user input
 	if err != nil {
 		return nil, goerr.Wrap(err, "failed to read config file", goerr.V(ConfigPathKey,path))
 	}
