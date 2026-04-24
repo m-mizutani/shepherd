@@ -22,3 +22,5 @@ jobs:
         uses: securego/gosec@efe7343bd2dc861f9b56328903d02f870644fedd # v2.24.7
         with:
           args: -exclude-generated ./...
+        env:
+          GOTOOLCHAIN: auto
