@@ -34,8 +34,9 @@ Add the following **Bot Token Scopes**:
 | `channels:read` | Resolve `#channel-name` to channel ID |
 | `groups:history` | Read messages in private channels |
 | `groups:read` | Resolve private `#channel-name` to channel ID |
-| `users:read` | Fetch user profile (name) for NoAuthn mode |
+| `users:read` | Fetch user profile (name) for NoAuthn mode and `slack_get_user_info` LLM tool |
 | `users:read.email` | Fetch user email for NoAuthn mode |
+| `search:read` | Required by the `slack_search_messages` LLM tool (Slack `search.messages` API). User-token scope on classic apps; on Slack Marketplace apps this scope must be approved for bot tokens or the search tool returns "not_allowed_token_type". |
 
 ### User Token Scopes
 
