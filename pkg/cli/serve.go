@@ -25,11 +25,12 @@ func cmdServe() *cli.Command {
 		baseURL string
 		lang    string
 
-		workspaceCfg config.WorkspaceFiles
-		repoCfg      config.Repository
-		slackCfg     config.Slack
-		sentryCfg    config.Sentry
-		llmCfg       config.LLM
+		workspaceCfg     config.WorkspaceFiles
+		repoCfg          config.Repository
+		slackCfg         config.Slack
+		sentryCfg        config.Sentry
+		llmCfg           config.LLM
+		agentStorageCfg  config.AgentStorage
 	)
 
 	flags := []cli.Flag{
@@ -59,6 +60,7 @@ func cmdServe() *cli.Command {
 	flags = append(flags, slackCfg.Flags()...)
 	flags = append(flags, sentryCfg.Flags()...)
 	flags = append(flags, llmCfg.Flags()...)
+	flags = append(flags, agentStorageCfg.Flags()...)
 
 	return &cli.Command{
 		Name:  "serve",
@@ -119,10 +121,21 @@ func cmdServe() *cli.Command {
 			}
 			logger.Info("LLM integration enabled")
 
+			historyRepo, traceRepo, agentBackend, err := agentStorageCfg.Configure(ctx)
+			if err != nil {
+				return goerr.Wrap(err, "failed to configure agent storage")
+			}
+			defer func() {
+				if err := agentBackend.Close(); err != nil {
+					errutil.Handle(ctx, goerr.Wrap(err, "failed to close agent storage backend"))
+				}
+			}()
+			logger.Info("Agent storage configured", "agent_storage", &agentStorageCfg)
+
 			var serverOpts []httpController.ServerOption
 			if slackCfg.IsWebhookConfigured() {
 				slackClient := slackCfg.NewSlackClient()
-				slackUC := slackCfg.NewSlackUseCase(repo, registry, baseURL, llmClient)
+				slackUC := slackCfg.NewSlackUseCase(repo, registry, baseURL, llmClient, historyRepo, traceRepo)
 				serverOpts = append(serverOpts, httpController.WithSlack(httpController.SlackConfig{
 					SigningSecret: slackCfg.SignSecret(),
 					SlackUC:       slackUC,

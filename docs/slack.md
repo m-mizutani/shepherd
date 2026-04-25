@@ -165,6 +165,34 @@ Configuring an LLM provider is **required** — `serve` aborts at startup when n
 
 For Claude on Google Cloud, set `--llm-provider=claude` together with `--llm-gemini-project-id` and `--llm-gemini-location` (instead of `--llm-claude-api-key`).
 
+### Agent execution model
+
+`@Shepherd` mentions are handled by a [gollem](https://github.com/m-mizutani/gollem) `Agent` (`agent.Execute`), not a single round-trip `GenerateContent` call. This means each mention can issue multiple LLM turns (and, in the future, tool calls) before producing the final reply, while `gollem` automatically maintains a per-thread conversation history.
+
+## Agent Storage (required)
+
+The agent persists two kinds of data and **one of the two backends below must be configured** (they are mutually exclusive):
+
+- **History** — the gollem conversation history per Slack ticket. Lets a follow-up mention pick up where the previous one left off.
+- **Trace** — one execution-trace JSON per `agent.Execute` call. Useful for debugging and for the [`gollem view`](https://github.com/m-mizutani/gollem) trace viewer.
+
+| Flag | Env Var | Notes |
+|------|---------|-------|
+| `--agent-storage-fs-dir` | `SHEPHERD_AGENT_STORAGE_FS_DIR` | Local filesystem directory. Mutually exclusive with `--agent-storage-gcs-bucket`. |
+| `--agent-storage-gcs-bucket` | `SHEPHERD_AGENT_STORAGE_GCS_BUCKET` | GCS bucket name. Mutually exclusive with `--agent-storage-fs-dir`. |
+| `--agent-storage-gcs-prefix` | `SHEPHERD_AGENT_STORAGE_GCS_PREFIX` | Object name prefix under the bucket. Default: `shepherd/`. |
+
+Layout under the chosen base (`{fs-dir}` or `gs://{bucket}/{prefix}`):
+
+```
+history/v1/{workspaceID}/{ticketID}.json   # one file per ticket, overwritten each turn
+trace/v1/{traceID}.json                    # one file per agent.Execute call
+```
+
+Each trace's metadata `Labels` include `workspace_id`, `ticket_id`, `channel_id`, and `seq` (the 1-based index of the bot reply within the ticket thread), so traces can be ordered by mention even though `traceID` is a UUID v7.
+
+Save failures from either side are logged but never abort agent execution; load failures (including `ErrHistoryVersionMismatch`) start the agent with a fresh session.
+
 ## How It Works
 
 1. **New message in a monitored channel** → Shepherd creates a ticket with the message as the title/description, then replies in a thread with a link to the ticket in the Web UI
