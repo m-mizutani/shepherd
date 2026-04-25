@@ -42,6 +42,7 @@ Never call `slog.Info()`, `slog.Error()`, `slog.Debug()`, `slog.Warn()` or other
 - Types: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `ci`, `style`, `perf`
 - Up to 2-3 lines are acceptable when a single line cannot adequately convey the change
 - Examples: `feat: add Slack OAuth callback endpoint`, `fix: resolve nil pointer in ticket handler`
+- Do NOT include `Co-Authored-By` trailers
 
 ## Tech Stack
 
