@@ -160,6 +160,47 @@ paths:
         "404":
           description: Not Found
 
+  /api/v1/ws/{workspaceId}/slack/users:
+    get:
+      operationId: listSlackUsers
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  users:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SlackUserInfo"
+                required: [users]
+        "404":
+          description: Not Found
+
+  /api/v1/ws/{workspaceId}/slack/users/{userId}:
+    get:
+      operationId: getSlackUserInfo
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SlackUserInfo"
+        "404":
+          description: Not Found
+
   /api/v1/ws/{workspaceId}/tickets/{ticketId}/comments:
     get:
       operationId: listComments
@@ -235,7 +276,7 @@ components:
 
     FieldType:
       type: string
-      enum: [text, number, select, multi-select, user, date, url]
+      enum: [text, number, select, multi-select, user, multi-user, date, url]
 
     FieldOption:
       type: object
@@ -375,6 +416,19 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/FieldValue"
+
+    SlackUserInfo:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+        imageUrl:
+          type: string
+      required: [id, name]
 
     Comment:
       type: object

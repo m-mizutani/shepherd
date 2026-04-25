@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAuth } from "../contexts/auth-context";
+import { SlackUserName } from "../components/slack-user-name";
 
 export default function WorkspaceSettingsPage() {
   const { workspaceId } = useParams<{ workspaceId: string }>();
@@ -38,7 +39,11 @@ export default function WorkspaceSettingsPage() {
             <span className="text-gray-600">Settings</span>
           </div>
           <div className="flex items-center gap-4">
-            <span className="text-sm text-gray-600">{user?.name}</span>
+            {user?.sub ? (
+              <SlackUserName workspaceId={workspaceId!} userId={user.sub} />
+            ) : (
+              <span className="text-sm text-gray-600">{user?.name}</span>
+            )}
             <button
               onClick={logout}
               className="text-sm text-gray-500 hover:text-gray-700"

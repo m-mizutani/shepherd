@@ -46,8 +46,10 @@ func (c *Client) ReplyThread(ctx context.Context, channelID, threadTS, text stri
 }
 
 type UserInfo struct {
-	Name  string
-	Email string
+	ID       string
+	Name     string
+	Email    string
+	ImageURL string
 }
 
 func (c *Client) GetUserInfo(ctx context.Context, userID string) (*UserInfo, error) {
@@ -66,9 +68,41 @@ func (c *Client) GetUserInfo(ctx context.Context, userID string) (*UserInfo, err
 		name = user.Name
 	}
 	return &UserInfo{
-		Name:  name,
-		Email: user.Profile.Email,
+		ID:       userID,
+		Name:     name,
+		Email:    user.Profile.Email,
+		ImageURL: user.Profile.Image48,
 	}, nil
+}
+
+func (c *Client) ListUsers(ctx context.Context) ([]*UserInfo, error) {
+	users, err := c.api.GetUsersContext(ctx)
+	if err != nil {
+		return nil, goerr.Wrap(err, "failed to list slack users",
+			goerr.Tag(errutil.TagSlackError),
+		)
+	}
+
+	result := make([]*UserInfo, 0, len(users))
+	for _, u := range users {
+		if u.Deleted || u.IsBot {
+			continue
+		}
+		name := u.Profile.DisplayName
+		if name == "" {
+			name = u.RealName
+		}
+		if name == "" {
+			name = u.Name
+		}
+		result = append(result, &UserInfo{
+			ID:       u.ID,
+			Name:     name,
+			Email:    u.Profile.Email,
+			ImageURL: u.Profile.Image48,
+		})
+	}
+	return result, nil
 }
 
 func (c *Client) ReplyTicketCreated(ctx context.Context, channelID, threadTS string, seqNum int64, ticketURL string) error {

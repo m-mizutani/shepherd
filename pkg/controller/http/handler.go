@@ -17,14 +17,16 @@ import (
 type APIHandler struct {
 	workspaceUC *usecase.WorkspaceUseCase
 	ticketUC    *usecase.TicketUseCase
+	slackUC     *usecase.SlackUseCase
 }
 
 var _ ServerInterface = (*APIHandler)(nil)
 
-func NewAPIHandler(registry *model.WorkspaceRegistry, repo interfaces.Repository, notifier usecase.StatusChangeNotifier) *APIHandler {
+func NewAPIHandler(registry *model.WorkspaceRegistry, repo interfaces.Repository, notifier usecase.StatusChangeNotifier, slackUC *usecase.SlackUseCase) *APIHandler {
 	return &APIHandler{
 		workspaceUC: usecase.NewWorkspaceUseCase(registry),
 		ticketUC:    usecase.NewTicketUseCase(repo, registry, notifier),
+		slackUC:     slackUC,
 	}
 }
 
@@ -154,6 +156,54 @@ func (h *APIHandler) DeleteTicket(w http.ResponseWriter, r *http.Request, worksp
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *APIHandler) ListSlackUsers(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId) {
+	if h.slackUC == nil {
+		errutil.HandleHTTP(r.Context(), w, goerr.New("slack integration not configured"), http.StatusServiceUnavailable)
+		return
+	}
+
+	users, err := h.slackUC.ListUsers(r.Context())
+	if err != nil {
+		handleUseCaseError(r.Context(), w, err)
+		return
+	}
+
+	resp := make([]SlackUserInfo, 0, len(users))
+	for _, u := range users {
+		info := SlackUserInfo{Id: u.ID, Name: u.Name}
+		if u.Email != "" {
+			info.Email = &u.Email
+		}
+		if u.ImageURL != "" {
+			info.ImageUrl = &u.ImageURL
+		}
+		resp = append(resp, info)
+	}
+	writeJSON(r.Context(), w, http.StatusOK, map[string][]SlackUserInfo{"users": resp})
+}
+
+func (h *APIHandler) GetSlackUserInfo(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId, userId string) {
+	if h.slackUC == nil {
+		errutil.HandleHTTP(r.Context(), w, goerr.New("slack integration not configured"), http.StatusServiceUnavailable)
+		return
+	}
+
+	info, err := h.slackUC.GetUserInfo(r.Context(), userId)
+	if err != nil {
+		handleUseCaseError(r.Context(), w, err)
+		return
+	}
+
+	resp := SlackUserInfo{Id: userId, Name: info.Name}
+	if info.Email != "" {
+		resp.Email = &info.Email
+	}
+	if info.ImageURL != "" {
+		resp.ImageUrl = &info.ImageURL
+	}
+	writeJSON(r.Context(), w, http.StatusOK, resp)
 }
 
 func (h *APIHandler) ListComments(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId, ticketId TicketId) {

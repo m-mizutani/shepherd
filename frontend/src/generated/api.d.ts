@@ -100,6 +100,38 @@ export interface paths {
         patch: operations["updateTicket"];
         trace?: never;
     };
+    "/api/v1/ws/{workspaceId}/slack/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listSlackUsers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ws/{workspaceId}/slack/users/{userId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getSlackUserInfo"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ws/{workspaceId}/tickets/{ticketId}/comments": {
         parameters: {
             query?: never;
@@ -136,7 +168,7 @@ export interface components {
             closedStatusIds: string[];
         };
         /** @enum {string} */
-        FieldType: "text" | "number" | "select" | "multi-select" | "user" | "date" | "url";
+        FieldType: "text" | "number" | "select" | "multi-select" | "user" | "multi-user" | "date" | "url";
         FieldOption: {
             id: string;
             name: string;
@@ -198,6 +230,12 @@ export interface components {
             statusId?: string;
             assigneeId?: string;
             fields?: components["schemas"]["FieldValue"][];
+        };
+        SlackUserInfo: {
+            id: string;
+            name: string;
+            email?: string;
+            imageUrl?: string;
         };
         Comment: {
             id: string;
@@ -468,6 +506,67 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Ticket"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listSlackUsers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        users: components["schemas"]["SlackUserInfo"][];
+                    };
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getSlackUserInfo: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                userId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlackUserInfo"];
                 };
             };
             /** @description Not Found */

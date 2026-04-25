@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/url"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -17,10 +18,11 @@ import (
 )
 
 type SlackUseCase struct {
-	repo     interfaces.Repository
-	registry *model.WorkspaceRegistry
-	slack    *slackService.Client
-	baseURL  string
+	repo      interfaces.Repository
+	registry  *model.WorkspaceRegistry
+	slack     *slackService.Client
+	baseURL   string
+	userCache sync.Map
 }
 
 func NewSlackUseCase(repo interfaces.Repository, registry *model.WorkspaceRegistry, slack *slackService.Client, baseURL string) *SlackUseCase {
@@ -205,6 +207,36 @@ func (uc *SlackUseCase) HandleMessageChanged(ctx context.Context, channelID, mes
 	)
 
 	return nil
+}
+
+func (uc *SlackUseCase) ListUsers(ctx context.Context) ([]*slackService.UserInfo, error) {
+	return uc.slack.ListUsers(ctx)
+}
+
+type userInfoCacheEntry struct {
+	info      *slackService.UserInfo
+	expiresAt time.Time
+}
+
+func (uc *SlackUseCase) GetUserInfo(ctx context.Context, userID string) (*slackService.UserInfo, error) {
+	if v, ok := uc.userCache.Load(userID); ok {
+		entry := v.(*userInfoCacheEntry)
+		if time.Now().Before(entry.expiresAt) {
+			return entry.info, nil
+		}
+		uc.userCache.Delete(userID)
+	}
+
+	info, err := uc.slack.GetUserInfo(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	uc.userCache.Store(userID, &userInfoCacheEntry{
+		info:      info,
+		expiresAt: time.Now().Add(3 * time.Minute),
+	})
+	return info, nil
 }
 
 func truncate(s string, maxLen int) string {
