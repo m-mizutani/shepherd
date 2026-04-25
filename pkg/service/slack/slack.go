@@ -76,31 +76,38 @@ func (c *Client) GetUserInfo(ctx context.Context, userID string) (*UserInfo, err
 }
 
 func (c *Client) ListUsers(ctx context.Context) ([]*UserInfo, error) {
-	users, err := c.api.GetUsersContext(ctx)
-	if err != nil {
-		return nil, goerr.Wrap(err, "failed to list slack users",
-			goerr.Tag(errutil.TagSlackError),
-		)
-	}
+	var result []*UserInfo
+	p := c.api.GetUsersPaginated(slackgo.GetUsersOptionLimit(200))
+	for {
+		var err error
+		p, err = p.Next(ctx)
+		if err != nil {
+			if p.Done(err) {
+				break
+			}
+			return nil, goerr.Wrap(err, "failed to list slack users",
+				goerr.Tag(errutil.TagSlackError),
+			)
+		}
 
-	result := make([]*UserInfo, 0, len(users))
-	for _, u := range users {
-		if u.Deleted || u.IsBot {
-			continue
+		for _, u := range p.Users {
+			if u.Deleted || u.IsBot {
+				continue
+			}
+			name := u.Profile.DisplayName
+			if name == "" {
+				name = u.RealName
+			}
+			if name == "" {
+				name = u.Name
+			}
+			result = append(result, &UserInfo{
+				ID:       u.ID,
+				Name:     name,
+				Email:    u.Profile.Email,
+				ImageURL: u.Profile.Image48,
+			})
 		}
-		name := u.Profile.DisplayName
-		if name == "" {
-			name = u.RealName
-		}
-		if name == "" {
-			name = u.Name
-		}
-		result = append(result, &UserInfo{
-			ID:       u.ID,
-			Name:     name,
-			Email:    u.Profile.Email,
-			ImageURL: u.Profile.Image48,
-		})
 	}
 	return result, nil
 }

@@ -7,10 +7,12 @@ import { SlackUserName } from "../components/slack-user-name";
 import { SlackMarkdown } from "../components/slack-markdown";
 import { UserPicker } from "../components/user-picker";
 
+const ALLOWED_URL_PROTOCOLS = ["http:", "https:", "mailto:", "ssh:", "ftp:", "ftps:"];
+
 function isValidURL(s: string): boolean {
   try {
-    new URL(s);
-    return true;
+    const url = new URL(s);
+    return ALLOWED_URL_PROTOCOLS.includes(url.protocol);
   } catch {
     return false;
   }
@@ -211,7 +213,9 @@ export default function TicketDetailPage() {
           />
         );
       case "multi-user": {
-        const ids = Array.isArray(value) ? value : [value];
+        const ids = (Array.isArray(value) ? value : [value]).filter(
+          (v) => v !== null && v !== undefined && v !== "",
+        );
         return (
           <div className="flex flex-col gap-1">
             {ids.map((id) => (
@@ -328,7 +332,9 @@ export default function TicketDetailPage() {
             onChange={(e) =>
               setEditFields({
                 ...editFields,
-                [fieldId]: e.target.valueAsNumber || "",
+                [fieldId]: Number.isNaN(e.target.valueAsNumber)
+                  ? ""
+                  : e.target.valueAsNumber,
               })
             }
             className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
