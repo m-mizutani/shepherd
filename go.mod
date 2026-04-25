@@ -14,7 +14,6 @@ require (
 	github.com/m-mizutani/goerr/v2 v2.0.1
 	github.com/m-mizutani/gt v0.2.1
 	github.com/m-mizutani/masq v0.2.1
-	github.com/oapi-codegen/oapi-codegen/v2 v2.4.1
 	github.com/oapi-codegen/runtime v1.4.0
 	github.com/pelletier/go-toml/v2 v2.3.0
 	github.com/slack-go/slack v0.23.0
@@ -56,6 +55,7 @@ require (
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.21 // indirect
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826 // indirect
+	github.com/oapi-codegen/oapi-codegen/v2 v2.4.1 // indirect
 	github.com/perimeterx/marshmallow v1.1.5 // indirect
 	github.com/segmentio/asm v1.2.1 // indirect
 	github.com/speakeasy-api/jsonpath v0.6.0 // indirect
@@ -83,3 +83,5 @@ require (
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+tool github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen
