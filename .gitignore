@@ -49,3 +49,5 @@ frontend/e2e/test-results/
 
 # Task runner cache
 .task/
+
+.pnpm-store/
