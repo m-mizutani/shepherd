@@ -48,6 +48,9 @@ Never call `slog.Info()`, `slog.Error()`, `slog.Debug()`, `slog.Warn()` or other
 ## Pull Request Descriptions
 
 - **Write PR titles and bodies in English only. No exceptions, even when conversing in another language.**
+- PR titles MUST follow Semantic naming: `<type>: <subject>` (same convention as commit messages)
+- Types: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `ci`, `style`, `perf`
+- Examples: `feat: add Slack OAuth callback endpoint`, `fix: resolve nil pointer in ticket handler`
 - Keep titles short (under 70 characters) and use the body for details
 - Include a Summary section and a Test plan section
 
