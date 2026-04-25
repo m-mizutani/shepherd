@@ -8,6 +8,7 @@ import { Skeleton } from "../components/ui/skeleton";
 import { ErrorBox } from "../components/ui/error-box";
 import { EmptyState } from "../components/ui/empty-state";
 import { avatarColorFor } from "../components/ui/avatar";
+import { useTranslation } from "../i18n";
 
 function initialsOf(name: string): string {
   return (
@@ -22,6 +23,7 @@ function initialsOf(name: string): string {
 }
 
 export default function WorkspaceListPage() {
+  const { t } = useTranslation();
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["workspaces"],
     queryFn: async () => {
@@ -39,13 +41,13 @@ export default function WorkspaceListPage() {
         <div className="flex items-baseline justify-between mb-4">
           <div>
             <h1 className="m-0 text-[22px] font-semibold tracking-[-0.018em] text-ink-1">
-              Workspaces
+              {t("workspaceListTitle")}
             </h1>
             {!isLoading && (
               <div className="text-[12px] text-ink-3 mt-1">
                 {workspaces.length > 0
-                  ? `Pick a board to triage. You belong to ${workspaces.length}.`
-                  : "No workspaces are available to you yet."}
+                  ? t("workspaceListSubtitle", { count: workspaces.length })
+                  : t("workspaceListSubtitleEmpty")}
               </div>
             )}
           </div>
@@ -67,8 +69,8 @@ export default function WorkspaceListPage() {
 
         {error && (
           <ErrorBox
-            title="Failed to load workspaces"
-            message="Check that the backend is reachable and try again."
+            title={t("workspaceListLoadFailed")}
+            message={t("workspaceListLoadFailedHint")}
             onRetry={() => refetch()}
           />
         )}
@@ -118,16 +120,8 @@ export default function WorkspaceListPage() {
           <Card className="p-2">
             <EmptyState
               icon="folder"
-              title="No workspaces yet"
-              description={
-                <>
-                  Workspaces are created by admins from the Slack{" "}
-                  <code className="font-mono text-brand-ink">
-                    /shepherd setup
-                  </code>{" "}
-                  command. Ask your admin to add you to one.
-                </>
-              }
+              title={t("workspaceListEmpty")}
+              description={t("workspaceListEmptyDescription")}
             />
           </Card>
         )}
@@ -139,14 +133,10 @@ export default function WorkspaceListPage() {
             </div>
             <div className="flex-1">
               <div className="text-[14px] font-semibold text-ink-1">
-                Looking for another board?
+                {t("workspaceListAnotherBoardTitle")}
               </div>
               <div className="text-[12px] text-ink-3 mt-0.5">
-                Workspaces are created by admins from the Slack{" "}
-                <code className="font-mono text-brand-ink">
-                  /shepherd setup
-                </code>{" "}
-                command.
+                {t("workspaceListAnotherBoardHint")}
               </div>
             </div>
           </div>

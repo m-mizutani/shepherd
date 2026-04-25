@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { Icon } from "./ui/icon";
 import { cn } from "../lib/utils";
+import { useTranslation } from "../i18n";
 
 interface Item {
   id: string;
@@ -20,6 +21,7 @@ export function CommandPalette() {
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
   const { workspaceId } = useParams<{ workspaceId: string }>();
+  const { t } = useTranslation();
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -72,20 +74,20 @@ export function CommandPalette() {
     if (workspaceId) {
       result.push({
         id: "go-tickets",
-        label: "Go to Tickets",
+        label: t("paletteGoToTickets"),
         icon: <Icon name="inbox" size={13} />,
         onSelect: () => navigate(`/ws/${workspaceId}/tickets`),
       });
       result.push({
         id: "go-settings",
-        label: "Go to Settings",
+        label: t("paletteGoToSettings"),
         icon: <Icon name="settings" size={13} />,
         onSelect: () => navigate(`/ws/${workspaceId}/settings`),
       });
     }
     result.push({
       id: "go-workspaces",
-      label: "Switch workspace",
+      label: t("paletteSwitchWorkspace"),
       icon: <Icon name="folder" size={13} />,
       onSelect: () => navigate("/"),
     });
@@ -93,7 +95,7 @@ export function CommandPalette() {
     workspaces?.workspaces?.forEach((w) => {
       result.push({
         id: `ws-${w.id}`,
-        label: `Workspace · ${w.name}`,
+        label: t("paletteWorkspaceLabel", { name: w.name }),
         hint: w.id,
         icon: <span className="w-2 h-2 rounded-[2px] bg-brand inline-block" />,
         onSelect: () => navigate(`/ws/${w.id}/tickets`),
@@ -101,18 +103,18 @@ export function CommandPalette() {
     });
 
     if (workspaceId) {
-      tickets?.tickets?.forEach((t) => {
+      tickets?.tickets?.forEach((tk) => {
         result.push({
-          id: `t-${t.id}`,
-          label: `#${t.seqNum} ${t.title}`,
-          hint: "Open ticket",
+          id: `t-${tk.id}`,
+          label: `#${tk.seqNum} ${tk.title}`,
+          hint: t("paletteOpenTicket"),
           icon: <Icon name="hash" size={13} />,
-          onSelect: () => navigate(`/ws/${workspaceId}/tickets/${t.id}`),
+          onSelect: () => navigate(`/ws/${workspaceId}/tickets/${tk.id}`),
         });
       });
     }
     return result;
-  }, [workspaceId, workspaces, tickets, navigate]);
+  }, [workspaceId, workspaces, tickets, navigate, t]);
 
   const filtered = useMemo(() => {
     if (!query.trim()) return items.slice(0, 30);
@@ -148,7 +150,7 @@ export function CommandPalette() {
         onMouseDown={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
-        aria-label="Command palette"
+        aria-label={t("paletteTitle")}
         className="bg-bg-elev border border-line rounded-4 shadow-pop w-full max-w-xl overflow-hidden"
       >
         <div className="flex items-center gap-2 px-3 py-2 border-b border-line">
@@ -169,7 +171,7 @@ export function CommandPalette() {
                 select(highlight);
               }
             }}
-            placeholder="Search tickets, jump to a workspace…"
+            placeholder={t("palettePlaceholder")}
             className="flex-1 bg-transparent border-0 outline-none text-[14px] text-ink-1 placeholder:text-ink-4"
           />
           <span className="font-mono text-[10px] px-1.5 py-0.5 rounded-1 bg-bg-sunken border border-line text-ink-3">
@@ -179,7 +181,7 @@ export function CommandPalette() {
         <ul className="max-h-[60vh] overflow-y-auto p-1">
           {filtered.length === 0 && (
             <li className="px-3 py-6 text-center text-[12.5px] text-ink-4">
-              No matches
+              {t("paletteEmpty")}
             </li>
           )}
           {filtered.map((it, i) => (

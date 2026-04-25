@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -13,6 +14,7 @@ import (
 	httpController "github.com/m-mizutani/shepherd/pkg/controller/http"
 	"github.com/m-mizutani/shepherd/pkg/utils/async"
 	"github.com/m-mizutani/shepherd/pkg/utils/errutil"
+	"github.com/m-mizutani/shepherd/pkg/utils/i18n"
 	"github.com/m-mizutani/shepherd/pkg/utils/logging"
 	"github.com/urfave/cli/v3"
 )
@@ -21,6 +23,7 @@ func cmdServe() *cli.Command {
 	var (
 		addr    string
 		baseURL string
+		lang    string
 
 		workspaceCfg config.WorkspaceFiles
 		repoCfg      config.Repository
@@ -42,6 +45,13 @@ func cmdServe() *cli.Command {
 			Sources:     cli.EnvVars("SHEPHERD_BASE_URL"),
 			Destination: &baseURL,
 		},
+		&cli.StringFlag{
+			Name:        "lang",
+			Usage:       "Backend message language (en, ja)",
+			Sources:     cli.EnvVars("SHEPHERD_LANG"),
+			Value:       "en",
+			Destination: &lang,
+		},
 	}
 	flags = append(flags, workspaceCfg.Flags()...)
 	flags = append(flags, repoCfg.Flags()...)
@@ -54,6 +64,12 @@ func cmdServe() *cli.Command {
 		Flags: flags,
 		Action: func(ctx context.Context, c *cli.Command) error {
 			logger := logging.Default()
+
+			translator, err := i18n.NewTranslator(i18n.Lang(lang))
+			if err != nil {
+				return goerr.Wrap(err, "invalid --lang value")
+			}
+			ctx = i18n.With(ctx, translator)
 
 			sentryCleanup, err := sentryCfg.Configure()
 			if err != nil {
@@ -109,6 +125,7 @@ func cmdServe() *cli.Command {
 				Addr:              addr,
 				Handler:           httpServer,
 				ReadHeaderTimeout: 10 * time.Second,
+				BaseContext:       func(_ net.Listener) context.Context { return ctx },
 			}
 
 			errCh := make(chan error, 1)

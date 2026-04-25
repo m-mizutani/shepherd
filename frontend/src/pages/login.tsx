@@ -2,6 +2,7 @@ import { useAuth } from "../contexts/auth-context";
 import { Navigate } from "react-router-dom";
 import { logoSrc } from "../components/ui/logo";
 import { Skeleton } from "../components/ui/skeleton";
+import { useTranslation } from "../i18n";
 
 function SlackLogo({ size = 16 }: { size?: number }) {
   return (
@@ -20,6 +21,7 @@ function SlackLogo({ size = 16 }: { size?: number }) {
 
 export default function LoginPage() {
   const { user, isLoading } = useAuth();
+  const { t } = useTranslation();
 
   if (isLoading) {
     return (
@@ -46,31 +48,31 @@ export default function LoginPage() {
           <div className="w-[72px] h-[72px] mx-auto mb-4 rounded-[18px] bg-brand-soft border border-[#f1d6b6] flex items-center justify-center">
             <img
               src={logoSrc}
-              alt="Shepherd"
+              alt={t("appName")}
               className="w-16 h-16 object-contain"
             />
           </div>
           <h1 className="m-0 mb-1 text-[22px] font-semibold tracking-[-0.02em] text-ink-1">
-            Shepherd
+            {t("appName")}
           </h1>
           <p className="m-0 mb-5 text-ink-3 text-[13.5px]">
-            Slack-native ticket triage for the teams who own the pager.
+            {t("loginSubtitle")}
           </p>
           <a
             href="/api/auth/login"
             className="w-full inline-flex items-center justify-center gap-2 h-[38px] px-4 rounded-2 bg-white text-ink-1 border border-ink-1 text-[14px] font-medium hover:bg-[#faf8f3] transition-colors"
           >
             <SlackLogo />
-            Sign in with Slack
+            {t("loginSlackButton")}
           </a>
           <div className="mt-4 text-[11.5px] text-ink-4">
-            By signing in you agree to the workspace's usage policy.
+            {t("loginPolicyNote")}
           </div>
         </div>
       </div>
       <div className="py-3.5 text-center text-[11.5px] text-ink-4">
-        Shepherd · status:{" "}
-        <span className="text-success">● operational</span>
+        {t("loginFooterStatus")}{" "}
+        <span className="text-success">● {t("appOperational")}</span>
       </div>
     </div>
   );

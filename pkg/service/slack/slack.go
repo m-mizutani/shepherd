@@ -2,10 +2,10 @@ package slack
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/m-mizutani/goerr/v2"
 	"github.com/m-mizutani/shepherd/pkg/utils/errutil"
+	"github.com/m-mizutani/shepherd/pkg/utils/i18n"
 	slackgo "github.com/slack-go/slack"
 )
 
@@ -113,12 +113,12 @@ func (c *Client) ListUsers(ctx context.Context) ([]*UserInfo, error) {
 }
 
 func (c *Client) ReplyTicketCreated(ctx context.Context, channelID, threadTS string, seqNum int64, ticketURL string) error {
-	text := fmt.Sprintf("<%s|Ticket #%d> created", ticketURL, seqNum)
+	text := i18n.From(ctx).T(i18n.MsgTicketCreated, "url", ticketURL, "id", seqNum)
 	return c.ReplyThread(ctx, channelID, threadTS, text)
 }
 
 func (c *Client) ReplyStatusChange(ctx context.Context, channelID, threadTS, oldStatusName, newStatusName string) error {
-	text := fmt.Sprintf("Status: *%s* → *%s*", oldStatusName, newStatusName)
+	text := i18n.From(ctx).T(i18n.MsgStatusChange, "old", oldStatusName, "new", newStatusName)
 	_, _, err := c.api.PostMessageContext(ctx, channelID,
 		slackgo.MsgOptionTS(threadTS),
 		slackgo.MsgOptionBlocks(

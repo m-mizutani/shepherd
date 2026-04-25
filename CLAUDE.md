@@ -70,6 +70,24 @@ Never call `slog.Info()`, `slog.Error()`, `slog.Debug()`, `slog.Warn()` or other
 - Error tracking: Sentry (getsentry/sentry-go)
 - Frontend is embedded into Go binary via go:embed
 
+## Internationalization (CRITICAL)
+
+Whenever you add, modify, or move user-facing string literals, you MUST route them through the i18n layer instead of hardcoding text in the source. This applies to both backend and frontend.
+
+**Backend (Go):**
+- Slack notifications and any other end-user copy must be emitted via `i18n.From(ctx).T(key, "name", value, ...)` from `pkg/utils/i18n/`.
+- Add the key to `pkg/utils/i18n/keys.go` and provide translations for **every** supported language (`en.go`, `ja.go`). Missing-key parity is enforced by tests in `pkg/utils/i18n/i18n_test.go`.
+- The active language is decided once at startup from `--lang` / `SHEPHERD_LANG`; do not invent per-request language switches.
+- Out of scope (keep English): `slog` log lines, internal `goerr` messages, HTTP error response bodies — these are operator-facing, not end-user-facing.
+
+**Frontend (TypeScript / React):**
+- All user-visible strings must come from `useTranslation().t("key", { ...params })`. Never hardcode English (or Japanese) text in JSX, `placeholder`, `aria-label`, `title`, toast/error messages, etc.
+- Add the key to `frontend/src/i18n/keys.ts` and supply translations in **both** `en.ts` and `ja.ts`. The `Messages` type forces parity at compile time — a missing entry is a `tsc` error.
+- Use `{name}` placeholders for interpolation (e.g., `"Page {current} of {total}"`); never build sentences via string concatenation, since word order differs between languages.
+- Strings that are intentionally untranslatable (URLs, code identifiers, brand names like `Shepherd`, Slack channel IDs) may stay as literals.
+
+If you find a hardcoded user-facing string while editing nearby code, take the opportunity to convert it — leaving them mixed defeats the purpose of the i18n layer.
+
 ## Project Structure
 
 - `pkg/cli/` — CLI commands (serve, migrate, validate)

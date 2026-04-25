@@ -14,14 +14,20 @@ import { Popover, PopoverHeader, PopoverItem, PopoverSep } from "../components/u
 import { Dialog } from "../components/ui/dialog";
 import { SlackUserName } from "../components/slack-user-name";
 import { cn } from "../lib/utils";
+import { useTranslation } from "../i18n";
+import type { MsgKey } from "../i18n/keys";
 
 const COLUMN_KEY = (wsId: string) => `shepherd.tickets.cols.${wsId}`;
-const SORT_OPTIONS = [
-  { value: "updatedAt", label: "Updated", icon: "sort" as IconName },
-  { value: "createdAt", label: "Created", icon: "cal" as IconName },
-  { value: "seqNum", label: "#", icon: "hash" as IconName },
-  { value: "statusId", label: "Status", icon: "flag" as IconName },
-] as const;
+const SORT_OPTIONS: ReadonlyArray<{
+  value: "updatedAt" | "createdAt" | "seqNum" | "statusId";
+  labelKey: MsgKey;
+  icon: IconName;
+}> = [
+  { value: "updatedAt", labelKey: "ticketListSortUpdated", icon: "sort" },
+  { value: "createdAt", labelKey: "ticketListSortCreated", icon: "cal" },
+  { value: "seqNum", labelKey: "ticketListSortSeq", icon: "hash" },
+  { value: "statusId", labelKey: "ticketListSortStatus", icon: "flag" },
+];
 type SortKey = (typeof SORT_OPTIONS)[number]["value"];
 const PAGE_SIZE = 25;
 
@@ -39,6 +45,7 @@ export default function TicketListPage() {
   const { workspaceId } = useParams<{ workspaceId: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { t } = useTranslation();
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
@@ -199,7 +206,7 @@ export default function TicketListPage() {
 
   return (
     <PageShell
-      crumbs={[{ label: "Tickets" }]}
+      crumbs={[{ label: t("ticketListCrumb") }]}
       showSettings
     >
       <div className="max-w-[1240px] mx-auto px-8 pt-5 pb-10">
@@ -207,10 +214,14 @@ export default function TicketListPage() {
         <div className="flex items-center justify-between mb-3.5">
           <div className="flex items-baseline gap-2.5">
             <h1 className="m-0 text-[22px] font-semibold tracking-[-0.018em] text-ink-1">
-              Tickets
+              {t("ticketListTitle")}
             </h1>
             <div className="text-[12px] text-ink-3">
-              {!isLoading && `${filtered.length} of ${tickets.length}`}
+              {!isLoading &&
+                t("ticketListCount", {
+                  visible: filtered.length,
+                  total: tickets.length,
+                })}
             </div>
           </div>
           <div className="flex gap-2">
@@ -219,7 +230,7 @@ export default function TicketListPage() {
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search tickets, #IDs…"
+                placeholder={t("ticketListSearchPlaceholder")}
                 className="flex-1 bg-transparent border-0 outline-none text-ink-1 placeholder:text-ink-4"
               />
               <span className="font-mono text-[10px] px-1 py-px rounded-1 bg-bg-sunken border border-line text-ink-3">
@@ -227,7 +238,7 @@ export default function TicketListPage() {
               </span>
             </label>
             <Button variant="primary" onClick={() => setNewTicketOpen(true)}>
-              <Icon name="plus" size={13} /> New ticket
+              <Icon name="plus" size={13} /> {t("ticketListNew")}
             </Button>
           </div>
         </div>
@@ -236,11 +247,11 @@ export default function TicketListPage() {
         <div className="flex items-center gap-1.5 px-2.5 py-2 bg-bg-elev border border-line border-b-0 rounded-t-3 flex-wrap">
           <FilterChip
             icon="filter"
-            label="Status"
+            label={t("ticketListFilterStatus")}
             value={statusFilter ? statusMap.get(statusFilter)?.name : undefined}
             popover={(close) => (
               <>
-                <PopoverHeader>Filter by status</PopoverHeader>
+                <PopoverHeader>{t("ticketListFilterStatusHeader")}</PopoverHeader>
                 <PopoverItem
                   active={statusFilter === null}
                   onClick={() => {
@@ -248,7 +259,7 @@ export default function TicketListPage() {
                     close();
                   }}
                 >
-                  Any status
+                  {t("ticketListAnyStatus")}
                 </PopoverItem>
                 <PopoverSep />
                 {configData?.statuses?.map((s) => (
@@ -273,12 +284,12 @@ export default function TicketListPage() {
           />
           <FilterChip
             icon="inbox"
-            label="State"
+            label={t("ticketListFilterState")}
             value={
               closedFilter === "open"
-                ? "Open"
+                ? t("ticketListStateOpen")
                 : closedFilter === "closed"
-                  ? "Closed"
+                  ? t("ticketListStateClosed")
                   : undefined
             }
             popover={(close) => (
@@ -290,7 +301,7 @@ export default function TicketListPage() {
                     close();
                   }}
                 >
-                  All
+                  {t("ticketListStateAll")}
                 </PopoverItem>
                 <PopoverItem
                   active={closedFilter === "open"}
@@ -299,7 +310,7 @@ export default function TicketListPage() {
                     close();
                   }}
                 >
-                  Open only
+                  {t("ticketListStateOpenOnly")}
                 </PopoverItem>
                 <PopoverItem
                   active={closedFilter === "closed"}
@@ -308,7 +319,7 @@ export default function TicketListPage() {
                     close();
                   }}
                 >
-                  Closed only
+                  {t("ticketListStateClosedOnly")}
                 </PopoverItem>
               </>
             )}
@@ -324,13 +335,13 @@ export default function TicketListPage() {
                 onClick={toggle}
                 className="h-6 inline-flex items-center gap-1 px-2 text-[12px] text-ink-4 hover:text-ink-1"
               >
-                <Icon name="plus" size={11} /> Column
+                <Icon name="plus" size={11} /> {t("ticketListColumn")}
               </button>
             )}
           >
             {(close) => (
               <>
-                <PopoverHeader>Show field columns</PopoverHeader>
+                <PopoverHeader>{t("ticketListColumnHeader")}</PopoverHeader>
                 {configData?.fields?.length ? (
                   configData.fields.map((f) => {
                     const checked = extraFieldCols.includes(f.id);
@@ -353,12 +364,14 @@ export default function TicketListPage() {
                     );
                   })
                 ) : (
-                  <div className="px-2 py-2 text-[12px] text-ink-4">No fields</div>
+                  <div className="px-2 py-2 text-[12px] text-ink-4">
+                    {t("ticketListNoFields")}
+                  </div>
                 )}
                 <PopoverSep />
                 <PopoverItem onClick={() => { setExtraFieldCols([]); close(); }}>
                   <Icon name="x" size={12} className="text-ink-4" />
-                  Clear all
+                  {t("ticketListColumnClear")}
                 </PopoverItem>
               </>
             )}
@@ -375,14 +388,17 @@ export default function TicketListPage() {
                 className="h-6 inline-flex items-center gap-1.5 px-2 text-[12px] text-ink-2 border border-transparent hover:bg-bg-sunken rounded-1"
               >
                 <Icon name="sort" size={12} />{" "}
-                {SORT_OPTIONS.find((o) => o.value === sortKey)?.label}{" "}
+                {(() => {
+                  const opt = SORT_OPTIONS.find((o) => o.value === sortKey);
+                  return opt ? t(opt.labelKey) : "";
+                })()}{" "}
                 {sortDesc ? "↓" : "↑"}
               </button>
             )}
           >
             {(close) => (
               <>
-                <PopoverHeader>Sort by</PopoverHeader>
+                <PopoverHeader>{t("ticketListSortBy")}</PopoverHeader>
                 {SORT_OPTIONS.map((o) => (
                   <PopoverItem
                     key={o.value}
@@ -393,13 +409,13 @@ export default function TicketListPage() {
                     }}
                   >
                     <Icon name={o.icon} size={12} className="text-ink-4" />
-                    {o.label}
+                    {t(o.labelKey)}
                   </PopoverItem>
                 ))}
                 <PopoverSep />
                 <PopoverItem onClick={() => { setSortDesc(!sortDesc); close(); }}>
                   <Icon name={sortDesc ? "chevron" : "chevronUp"} size={12} className="text-ink-4" />
-                  {sortDesc ? "Descending" : "Ascending"}
+                  {sortDesc ? t("ticketListSortDesc") : t("ticketListSortAsc")}
                 </PopoverItem>
               </>
             )}
@@ -423,7 +439,7 @@ export default function TicketListPage() {
           {error && (
             <div className="p-4">
               <ErrorBox
-                title="Failed to load tickets"
+                title={t("ticketListLoadFailed")}
                 onRetry={() => refetch()}
               />
             </div>
@@ -432,34 +448,34 @@ export default function TicketListPage() {
             <table className="w-full border-separate border-spacing-0">
               <thead>
                 <tr>
-                  <Th width={56}>#</Th>
-                  <Th>Title</Th>
-                  <Th width={160}>Status</Th>
+                  <Th width={56}>{t("ticketListThSeq")}</Th>
+                  <Th>{t("ticketListThTitle")}</Th>
+                  <Th width={160}>{t("ticketListThStatus")}</Th>
                   {extraFieldCols.map((id) => (
                     <Th key={id} width={140}>
                       {fieldMap.get(id)?.name ?? id}
                     </Th>
                   ))}
-                  <Th width={140}>Assignee</Th>
+                  <Th width={140}>{t("ticketListThAssignee")}</Th>
                   <Th width={100} align="right">
-                    Updated
+                    {t("ticketListThUpdated")}
                   </Th>
                 </tr>
               </thead>
               <tbody>
-                {pageRows.map((t) => {
-                  const status = statusMap.get(t.statusId);
+                {pageRows.map((tk) => {
+                  const status = statusMap.get(tk.statusId);
                   return (
                     <tr
-                      key={t.id}
+                      key={tk.id}
                       onClick={() =>
-                        navigate(`/ws/${workspaceId}/tickets/${t.id}`)
+                        navigate(`/ws/${workspaceId}/tickets/${tk.id}`)
                       }
                       className="cursor-pointer hover:bg-[#faf8f3] [&_td]:border-b [&_td]:border-line"
                     >
-                      <Td className="font-mono text-ink-4">#{t.seqNum}</Td>
+                      <Td className="font-mono text-ink-4">#{tk.seqNum}</Td>
                       <Td>
-                        <span className="font-medium text-ink-1">{t.title}</span>
+                        <span className="font-medium text-ink-1">{tk.title}</span>
                       </Td>
                       <Td>
                         {status && (
@@ -467,23 +483,23 @@ export default function TicketListPage() {
                         )}
                       </Td>
                       {extraFieldCols.map((id) => {
-                        const fv = t.fields?.find((f) => f.fieldId === id);
+                        const fv = tk.fields?.find((f) => f.fieldId === id);
                         return <Td key={id}>{renderField(id, fv?.value)}</Td>;
                       })}
                       <Td>
-                        {t.assigneeId ? (
+                        {tk.assigneeId ? (
                           <SlackUserName
                             workspaceId={workspaceId!}
-                            userId={t.assigneeId}
+                            userId={tk.assigneeId}
                           />
                         ) : (
                           <span className="text-ink-4 text-[12.5px] italic">
-                            Unassigned
+                            {t("ticketListUnassigned")}
                           </span>
                         )}
                       </Td>
                       <Td className="text-right text-ink-3 text-[12px] font-mono">
-                        {timeAgo(t.updatedAt)}
+                        {timeAgo(tk.updatedAt)}
                       </Td>
                     </tr>
                   );
@@ -494,22 +510,20 @@ export default function TicketListPage() {
           {!isLoading && !error && filtered.length === 0 && (
             <EmptyState
               icon="inbox"
-              title="No tickets here yet"
+              title={t("ticketListEmpty")}
               description={
                 tickets.length === 0 ? (
                   <>
-                    Slack messages posted in tracked channels become tickets
-                    automatically.{" "}
+                    {t("ticketListEmptyHintTracked")}{" "}
                     <Link
                       to={`/ws/${workspaceId}/settings`}
                       className="text-brand-ink underline"
                     >
-                      Open settings
-                    </Link>{" "}
-                    to see which channels are tracked.
+                      {t("ticketListEmptyOpenSettings")}
+                    </Link>
                   </>
                 ) : (
-                  "Try clearing filters or adjusting your search."
+                  t("ticketListEmptyHintFiltered")
                 )
               }
             />
@@ -520,8 +534,11 @@ export default function TicketListPage() {
         {!isLoading && !error && filtered.length > 0 && (
           <div className="flex items-center justify-between mt-3.5">
             <div className="text-[12px] text-ink-3">
-              Showing {pageStart + 1}–{Math.min(pageStart + PAGE_SIZE, filtered.length)} of{" "}
-              {filtered.length}
+              {t("ticketListPaginationShowing", {
+                from: pageStart + 1,
+                to: Math.min(pageStart + PAGE_SIZE, filtered.length),
+                total: filtered.length,
+              })}
             </div>
             <div className="flex gap-1.5">
               <Button
@@ -627,6 +644,7 @@ function FilterChip({
   popover: (close: () => void) => React.ReactNode;
   onClear?: () => void;
 }) {
+  const { t } = useTranslation();
   const active = !!value;
   return (
     <Popover
@@ -662,7 +680,7 @@ function FilterChip({
                   onClear();
                 }
               }}
-              aria-label={`Clear ${label} filter`}
+              aria-label={t("ticketListClearFilter", { label })}
               className="text-ink-3 hover:text-ink-1 ml-0.5"
             >
               <Icon name="x" size={10} />
@@ -689,6 +707,7 @@ function NewTicketDialog({
   defaultStatusId?: string;
   onCreated: (ticketId: string) => void;
 }) {
+  const { t } = useTranslation();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const create = useMutation({
@@ -727,48 +746,55 @@ function NewTicketDialog({
     <Dialog
       open={open}
       onClose={onClose}
-      title="New ticket"
+      title={t("ticketDialogNewTitle")}
       width={520}
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
-            Cancel
+            {t("btnCancel")}
           </Button>
           <Button
             variant="primary"
             disabled={!title.trim() || create.isPending}
             onClick={() => create.mutate()}
           >
-            {create.isPending ? "Creating…" : "Create ticket"}
+            {create.isPending
+              ? t("ticketDialogCreating")
+              : t("ticketDialogCreate")}
           </Button>
         </>
       }
     >
       <div className="space-y-3">
         <label className="block">
-          <span className="text-[12px] font-medium text-ink-3">Title</span>
+          <span className="text-[12px] font-medium text-ink-3">
+            {t("ticketDialogTitleLabel")}
+          </span>
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             autoFocus
-            placeholder="Short summary of the issue"
+            placeholder={t("ticketDialogTitlePlaceholder")}
             className="mt-1 w-full h-9 px-3 bg-bg-elev border border-line-strong rounded-2 text-[13.5px] text-ink-1 focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand-soft"
           />
         </label>
         <label className="block">
           <span className="text-[12px] font-medium text-ink-3">
-            Description (optional)
+            {t("ticketDialogDescriptionLabel")}
           </span>
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             rows={5}
-            placeholder="Slack-style markdown is supported."
+            placeholder={t("ticketDialogDescriptionPlaceholder")}
             className="mt-1 w-full px-3 py-2 bg-bg-elev border border-line-strong rounded-2 text-[13.5px] text-ink-1 focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand-soft"
           />
         </label>
         {create.isError && (
-          <ErrorBox title="Failed to create" onRetry={() => create.mutate()} />
+          <ErrorBox
+            title={t("ticketDialogCreateFailed")}
+            onRetry={() => create.mutate()}
+          />
         )}
       </div>
     </Dialog>

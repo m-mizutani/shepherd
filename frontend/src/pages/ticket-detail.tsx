@@ -16,6 +16,7 @@ import { SlackMarkdown } from "../components/slack-markdown";
 import { UserPicker } from "../components/user-picker";
 import { slackThreadUrl } from "../lib/slack";
 import { cn } from "../lib/utils";
+import { useTranslation } from "../i18n";
 
 const ALLOWED_URL_PROTOCOLS = ["http:", "https:", "mailto:", "ssh:", "ftp:", "ftps:"];
 
@@ -34,6 +35,7 @@ export default function TicketDetailPage() {
     ticketId: string;
   }>();
   const queryClient = useQueryClient();
+  const { t } = useTranslation();
 
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState("");
@@ -160,7 +162,7 @@ export default function TicketDetailPage() {
     for (const [fieldId, value] of Object.entries(editFields)) {
       const def = fieldMap.get(fieldId);
       if (def?.type === "url" && value && !isValidURL(String(value))) {
-        errors[fieldId] = "Invalid URL";
+        errors[fieldId] = t("ticketDetailUrlInvalid");
       }
     }
     if (Object.keys(errors).length > 0) {
@@ -333,7 +335,7 @@ export default function TicketDetailPage() {
               onChange={(e) => {
                 setEditFields({ ...editFields, [fieldId]: e.target.value });
                 if (e.target.value && !isValidURL(e.target.value)) {
-                  setFieldErrors({ ...fieldErrors, [fieldId]: "Invalid URL" });
+                  setFieldErrors({ ...fieldErrors, [fieldId]: t("ticketDetailUrlInvalid") });
                 } else {
                   const { [fieldId]: _, ...rest } = fieldErrors;
                   setFieldErrors(rest);
@@ -374,7 +376,7 @@ export default function TicketDetailPage() {
             users={slackUsersData?.users ?? []}
             value={arr}
             onChange={(v) => setEditFields({ ...editFields, [fieldId]: v })}
-            placeholder="Select users..."
+            placeholder={t("ticketDetailUserPickerSelectUsers")}
           />
         );
       }
@@ -395,7 +397,7 @@ export default function TicketDetailPage() {
   return (
     <PageShell
       crumbs={[
-        { label: "Tickets", to: `/ws/${workspaceId}/tickets` },
+        { label: t("ticketListCrumb"), to: `/ws/${workspaceId}/tickets` },
         { label: ticket ? `#${ticket.seqNum}` : "" },
       ]}
       showSettings
@@ -411,7 +413,7 @@ export default function TicketDetailPage() {
         )}
         {error && (
           <ErrorBox
-            title="Failed to load ticket"
+            title={t("ticketDetailLoadFailed")}
             onRetry={() => refetch()}
           />
         )}
@@ -436,13 +438,13 @@ export default function TicketDetailPage() {
                   {threadUrl && (
                     <a href={threadUrl} target="_blank" rel="noopener noreferrer">
                       <Button size="sm" variant="default" type="button">
-                        <Icon name="slack" size={12} /> Open thread
+                        <Icon name="slack" size={12} /> {t("ticketDetailOpenThread")}
                       </Button>
                     </a>
                   )}
                   {!isEditing && (
                     <Button size="sm" onClick={startEditing}>
-                      <Icon name="edit" size={12} /> Edit
+                      <Icon name="edit" size={12} /> {t("ticketDetailEdit")}
                     </Button>
                   )}
                 </div>
@@ -464,7 +466,7 @@ export default function TicketDetailPage() {
               <div className="text-[12px] text-ink-3 mb-4">
                 {ticket.reporterSlackUserId && (
                   <>
-                    Opened by{" "}
+                    {t("ticketDetailOpenedBy")}{" "}
                     <span className="text-ink-2 font-medium">
                       <SlackUserName
                         workspaceId={workspaceId!}
@@ -475,15 +477,17 @@ export default function TicketDetailPage() {
                     ·{" "}
                   </>
                 )}
-                {new Date(ticket.createdAt).toLocaleString()} · last activity{" "}
-                {new Date(ticket.updatedAt).toLocaleString()}
+                {t("ticketDetailMetadataLine", {
+                  created: new Date(ticket.createdAt).toLocaleString(),
+                  updated: new Date(ticket.updatedAt).toLocaleString(),
+                })}
               </div>
 
               {/* Description */}
               {isEditing ? (
                 <div>
                   <label className="block text-[12px] font-medium text-ink-3 mb-1">
-                    Description
+                    {t("ticketDetailDescriptionLabel")}
                   </label>
                   <textarea
                     value={editDescription}
@@ -498,18 +502,20 @@ export default function TicketDetailPage() {
                 </Card>
               ) : (
                 <div className="text-[12.5px] text-ink-4 italic">
-                  No description provided.
+                  {t("ticketDetailNoDescription")}
                 </div>
               )}
 
               {/* Activity */}
               <div className="mt-7 flex items-center gap-2">
                 <h2 className="m-0 text-[14px] font-semibold text-ink-1">
-                  Activity
+                  {t("ticketDetailActivity")}
                 </h2>
                 <span className="text-[12px] text-ink-3">·</span>
                 <span className="text-[12px] text-ink-3">
-                  {commentsData?.comments?.length ?? 0} events
+                  {t("ticketDetailEvents", {
+                    count: commentsData?.comments?.length ?? 0,
+                  })}
                 </span>
               </div>
 
@@ -527,7 +533,7 @@ export default function TicketDetailPage() {
                   ))
                 ) : (
                   <div className="pl-7 py-2 text-[12.5px] text-ink-4">
-                    No comments yet.
+                    {t("ticketDetailNoComments")}
                   </div>
                 )}
               </div>
@@ -539,17 +545,16 @@ export default function TicketDetailPage() {
                 </div>
                 <div className="flex-1">
                   <div className="text-[13px] font-medium text-ink-1">
-                    Reply in Slack to add a comment
+                    {t("ticketDetailReplyHintTitle")}
                   </div>
                   <div className="text-[12px] text-ink-3 mt-0.5">
-                    Comments are mirrored from the Slack thread; replies posted
-                    here can&apos;t be sent back.
+                    {t("ticketDetailReplyHintBody")}
                   </div>
                 </div>
                 {threadUrl && (
                   <a href={threadUrl} target="_blank" rel="noopener noreferrer">
                     <Button variant="primary" size="sm" type="button">
-                      <Icon name="slack" size={12} /> Open thread{" "}
+                      <Icon name="slack" size={12} /> {t("ticketDetailOpenThread")}{" "}
                       <Icon name="arrow" size={11} />
                     </Button>
                   </a>
@@ -582,18 +587,20 @@ export default function TicketDetailPage() {
           <div className="max-w-[1240px] mx-auto px-8 py-3 flex items-center justify-end gap-2">
             {updateTicket.isError && (
               <span className="text-[12.5px] text-danger mr-auto">
-                Failed to save changes.
+                {t("ticketDetailSaveFailed")}
               </span>
             )}
             <Button variant="ghost" onClick={() => setIsEditing(false)}>
-              Cancel
+              {t("ticketDetailCancel")}
             </Button>
             <Button
               variant="primary"
               onClick={saveEdits}
               disabled={updateTicket.isPending}
             >
-              {updateTicket.isPending ? "Saving…" : "Save changes"}
+              {updateTicket.isPending
+                ? t("ticketDetailSaving")
+                : t("ticketDetailSaveChanges")}
             </Button>
           </div>
         </div>
@@ -671,11 +678,12 @@ function UnifiedSidebar({
   workspaceId,
   slackUsers,
 }: UnifiedSidebarProps) {
+  const { t } = useTranslation();
   return (
     <Card className="self-start sticky top-4 p-0 overflow-hidden">
       <div className="px-4 py-3.5 border-b border-line">
         <div className="text-[11px] font-semibold uppercase tracking-[0.05em] text-ink-3 mb-1.5">
-          Status
+          {t("ticketDetailLabelStatus")}
         </div>
         <Popover
           trigger={(toggle) => (
@@ -741,7 +749,7 @@ function UnifiedSidebar({
 
         <div className="h-px bg-line my-1" />
 
-        <FieldRow label="Assignee">
+        <FieldRow label={t("ticketDetailLabelAssignee")}>
           {isEditing ? (
             <UserPicker
               users={slackUsers}
@@ -751,11 +759,13 @@ function UnifiedSidebar({
           ) : ticket.assigneeId ? (
             <SlackUserName workspaceId={workspaceId} userId={ticket.assigneeId} />
           ) : (
-            <span className="text-ink-4 text-[12.5px] italic">Unassigned</span>
+            <span className="text-ink-4 text-[12.5px] italic">
+              {t("ticketDetailUnassigned")}
+            </span>
           )}
         </FieldRow>
         {ticket.reporterSlackUserId && (
-          <FieldRow label="Reporter">
+          <FieldRow label={t("ticketDetailLabelReporter")}>
             <SlackUserName
               workspaceId={workspaceId}
               userId={ticket.reporterSlackUserId}
@@ -763,18 +773,18 @@ function UnifiedSidebar({
             />
           </FieldRow>
         )}
-        <FieldRow label="Created">
+        <FieldRow label={t("ticketDetailLabelCreated")}>
           <span className="font-mono text-[12.5px] text-ink-2">
             {new Date(ticket.createdAt).toLocaleString()}
           </span>
         </FieldRow>
-        <FieldRow label="Updated">
+        <FieldRow label={t("ticketDetailLabelUpdated")}>
           <span className="font-mono text-[12.5px] text-ink-2">
             {new Date(ticket.updatedAt).toLocaleString()}
           </span>
         </FieldRow>
         {ticket.slackChannelId && (
-          <FieldRow label="Source">
+          <FieldRow label={t("ticketDetailLabelSource")}>
             <span className="inline-flex items-center gap-1 text-[12.5px] text-ink-2">
               <Icon name="slack" size={11} /> #{ticket.slackChannelId}
             </span>
