@@ -6,15 +6,14 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/m-mizutani/gt"
 	"github.com/m-mizutani/shepherd/pkg/cli/config"
 )
 
 func writeToml(t *testing.T, dir, filename, content string) string {
 	t.Helper()
 	path := filepath.Join(dir, filename)
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatalf("failed to write %s: %v", path, err)
-	}
+	gt.NoError(t, os.WriteFile(path, []byte(content), 0o644)).Required()
 	return path
 }
 
@@ -64,22 +63,11 @@ func TestLoadWorkspaceConfigs_SingleFile(t *testing.T) {
 	dir := t.TempDir()
 	path := writeToml(t, dir, "ws.toml", validTOML)
 
-	configs, err := config.LoadWorkspaceConfigs([]string{path})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(configs) != 1 {
-		t.Fatalf("expected 1 config, got %d", len(configs))
-	}
-	if configs[0].ID != "test-ws" {
-		t.Errorf("expected ID 'test-ws', got %q", configs[0].ID)
-	}
-	if configs[0].Name != "Test Workspace" {
-		t.Errorf("expected Name 'Test Workspace', got %q", configs[0].Name)
-	}
-	if configs[0].SlackChannel != "C0123456789" {
-		t.Errorf("expected SlackChannel 'C0123456789', got %q", configs[0].SlackChannel)
-	}
+	configs := gt.R1(config.LoadWorkspaceConfigs([]string{path})).NoError(t)
+	gt.A(t, configs).Length(1)
+	gt.S(t, configs[0].ID).Equal("test-ws")
+	gt.S(t, configs[0].Name).Equal("Test Workspace")
+	gt.S(t, configs[0].SlackChannel).Equal("C0123456789")
 }
 
 func TestLoadWorkspaceConfigs_Directory(t *testing.T) {
@@ -98,13 +86,8 @@ color = "#fff"
 `
 	writeToml(t, dir, "b.toml", ws2)
 
-	configs, err := config.LoadWorkspaceConfigs([]string{dir})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(configs) != 2 {
-		t.Fatalf("expected 2 configs, got %d", len(configs))
-	}
+	configs := gt.R1(config.LoadWorkspaceConfigs([]string{dir})).NoError(t)
+	gt.A(t, configs).Length(2)
 }
 
 func TestLoadWorkspaceConfigs_DuplicateWorkspaceID(t *testing.T) {
@@ -124,9 +107,7 @@ color = "#fff"
 	writeToml(t, dir, "b.toml", dup)
 
 	_, err := config.LoadWorkspaceConfigs([]string{dir})
-	if err == nil {
-		t.Fatal("expected error for duplicate workspace ID")
-	}
+	gt.Error(t, err)
 }
 
 func TestLoadWorkspaceConfigs_DuplicateChannelID(t *testing.T) {
@@ -146,9 +127,7 @@ color = "#fff"
 	writeToml(t, dir, "b.toml", dup)
 
 	_, err := config.LoadWorkspaceConfigs([]string{dir})
-	if err == nil {
-		t.Fatal("expected error for duplicate channel ID")
-	}
+	gt.Error(t, err)
 }
 
 func TestLoadWorkspaceConfigs_MissingWorkspaceID(t *testing.T) {
@@ -166,9 +145,7 @@ color = "#fff"
 	path := writeToml(t, dir, "bad.toml", noID)
 
 	_, err := config.LoadWorkspaceConfigs([]string{path})
-	if err == nil {
-		t.Fatal("expected error for missing workspace ID")
-	}
+	gt.Error(t, err)
 }
 
 func TestLoadWorkspaceConfigs_InvalidWorkspaceID(t *testing.T) {
@@ -186,9 +163,7 @@ color = "#fff"
 	path := writeToml(t, dir, "bad.toml", badID)
 
 	_, err := config.LoadWorkspaceConfigs([]string{path})
-	if err == nil {
-		t.Fatal("expected error for invalid workspace ID format")
-	}
+	gt.Error(t, err)
 }
 
 func TestLoadWorkspaceConfigs_MissingChannelID(t *testing.T) {
@@ -204,9 +179,7 @@ color = "#fff"
 	path := writeToml(t, dir, "bad.toml", noCh)
 
 	_, err := config.LoadWorkspaceConfigs([]string{path})
-	if err == nil {
-		t.Fatal("expected error for missing channel ID")
-	}
+	gt.Error(t, err)
 }
 
 func TestLoadWorkspaceConfigs_InvalidTOML(t *testing.T) {
@@ -214,16 +187,12 @@ func TestLoadWorkspaceConfigs_InvalidTOML(t *testing.T) {
 	path := writeToml(t, dir, "bad.toml", "this is not valid toml {{{}}")
 
 	_, err := config.LoadWorkspaceConfigs([]string{path})
-	if err == nil {
-		t.Fatal("expected error for invalid TOML syntax")
-	}
+	gt.Error(t, err)
 }
 
 func TestLoadWorkspaceConfigs_NonexistentPath(t *testing.T) {
 	_, err := config.LoadWorkspaceConfigs([]string{"/nonexistent/path"})
-	if err == nil {
-		t.Fatal("expected error for nonexistent path")
-	}
+	gt.Error(t, err)
 }
 
 func TestLoadWorkspaceConfigs_DefaultLabels(t *testing.T) {
@@ -240,17 +209,9 @@ color = "#fff"
 `
 	path := writeToml(t, dir, "ws.toml", noLabels)
 
-	configs, err := config.LoadWorkspaceConfigs([]string{path})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	labels := configs[0].FieldSchema.Labels
-	if labels.Ticket != "Ticket" {
-		t.Errorf("expected default label 'Ticket', got %q", labels.Ticket)
-	}
-	if labels.Title != "Title" {
-		t.Errorf("expected default label 'Title', got %q", labels.Title)
-	}
+	configs := gt.R1(config.LoadWorkspaceConfigs([]string{path})).NoError(t)
+	gt.S(t, configs[0].FieldSchema.Labels.Ticket).Equal("Ticket")
+	gt.S(t, configs[0].FieldSchema.Labels.Title).Equal("Title")
 }
 
 func TestLoadWorkspaceConfigs_DefaultStatusFromFirst(t *testing.T) {
@@ -271,13 +232,8 @@ color = "#000"
 `
 	path := writeToml(t, dir, "ws.toml", noDefault)
 
-	configs, err := config.LoadWorkspaceConfigs([]string{path})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if configs[0].FieldSchema.TicketConfig.DefaultStatusID != "new" {
-		t.Errorf("expected default status 'new', got %q", configs[0].FieldSchema.TicketConfig.DefaultStatusID)
-	}
+	configs := gt.R1(config.LoadWorkspaceConfigs([]string{path})).NoError(t)
+	gt.S(t, configs[0].FieldSchema.TicketConfig.DefaultStatusID).Equal("new")
 }
 
 func TestLoadWorkspaceConfigs_NameFallsBackToID(t *testing.T) {
@@ -294,37 +250,20 @@ color = "#fff"
 `
 	path := writeToml(t, dir, "ws.toml", noName)
 
-	configs, err := config.LoadWorkspaceConfigs([]string{path})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if configs[0].Name != "my-ws" {
-		t.Errorf("expected name to fall back to ID 'my-ws', got %q", configs[0].Name)
-	}
+	configs := gt.R1(config.LoadWorkspaceConfigs([]string{path})).NoError(t)
+	gt.S(t, configs[0].Name).Equal("my-ws")
 }
 
 func TestBuildRegistry(t *testing.T) {
 	dir := t.TempDir()
 	writeToml(t, dir, "ws.toml", validTOML)
 
-	configs, err := config.LoadWorkspaceConfigs([]string{dir})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	configs := gt.R1(config.LoadWorkspaceConfigs([]string{dir})).NoError(t)
 
 	ctx := context.Background()
-	registry, err := config.BuildRegistry(ctx, configs, nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	registry := gt.R1(config.BuildRegistry(ctx, configs, nil)).NoError(t)
 	entry, ok := registry.Get("test-ws")
-	if !ok {
-		t.Fatal("expected workspace 'test-ws' in registry")
-	}
-	if entry.Workspace.Name != "Test Workspace" {
-		t.Errorf("expected name 'Test Workspace', got %q", entry.Workspace.Name)
-	}
-	if entry.SlackChannelID != "C0123456789" {
-		t.Errorf("expected channel 'C0123456789', got %q", entry.SlackChannelID)
-	}
+	gt.B(t, ok).True()
+	gt.S(t, entry.Workspace.Name).Equal("Test Workspace")
+	gt.S(t, entry.SlackChannelID).Equal("C0123456789")
 }

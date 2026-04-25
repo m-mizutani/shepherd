@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/m-mizutani/gt"
 	"github.com/m-mizutani/shepherd/pkg/domain/model"
 	"github.com/m-mizutani/shepherd/pkg/domain/model/config"
 	"github.com/m-mizutani/shepherd/pkg/domain/types"
@@ -42,32 +43,18 @@ func TestTicketUseCase_Create(t *testing.T) {
 	uc, _ := setupTicketUseCase(t)
 	ctx := context.Background()
 
-	ticket, err := uc.Create(ctx, "ws-test", "My Ticket", "desc", "", "", nil)
-	if err != nil {
-		t.Fatalf("Create failed: %v", err)
-	}
-	if ticket.Title != "My Ticket" {
-		t.Errorf("expected title 'My Ticket', got %q", ticket.Title)
-	}
-	if ticket.StatusID != "open" {
-		t.Errorf("expected default status 'open', got %q", ticket.StatusID)
-	}
-	if ticket.ID == "" {
-		t.Error("expected non-empty ticket ID")
-	}
+	ticket := gt.R1(uc.Create(ctx, "ws-test", "My Ticket", "desc", "", "", nil)).NoError(t)
+	gt.S(t, ticket.Title).Equal("My Ticket")
+	gt.S(t, ticket.StatusID).Equal("open")
+	gt.S(t, ticket.ID).NotEqual("")
 }
 
 func TestTicketUseCase_Create_WithStatus(t *testing.T) {
 	uc, _ := setupTicketUseCase(t)
 	ctx := context.Background()
 
-	ticket, err := uc.Create(ctx, "ws-test", "Custom Status", "", "in-progress", "", nil)
-	if err != nil {
-		t.Fatalf("Create failed: %v", err)
-	}
-	if ticket.StatusID != "in-progress" {
-		t.Errorf("expected status 'in-progress', got %q", ticket.StatusID)
-	}
+	ticket := gt.R1(uc.Create(ctx, "ws-test", "Custom Status", "", "in-progress", "", nil)).NoError(t)
+	gt.S(t, ticket.StatusID).Equal("in-progress")
 }
 
 func TestTicketUseCase_Create_WithFields(t *testing.T) {
@@ -77,13 +64,9 @@ func TestTicketUseCase_Create_WithFields(t *testing.T) {
 	fields := map[string]model.FieldValue{
 		"priority": {FieldID: "priority", Type: types.FieldTypeSelect, Value: "high"},
 	}
-	ticket, err := uc.Create(ctx, "ws-test", "With Fields", "", "", "", fields)
-	if err != nil {
-		t.Fatalf("Create failed: %v", err)
-	}
-	if fv, ok := ticket.FieldValues["priority"]; !ok || fv.Value != "high" {
-		t.Errorf("expected field priority=high, got %+v", ticket.FieldValues)
-	}
+	ticket := gt.R1(uc.Create(ctx, "ws-test", "With Fields", "", "", "", fields)).NoError(t)
+	gt.M(t, ticket.FieldValues).HasKey("priority")
+	gt.V(t, ticket.FieldValues["priority"].Value).Equal(any("high"))
 }
 
 func TestTicketUseCase_Create_UnknownWorkspace(t *testing.T) {
@@ -91,88 +74,51 @@ func TestTicketUseCase_Create_UnknownWorkspace(t *testing.T) {
 	ctx := context.Background()
 
 	_, err := uc.Create(ctx, "nonexistent", "Title", "", "", "", nil)
-	if err == nil {
-		t.Fatal("expected error for unknown workspace")
-	}
+	gt.Error(t, err)
 }
 
 func TestTicketUseCase_GetAndList(t *testing.T) {
 	uc, _ := setupTicketUseCase(t)
 	ctx := context.Background()
 
-	created, err := uc.Create(ctx, "ws-test", "T1", "", "", "", nil)
-	if err != nil {
-		t.Fatalf("Create failed: %v", err)
-	}
+	created := gt.R1(uc.Create(ctx, "ws-test", "T1", "", "", "", nil)).NoError(t)
 
-	got, err := uc.Get(ctx, "ws-test", created.ID)
-	if err != nil {
-		t.Fatalf("Get failed: %v", err)
-	}
-	if got.Title != "T1" {
-		t.Errorf("expected title 'T1', got %q", got.Title)
-	}
+	got := gt.R1(uc.Get(ctx, "ws-test", created.ID)).NoError(t)
+	gt.S(t, got.Title).Equal("T1")
 
-	tickets, err := uc.List(ctx, "ws-test", nil, nil)
-	if err != nil {
-		t.Fatalf("List failed: %v", err)
-	}
-	if len(tickets) != 1 {
-		t.Errorf("expected 1 ticket, got %d", len(tickets))
-	}
+	tickets := gt.R1(uc.List(ctx, "ws-test", nil, nil)).NoError(t)
+	gt.A(t, tickets).Length(1)
 }
 
 func TestTicketUseCase_List_FilterByClosed(t *testing.T) {
 	uc, _ := setupTicketUseCase(t)
 	ctx := context.Background()
 
-	uc.Create(ctx, "ws-test", "Open Ticket", "", "open", "", nil)
-	uc.Create(ctx, "ws-test", "Resolved Ticket", "", "resolved", "", nil)
-	uc.Create(ctx, "ws-test", "Closed Ticket", "", "closed", "", nil)
+	gt.R1(uc.Create(ctx, "ws-test", "Open Ticket", "", "open", "", nil)).NoError(t)
+	gt.R1(uc.Create(ctx, "ws-test", "Resolved Ticket", "", "resolved", "", nil)).NoError(t)
+	gt.R1(uc.Create(ctx, "ws-test", "Closed Ticket", "", "closed", "", nil)).NoError(t)
 
 	isClosed := true
-	closedTickets, err := uc.List(ctx, "ws-test", &isClosed, nil)
-	if err != nil {
-		t.Fatalf("List closed failed: %v", err)
-	}
-	if len(closedTickets) != 2 {
-		t.Errorf("expected 2 closed tickets, got %d", len(closedTickets))
-	}
+	closedTickets := gt.R1(uc.List(ctx, "ws-test", &isClosed, nil)).NoError(t)
+	gt.A(t, closedTickets).Length(2)
 
 	isOpen := false
-	openTickets, err := uc.List(ctx, "ws-test", &isOpen, nil)
-	if err != nil {
-		t.Fatalf("List open failed: %v", err)
-	}
-	if len(openTickets) != 1 {
-		t.Errorf("expected 1 open ticket, got %d", len(openTickets))
-	}
+	openTickets := gt.R1(uc.List(ctx, "ws-test", &isOpen, nil)).NoError(t)
+	gt.A(t, openTickets).Length(1)
 }
 
 func TestTicketUseCase_Update(t *testing.T) {
 	uc, _ := setupTicketUseCase(t)
 	ctx := context.Background()
 
-	created, err := uc.Create(ctx, "ws-test", "Original", "desc", "", "", nil)
-	if err != nil {
-		t.Fatalf("Create failed: %v", err)
-	}
+	created := gt.R1(uc.Create(ctx, "ws-test", "Original", "desc", "", "", nil)).NoError(t)
 
 	newTitle := "Updated"
 	newStatus := "in-progress"
-	updated, err := uc.Update(ctx, "ws-test", created.ID, &newTitle, nil, &newStatus, nil, nil)
-	if err != nil {
-		t.Fatalf("Update failed: %v", err)
-	}
-	if updated.Title != "Updated" {
-		t.Errorf("expected title 'Updated', got %q", updated.Title)
-	}
-	if updated.StatusID != "in-progress" {
-		t.Errorf("expected status 'in-progress', got %q", updated.StatusID)
-	}
-	if updated.Description != "desc" {
-		t.Errorf("expected description preserved, got %q", updated.Description)
-	}
+	updated := gt.R1(uc.Update(ctx, "ws-test", created.ID, &newTitle, nil, &newStatus, nil, nil)).NoError(t)
+	gt.S(t, updated.Title).Equal("Updated")
+	gt.S(t, updated.StatusID).Equal("in-progress")
+	gt.S(t, updated.Description).Equal("desc")
 }
 
 func TestTicketUseCase_Update_MergeFields(t *testing.T) {
@@ -182,35 +128,23 @@ func TestTicketUseCase_Update_MergeFields(t *testing.T) {
 	initial := map[string]model.FieldValue{
 		"priority": {FieldID: "priority", Value: "high"},
 	}
-	created, _ := uc.Create(ctx, "ws-test", "T", "", "", "", initial)
+	created := gt.R1(uc.Create(ctx, "ws-test", "T", "", "", "", initial)).NoError(t)
 
 	newFields := map[string]model.FieldValue{
 		"category": {FieldID: "category", Value: "bug"},
 	}
-	updated, err := uc.Update(ctx, "ws-test", created.ID, nil, nil, nil, nil, newFields)
-	if err != nil {
-		t.Fatalf("Update failed: %v", err)
-	}
-	if _, ok := updated.FieldValues["priority"]; !ok {
-		t.Error("expected existing field 'priority' to be preserved")
-	}
-	if _, ok := updated.FieldValues["category"]; !ok {
-		t.Error("expected new field 'category' to be added")
-	}
+	updated := gt.R1(uc.Update(ctx, "ws-test", created.ID, nil, nil, nil, nil, newFields)).NoError(t)
+	gt.M(t, updated.FieldValues).HasKey("priority")
+	gt.M(t, updated.FieldValues).HasKey("category")
 }
 
 func TestTicketUseCase_Delete(t *testing.T) {
 	uc, _ := setupTicketUseCase(t)
 	ctx := context.Background()
 
-	created, _ := uc.Create(ctx, "ws-test", "To Delete", "", "", "", nil)
-
-	if err := uc.Delete(ctx, "ws-test", created.ID); err != nil {
-		t.Fatalf("Delete failed: %v", err)
-	}
+	created := gt.R1(uc.Create(ctx, "ws-test", "To Delete", "", "", "", nil)).NoError(t)
+	gt.NoError(t, uc.Delete(ctx, "ws-test", created.ID))
 
 	_, err := uc.Get(ctx, "ws-test", created.ID)
-	if err == nil {
-		t.Fatal("expected error getting deleted ticket")
-	}
+	gt.Error(t, err)
 }

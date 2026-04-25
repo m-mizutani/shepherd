@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/m-mizutani/gt"
 	"github.com/m-mizutani/shepherd/pkg/domain/interfaces"
 	"github.com/m-mizutani/shepherd/pkg/domain/model"
 	"github.com/m-mizutani/shepherd/pkg/domain/types"
@@ -29,17 +30,9 @@ func TestTicketCreate(t *testing.T) {
 			UpdatedAt: now,
 		}
 
-		created, err := repo.Ticket().Create(ctx, "test-ws", ticket)
-		if err != nil {
-			t.Fatalf("Create failed: %v", err)
-		}
-
-		if created.SeqNum < 1 {
-			t.Errorf("expected SeqNum >= 1, got %d", created.SeqNum)
-		}
-		if created.Title != "Test Ticket" {
-			t.Errorf("expected title 'Test Ticket', got %q", created.Title)
-		}
+		created := gt.R1(repo.Ticket().Create(ctx, "test-ws", ticket)).NoError(t)
+		gt.N(t, created.SeqNum).GreaterOrEqual(int64(1))
+		gt.S(t, created.Title).Equal("Test Ticket")
 	})
 }
 
@@ -58,20 +51,11 @@ func TestTicketGet(t *testing.T) {
 			CreatedAt:   now,
 			UpdatedAt:   now,
 		}
-		if _, err := repo.Ticket().Create(ctx, "test-ws", ticket); err != nil {
-			t.Fatalf("Create failed: %v", err)
-		}
+		gt.R1(repo.Ticket().Create(ctx, "test-ws", ticket)).NoError(t)
 
-		got, err := repo.Ticket().Get(ctx, "test-ws", id)
-		if err != nil {
-			t.Fatalf("Get failed: %v", err)
-		}
-		if got.Title != "Get Test" {
-			t.Errorf("expected title 'Get Test', got %q", got.Title)
-		}
-		if got.StatusID != "open" {
-			t.Errorf("expected statusID 'open', got %q", got.StatusID)
-		}
+		got := gt.R1(repo.Ticket().Get(ctx, "test-ws", id)).NoError(t)
+		gt.S(t, got.Title).Equal("Get Test")
+		gt.S(t, got.StatusID).Equal("open")
 	})
 }
 
@@ -91,18 +75,11 @@ func TestTicketList(t *testing.T) {
 				CreatedAt:   now.Add(time.Duration(i) * time.Second),
 				UpdatedAt:   now.Add(time.Duration(i) * time.Second),
 			}
-			if _, err := repo.Ticket().Create(ctx, wsID, ticket); err != nil {
-				t.Fatalf("Create failed: %v", err)
-			}
+			gt.R1(repo.Ticket().Create(ctx, wsID, ticket)).NoError(t)
 		}
 
-		tickets, err := repo.Ticket().List(ctx, wsID, nil)
-		if err != nil {
-			t.Fatalf("List failed: %v", err)
-		}
-		if len(tickets) != 3 {
-			t.Errorf("expected 3 tickets, got %d", len(tickets))
-		}
+		tickets := gt.R1(repo.Ticket().List(ctx, wsID, nil)).NoError(t)
+		gt.A(t, tickets).Length(3)
 	})
 }
 
@@ -121,29 +98,17 @@ func TestTicketUpdate(t *testing.T) {
 			CreatedAt:   now,
 			UpdatedAt:   now,
 		}
-		if _, err := repo.Ticket().Create(ctx, "test-ws", ticket); err != nil {
-			t.Fatalf("Create failed: %v", err)
-		}
+		gt.R1(repo.Ticket().Create(ctx, "test-ws", ticket)).NoError(t)
 
 		ticket.Title = "After Update"
 		ticket.StatusID = "in-progress"
 		ticket.UpdatedAt = now.Add(time.Minute)
 
-		updated, err := repo.Ticket().Update(ctx, "test-ws", ticket)
-		if err != nil {
-			t.Fatalf("Update failed: %v", err)
-		}
-		if updated.Title != "After Update" {
-			t.Errorf("expected title 'After Update', got %q", updated.Title)
-		}
+		updated := gt.R1(repo.Ticket().Update(ctx, "test-ws", ticket)).NoError(t)
+		gt.S(t, updated.Title).Equal("After Update")
 
-		got, err := repo.Ticket().Get(ctx, "test-ws", id)
-		if err != nil {
-			t.Fatalf("Get after update failed: %v", err)
-		}
-		if got.StatusID != "in-progress" {
-			t.Errorf("expected statusID 'in-progress', got %q", got.StatusID)
-		}
+		got := gt.R1(repo.Ticket().Get(ctx, "test-ws", id)).NoError(t)
+		gt.S(t, got.StatusID).Equal("in-progress")
 	})
 }
 
@@ -162,18 +127,11 @@ func TestTicketDelete(t *testing.T) {
 			CreatedAt:   now,
 			UpdatedAt:   now,
 		}
-		if _, err := repo.Ticket().Create(ctx, "test-ws", ticket); err != nil {
-			t.Fatalf("Create failed: %v", err)
-		}
-
-		if err := repo.Ticket().Delete(ctx, "test-ws", id); err != nil {
-			t.Fatalf("Delete failed: %v", err)
-		}
+		gt.R1(repo.Ticket().Create(ctx, "test-ws", ticket)).NoError(t)
+		gt.NoError(t, repo.Ticket().Delete(ctx, "test-ws", id))
 
 		_, err := repo.Ticket().Get(ctx, "test-ws", id)
-		if err == nil {
-			t.Error("expected error after delete, got nil")
-		}
+		gt.Error(t, err)
 	})
 }
 
@@ -194,17 +152,12 @@ func TestTicketSeqNumIncrement(t *testing.T) {
 				CreatedAt:   now,
 				UpdatedAt:   now,
 			}
-			created, err := repo.Ticket().Create(ctx, wsID, ticket)
-			if err != nil {
-				t.Fatalf("Create #%d failed: %v", i, err)
-			}
+			created := gt.R1(repo.Ticket().Create(ctx, wsID, ticket)).NoError(t)
 			seqNums = append(seqNums, created.SeqNum)
 		}
 
 		for i := 1; i < len(seqNums); i++ {
-			if seqNums[i] != seqNums[i-1]+1 {
-				t.Errorf("expected SeqNum %d to be %d+1, got %d", i, seqNums[i-1], seqNums[i])
-			}
+			gt.N(t, seqNums[i]).Equal(seqNums[i-1] + 1)
 		}
 	})
 }
@@ -226,27 +179,13 @@ func TestTicketGetBySlackThreadTS(t *testing.T) {
 			CreatedAt:      now,
 			UpdatedAt:      now,
 		}
-		if _, err := repo.Ticket().Create(ctx, wsID, ticket); err != nil {
-			t.Fatalf("Create failed: %v", err)
-		}
+		gt.R1(repo.Ticket().Create(ctx, wsID, ticket)).NoError(t)
 
-		got, err := repo.Ticket().GetBySlackThreadTS(ctx, wsID, "C123456", "1234567890.123456")
-		if err != nil {
-			t.Fatalf("GetBySlackThreadTS failed: %v", err)
-		}
-		if got == nil {
-			t.Fatal("expected ticket, got nil")
-		}
-		if got.Title != "Slack Thread Test" {
-			t.Errorf("expected title 'Slack Thread Test', got %q", got.Title)
-		}
+		got := gt.R1(repo.Ticket().GetBySlackThreadTS(ctx, wsID, "C123456", "1234567890.123456")).NoError(t)
+		gt.V(t, got).NotNil().Required()
+		gt.S(t, got.Title).Equal("Slack Thread Test")
 
-		notFound, err := repo.Ticket().GetBySlackThreadTS(ctx, wsID, "C999999", "9999999999.999999")
-		if err != nil {
-			t.Fatalf("GetBySlackThreadTS (not found) failed: %v", err)
-		}
-		if notFound != nil {
-			t.Error("expected nil for non-existent thread ts")
-		}
+		notFound := gt.R1(repo.Ticket().GetBySlackThreadTS(ctx, wsID, "C999999", "9999999999.999999")).NoError(t)
+		gt.V(t, notFound).Nil()
 	})
 }

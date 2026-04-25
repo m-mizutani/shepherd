@@ -3,6 +3,7 @@ package usecase_test
 import (
 	"testing"
 
+	"github.com/m-mizutani/gt"
 	"github.com/m-mizutani/shepherd/pkg/domain/model"
 	"github.com/m-mizutani/shepherd/pkg/domain/model/config"
 	"github.com/m-mizutani/shepherd/pkg/usecase"
@@ -27,55 +28,32 @@ func setupWorkspaceUseCase(t *testing.T) *usecase.WorkspaceUseCase {
 func TestWorkspaceUseCase_List(t *testing.T) {
 	uc := setupWorkspaceUseCase(t)
 	workspaces := uc.List()
-	if len(workspaces) != 2 {
-		t.Fatalf("expected 2 workspaces, got %d", len(workspaces))
-	}
-	if workspaces[0].ID != "alpha" {
-		t.Errorf("expected first workspace 'alpha', got %q", workspaces[0].ID)
-	}
-	if workspaces[1].ID != "beta" {
-		t.Errorf("expected second workspace 'beta', got %q", workspaces[1].ID)
-	}
+	gt.A(t, workspaces).Length(2)
+	gt.S(t, workspaces[0].ID).Equal("alpha")
+	gt.S(t, workspaces[1].ID).Equal("beta")
 }
 
 func TestWorkspaceUseCase_Get(t *testing.T) {
 	uc := setupWorkspaceUseCase(t)
-
-	ws, err := uc.Get("alpha")
-	if err != nil {
-		t.Fatalf("Get failed: %v", err)
-	}
-	if ws.Name != "Alpha" {
-		t.Errorf("expected name 'Alpha', got %q", ws.Name)
-	}
+	ws := gt.R1(uc.Get("alpha")).NoError(t)
+	gt.S(t, ws.Name).Equal("Alpha")
 }
 
 func TestWorkspaceUseCase_Get_NotFound(t *testing.T) {
 	uc := setupWorkspaceUseCase(t)
-
 	_, err := uc.Get("nonexistent")
-	if err == nil {
-		t.Fatal("expected error for nonexistent workspace")
-	}
+	gt.Error(t, err)
 }
 
 func TestWorkspaceUseCase_GetConfig(t *testing.T) {
 	uc := setupWorkspaceUseCase(t)
-
-	schema, err := uc.GetConfig("alpha")
-	if err != nil {
-		t.Fatalf("GetConfig failed: %v", err)
-	}
-	if len(schema.Statuses) != 1 || schema.Statuses[0].ID != "open" {
-		t.Errorf("unexpected schema: %+v", schema)
-	}
+	schema := gt.R1(uc.GetConfig("alpha")).NoError(t)
+	gt.A(t, schema.Statuses).Length(1)
+	gt.S(t, schema.Statuses[0].ID).Equal("open")
 }
 
 func TestWorkspaceUseCase_GetConfig_NotFound(t *testing.T) {
 	uc := setupWorkspaceUseCase(t)
-
 	_, err := uc.GetConfig("nonexistent")
-	if err == nil {
-		t.Fatal("expected error for nonexistent workspace config")
-	}
+	gt.Error(t, err)
 }

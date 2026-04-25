@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/m-mizutani/gt"
 	"github.com/m-mizutani/shepherd/pkg/domain/interfaces"
 	"github.com/m-mizutani/shepherd/pkg/domain/model"
 	"github.com/m-mizutani/shepherd/pkg/domain/model/auth"
@@ -18,7 +19,6 @@ func TestCommentCreate(t *testing.T) {
 		wsID := "test-comment-" + uuid.Must(uuid.NewV7()).String()[:8]
 		ticketID := uuid.Must(uuid.NewV7()).String()
 
-		// Create a ticket first
 		ticket := &model.Ticket{
 			ID:          ticketID,
 			WorkspaceID: wsID,
@@ -28,9 +28,7 @@ func TestCommentCreate(t *testing.T) {
 			CreatedAt:   now,
 			UpdatedAt:   now,
 		}
-		if _, err := repo.Ticket().Create(ctx, wsID, ticket); err != nil {
-			t.Fatalf("Create ticket failed: %v", err)
-		}
+		gt.R1(repo.Ticket().Create(ctx, wsID, ticket)).NoError(t)
 
 		comment := &model.Comment{
 			ID:          uuid.Must(uuid.NewV7()).String(),
@@ -40,13 +38,8 @@ func TestCommentCreate(t *testing.T) {
 			SlackTS:     "1111111111.111111",
 			CreatedAt:   now,
 		}
-		created, err := repo.Comment().Create(ctx, wsID, ticketID, comment)
-		if err != nil {
-			t.Fatalf("Create comment failed: %v", err)
-		}
-		if created.Body != "Hello world" {
-			t.Errorf("expected body 'Hello world', got %q", created.Body)
-		}
+		created := gt.R1(repo.Comment().Create(ctx, wsID, ticketID, comment)).NoError(t)
+		gt.S(t, created.Body).Equal("Hello world")
 	})
 }
 
@@ -66,9 +59,7 @@ func TestCommentList(t *testing.T) {
 			CreatedAt:   now,
 			UpdatedAt:   now,
 		}
-		if _, err := repo.Ticket().Create(ctx, wsID, ticket); err != nil {
-			t.Fatalf("Create ticket failed: %v", err)
-		}
+		gt.R1(repo.Ticket().Create(ctx, wsID, ticket)).NoError(t)
 
 		for i, body := range []string{"First", "Second", "Third"} {
 			comment := &model.Comment{
@@ -79,18 +70,11 @@ func TestCommentList(t *testing.T) {
 				SlackTS:     "1111111111.11111" + string(rune('0'+i)),
 				CreatedAt:   now.Add(time.Duration(i) * time.Second),
 			}
-			if _, err := repo.Comment().Create(ctx, wsID, ticketID, comment); err != nil {
-				t.Fatalf("Create comment %d failed: %v", i, err)
-			}
+			gt.R1(repo.Comment().Create(ctx, wsID, ticketID, comment)).NoError(t)
 		}
 
-		comments, err := repo.Comment().List(ctx, wsID, ticketID)
-		if err != nil {
-			t.Fatalf("List comments failed: %v", err)
-		}
-		if len(comments) != 3 {
-			t.Errorf("expected 3 comments, got %d", len(comments))
-		}
+		comments := gt.R1(repo.Comment().List(ctx, wsID, ticketID)).NoError(t)
+		gt.A(t, comments).Length(3)
 	})
 }
 
@@ -110,9 +94,7 @@ func TestCommentGetBySlackTS(t *testing.T) {
 			CreatedAt:   now,
 			UpdatedAt:   now,
 		}
-		if _, err := repo.Ticket().Create(ctx, wsID, ticket); err != nil {
-			t.Fatalf("Create ticket failed: %v", err)
-		}
+		gt.R1(repo.Ticket().Create(ctx, wsID, ticket)).NoError(t)
 
 		slackTS := "2222222222.222222"
 		comment := &model.Comment{
@@ -123,28 +105,14 @@ func TestCommentGetBySlackTS(t *testing.T) {
 			SlackTS:     slackTS,
 			CreatedAt:   now,
 		}
-		if _, err := repo.Comment().Create(ctx, wsID, ticketID, comment); err != nil {
-			t.Fatalf("Create comment failed: %v", err)
-		}
+		gt.R1(repo.Comment().Create(ctx, wsID, ticketID, comment)).NoError(t)
 
-		got, err := repo.Comment().GetBySlackTS(ctx, wsID, ticketID, slackTS)
-		if err != nil {
-			t.Fatalf("GetBySlackTS failed: %v", err)
-		}
-		if got == nil {
-			t.Fatal("expected comment, got nil")
-		}
-		if got.Body != "Slack TS test comment" {
-			t.Errorf("expected body 'Slack TS test comment', got %q", got.Body)
-		}
+		got := gt.R1(repo.Comment().GetBySlackTS(ctx, wsID, ticketID, slackTS)).NoError(t)
+		gt.V(t, got).NotNil().Required()
+		gt.S(t, got.Body).Equal("Slack TS test comment")
 
-		notFound, err := repo.Comment().GetBySlackTS(ctx, wsID, ticketID, "9999999999.999999")
-		if err != nil {
-			t.Fatalf("GetBySlackTS (not found) failed: %v", err)
-		}
-		if notFound != nil {
-			t.Error("expected nil for non-existent slack ts")
-		}
+		notFound := gt.R1(repo.Comment().GetBySlackTS(ctx, wsID, ticketID, "9999999999.999999")).NoError(t)
+		gt.V(t, notFound).Nil()
 	})
 }
 
@@ -153,28 +121,15 @@ func TestTokenCRUD(t *testing.T) {
 		ctx := context.Background()
 		token := auth.NewToken("U_TEST", "test@example.com", "Test User")
 
-		if err := repo.PutToken(ctx, token); err != nil {
-			t.Fatalf("PutToken failed: %v", err)
-		}
+		gt.NoError(t, repo.PutToken(ctx, token))
 
-		got, err := repo.GetToken(ctx, token.ID)
-		if err != nil {
-			t.Fatalf("GetToken failed: %v", err)
-		}
-		if got.Sub != "U_TEST" {
-			t.Errorf("expected sub 'U_TEST', got %q", got.Sub)
-		}
-		if got.Email != "test@example.com" {
-			t.Errorf("expected email 'test@example.com', got %q", got.Email)
-		}
+		got := gt.R1(repo.GetToken(ctx, token.ID)).NoError(t)
+		gt.S(t, got.Sub).Equal("U_TEST")
+		gt.S(t, got.Email).Equal("test@example.com")
 
-		if err := repo.DeleteToken(ctx, token.ID); err != nil {
-			t.Fatalf("DeleteToken failed: %v", err)
-		}
+		gt.NoError(t, repo.DeleteToken(ctx, token.ID))
 
-		_, err = repo.GetToken(ctx, token.ID)
-		if err == nil {
-			t.Error("expected error after delete, got nil")
-		}
+		_, err := repo.GetToken(ctx, token.ID)
+		gt.Error(t, err)
 	})
 }

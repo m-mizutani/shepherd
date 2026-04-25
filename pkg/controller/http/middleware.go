@@ -12,7 +12,7 @@ import (
 func writeUnauthorized(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusUnauthorized)
-	fmt.Fprintf(w, `{"error":"authentication required"}`)
+	_, _ = fmt.Fprintf(w, `{"error":"authentication required"}`)
 }
 
 func authMiddleware(authUC usecase.AuthUseCaseInterface) func(http.Handler) http.Handler {

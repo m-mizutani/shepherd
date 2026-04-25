@@ -5,6 +5,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/m-mizutani/gt"
 	"github.com/m-mizutani/shepherd/pkg/domain/interfaces"
 	firestoreRepo "github.com/m-mizutani/shepherd/pkg/repository/firestore"
 	"github.com/m-mizutani/shepherd/pkg/repository/memory"
@@ -41,10 +42,6 @@ func newFirestoreRepo(t *testing.T) interfaces.Repository {
 	databaseID := os.Getenv("TEST_FIRESTORE_DATABASE_ID")
 
 	ctx := context.Background()
-	repo, err := firestoreRepo.New(ctx, projectID, databaseID)
-	if err != nil {
-		t.Fatalf("failed to create firestore repo: %v", err)
-	}
-
+	repo := gt.R1(firestoreRepo.New(ctx, projectID, databaseID)).NoError(t)
 	return repo
 }

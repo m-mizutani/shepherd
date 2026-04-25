@@ -1,6 +1,7 @@
 package http_test
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -8,11 +9,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/m-mizutani/gt"
+	server "github.com/m-mizutani/shepherd/pkg/controller/http"
 	"github.com/m-mizutani/shepherd/pkg/domain/model"
 	"github.com/m-mizutani/shepherd/pkg/domain/model/config"
-	server "github.com/m-mizutani/shepherd/pkg/controller/http"
 	"github.com/m-mizutani/shepherd/pkg/repository/memory"
 	"github.com/m-mizutani/shepherd/pkg/usecase"
+	"github.com/m-mizutani/shepherd/pkg/utils/safe"
 )
 
 func setupTestServer(t *testing.T) *httptest.Server {
@@ -58,40 +61,52 @@ func setupTestServer(t *testing.T) *httptest.Server {
 	return httptest.NewServer(srv)
 }
 
+func doGet(t *testing.T, url string) *http.Response {
+	t.Helper()
+	resp := gt.R1(http.Get(url)).NoError(t)
+	t.Cleanup(func() { safe.Close(context.Background(), resp.Body) })
+	return resp
+}
+
+func decodeJSON[T any](t *testing.T, resp *http.Response) T {
+	t.Helper()
+	var v T
+	gt.NoError(t, json.NewDecoder(resp.Body).Decode(&v)).Required()
+	return v
+}
+
+func createTicketViaAPI(t *testing.T, ts *httptest.Server, wsID, title string) map[string]any {
+	t.Helper()
+
+	body := `{"title":"` + title + `"}`
+	resp := gt.R1(http.Post(ts.URL+"/api/v1/ws/"+wsID+"/tickets", "application/json", strings.NewReader(body))).NoError(t)
+	t.Cleanup(func() { safe.Close(context.Background(), resp.Body) })
+
+	if resp.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 201, got %d: %s", resp.StatusCode, string(b))
+	}
+
+	return decodeJSON[map[string]any](t, resp)
+}
+
 func TestHealth(t *testing.T) {
 	ts := setupTestServer(t)
 	defer ts.Close()
 
-	resp, err := http.Get(ts.URL + "/api/v1/health")
-	if err != nil {
-		t.Fatalf("request failed: %v", err)
-	}
-	defer resp.Body.Close()
+	resp := doGet(t, ts.URL+"/api/v1/health")
+	gt.N(t, resp.StatusCode).Equal(http.StatusOK)
 
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("expected 200, got %d", resp.StatusCode)
-	}
-
-	var body map[string]string
-	json.NewDecoder(resp.Body).Decode(&body)
-	if body["status"] != "ok" {
-		t.Errorf("expected status 'ok', got %q", body["status"])
-	}
+	body := decodeJSON[map[string]string](t, resp)
+	gt.S(t, body["status"]).Equal("ok")
 }
 
 func TestListWorkspaces(t *testing.T) {
 	ts := setupTestServer(t)
 	defer ts.Close()
 
-	resp, err := http.Get(ts.URL + "/api/v1/ws")
-	if err != nil {
-		t.Fatalf("request failed: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("expected 200, got %d", resp.StatusCode)
-	}
+	resp := doGet(t, ts.URL+"/api/v1/ws")
+	gt.N(t, resp.StatusCode).Equal(http.StatusOK)
 
 	var body struct {
 		Workspaces []struct {
@@ -99,60 +114,40 @@ func TestListWorkspaces(t *testing.T) {
 			Name string `json:"name"`
 		} `json:"workspaces"`
 	}
-	json.NewDecoder(resp.Body).Decode(&body)
-	if len(body.Workspaces) != 1 {
-		t.Fatalf("expected 1 workspace, got %d", len(body.Workspaces))
-	}
-	if body.Workspaces[0].Id != "support" {
-		t.Errorf("expected workspace 'support', got %q", body.Workspaces[0].Id)
-	}
+	body = decodeJSON[struct {
+		Workspaces []struct {
+			Id   string `json:"id"`
+			Name string `json:"name"`
+		} `json:"workspaces"`
+	}](t, resp)
+	gt.A(t, body.Workspaces).Length(1)
+	gt.S(t, body.Workspaces[0].Id).Equal("support")
 }
 
 func TestGetWorkspace(t *testing.T) {
 	ts := setupTestServer(t)
 	defer ts.Close()
 
-	resp, err := http.Get(ts.URL + "/api/v1/ws/support")
-	if err != nil {
-		t.Fatalf("request failed: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("expected 200, got %d", resp.StatusCode)
-	}
+	resp := doGet(t, ts.URL+"/api/v1/ws/support")
+	gt.N(t, resp.StatusCode).Equal(http.StatusOK)
 }
 
 func TestGetWorkspace_NotFound(t *testing.T) {
 	ts := setupTestServer(t)
 	defer ts.Close()
 
-	resp, err := http.Get(ts.URL + "/api/v1/ws/nonexistent")
-	if err != nil {
-		t.Fatalf("request failed: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusNotFound {
-		t.Errorf("expected 404, got %d", resp.StatusCode)
-	}
+	resp := doGet(t, ts.URL+"/api/v1/ws/nonexistent")
+	gt.N(t, resp.StatusCode).Equal(http.StatusNotFound)
 }
 
 func TestGetWorkspaceConfig(t *testing.T) {
 	ts := setupTestServer(t)
 	defer ts.Close()
 
-	resp, err := http.Get(ts.URL + "/api/v1/ws/support/config")
-	if err != nil {
-		t.Fatalf("request failed: %v", err)
-	}
-	defer resp.Body.Close()
+	resp := doGet(t, ts.URL+"/api/v1/ws/support/config")
+	gt.N(t, resp.StatusCode).Equal(http.StatusOK)
 
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("expected 200, got %d", resp.StatusCode)
-	}
-
-	var body struct {
+	type configResp struct {
 		Statuses []struct {
 			Id string `json:"id"`
 		} `json:"statuses"`
@@ -160,33 +155,9 @@ func TestGetWorkspaceConfig(t *testing.T) {
 			DefaultStatusId string `json:"defaultStatusId"`
 		} `json:"ticketConfig"`
 	}
-	json.NewDecoder(resp.Body).Decode(&body)
-	if len(body.Statuses) != 2 {
-		t.Errorf("expected 2 statuses, got %d", len(body.Statuses))
-	}
-	if body.TicketConfig.DefaultStatusId != "open" {
-		t.Errorf("expected default status 'open', got %q", body.TicketConfig.DefaultStatusId)
-	}
-}
-
-func createTicketViaAPI(t *testing.T, ts *httptest.Server, wsID, title string) map[string]any {
-	t.Helper()
-
-	body := `{"title":"` + title + `"}`
-	resp, err := http.Post(ts.URL+"/api/v1/ws/"+wsID+"/tickets", "application/json", strings.NewReader(body))
-	if err != nil {
-		t.Fatalf("request failed: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusCreated {
-		b, _ := io.ReadAll(resp.Body)
-		t.Fatalf("expected 201, got %d: %s", resp.StatusCode, string(b))
-	}
-
-	var result map[string]any
-	json.NewDecoder(resp.Body).Decode(&result)
-	return result
+	body := decodeJSON[configResp](t, resp)
+	gt.A(t, body.Statuses).Length(2)
+	gt.S(t, body.TicketConfig.DefaultStatusId).Equal("open")
 }
 
 func TestTicketCRUD(t *testing.T) {
@@ -196,63 +167,37 @@ func TestTicketCRUD(t *testing.T) {
 	// Create
 	ticket := createTicketViaAPI(t, ts, "support", "Test Ticket")
 	ticketID, ok := ticket["id"].(string)
-	if !ok || ticketID == "" {
-		t.Fatal("expected ticket ID in response")
-	}
-	if ticket["statusId"] != "open" {
-		t.Errorf("expected default status 'open', got %v", ticket["statusId"])
-	}
+	gt.B(t, ok).True()
+	gt.S(t, ticketID).NotEqual("")
+	gt.V(t, ticket["statusId"]).Equal(any("open"))
 
 	// Get
-	resp, err := http.Get(ts.URL + "/api/v1/ws/support/tickets/" + ticketID)
-	if err != nil {
-		t.Fatalf("Get request failed: %v", err)
-	}
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("expected 200, got %d", resp.StatusCode)
-	}
+	resp := doGet(t, ts.URL+"/api/v1/ws/support/tickets/"+ticketID)
+	gt.N(t, resp.StatusCode).Equal(http.StatusOK)
 
 	// List
-	resp, err = http.Get(ts.URL + "/api/v1/ws/support/tickets")
-	if err != nil {
-		t.Fatalf("List request failed: %v", err)
-	}
-	defer resp.Body.Close()
-	var listBody struct {
+	resp = doGet(t, ts.URL+"/api/v1/ws/support/tickets")
+	type listResp struct {
 		Tickets []struct {
 			Id string `json:"id"`
 		} `json:"tickets"`
 	}
-	json.NewDecoder(resp.Body).Decode(&listBody)
-	if len(listBody.Tickets) != 1 {
-		t.Errorf("expected 1 ticket, got %d", len(listBody.Tickets))
-	}
+	listBody := decodeJSON[listResp](t, resp)
+	gt.A(t, listBody.Tickets).Length(1)
 
 	// Update
 	updateBody := `{"title":"Updated Title","statusId":"closed"}`
-	req, _ := http.NewRequest(http.MethodPatch, ts.URL+"/api/v1/ws/support/tickets/"+ticketID, strings.NewReader(updateBody))
+	req := gt.R1(http.NewRequest(http.MethodPatch, ts.URL+"/api/v1/ws/support/tickets/"+ticketID, strings.NewReader(updateBody))).NoError(t)
 	req.Header.Set("Content-Type", "application/json")
-	resp, err = http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("Update request failed: %v", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		b, _ := io.ReadAll(resp.Body)
-		t.Errorf("expected 200, got %d: %s", resp.StatusCode, string(b))
-	}
+	resp = gt.R1(http.DefaultClient.Do(req)).NoError(t)
+	t.Cleanup(func() { safe.Close(context.Background(), resp.Body) })
+	gt.N(t, resp.StatusCode).Equal(http.StatusOK)
 
 	// Delete
-	req, _ = http.NewRequest(http.MethodDelete, ts.URL+"/api/v1/ws/support/tickets/"+ticketID, nil)
-	resp, err = http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("Delete request failed: %v", err)
-	}
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusNoContent {
-		t.Errorf("expected 204, got %d", resp.StatusCode)
-	}
+	req = gt.R1(http.NewRequest(http.MethodDelete, ts.URL+"/api/v1/ws/support/tickets/"+ticketID, nil)).NoError(t)
+	resp = gt.R1(http.DefaultClient.Do(req)).NoError(t)
+	safe.Close(context.Background(), resp.Body)
+	gt.N(t, resp.StatusCode).Equal(http.StatusNoContent)
 }
 
 func TestTicketList_FilterByClosed(t *testing.T) {
@@ -261,45 +206,29 @@ func TestTicketList_FilterByClosed(t *testing.T) {
 
 	createTicketViaAPI(t, ts, "support", "Open Ticket")
 
-	// Create a ticket then close it
 	closed := createTicketViaAPI(t, ts, "support", "Closed Ticket")
 	closedID := closed["id"].(string)
 	updateBody := `{"statusId":"closed"}`
-	req, _ := http.NewRequest(http.MethodPatch, ts.URL+"/api/v1/ws/support/tickets/"+closedID, strings.NewReader(updateBody))
+	req := gt.R1(http.NewRequest(http.MethodPatch, ts.URL+"/api/v1/ws/support/tickets/"+closedID, strings.NewReader(updateBody))).NoError(t)
 	req.Header.Set("Content-Type", "application/json")
-	http.DefaultClient.Do(req)
+	gt.R1(http.DefaultClient.Do(req)).NoError(t)
 
-	// Filter open only
-	resp, err := http.Get(ts.URL + "/api/v1/ws/support/tickets?isClosed=false")
-	if err != nil {
-		t.Fatalf("request failed: %v", err)
-	}
-	defer resp.Body.Close()
-
-	var body struct {
+	resp := doGet(t, ts.URL+"/api/v1/ws/support/tickets?isClosed=false")
+	type filterResp struct {
 		Tickets []struct {
 			Title string `json:"title"`
 		} `json:"tickets"`
 	}
-	json.NewDecoder(resp.Body).Decode(&body)
-	if len(body.Tickets) != 1 {
-		t.Errorf("expected 1 open ticket, got %d", len(body.Tickets))
-	}
+	body := decodeJSON[filterResp](t, resp)
+	gt.A(t, body.Tickets).Length(1)
 }
 
 func TestAuthMe_NoAuthn(t *testing.T) {
 	ts := setupTestServer(t)
 	defer ts.Close()
 
-	resp, err := http.Get(ts.URL + "/api/auth/me")
-	if err != nil {
-		t.Fatalf("request failed: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("expected 200, got %d", resp.StatusCode)
-	}
+	resp := doGet(t, ts.URL+"/api/auth/me")
+	gt.N(t, resp.StatusCode).Equal(http.StatusOK)
 }
 
 func TestAuthLogin_NoAuthn(t *testing.T) {
@@ -309,17 +238,9 @@ func TestAuthLogin_NoAuthn(t *testing.T) {
 	client := &http.Client{CheckRedirect: func(req *http.Request, via []*http.Request) error {
 		return http.ErrUseLastResponse
 	}}
-	resp, err := client.Get(ts.URL + "/api/auth/login")
-	if err != nil {
-		t.Fatalf("request failed: %v", err)
-	}
-	defer resp.Body.Close()
+	resp := gt.R1(client.Get(ts.URL + "/api/auth/login")).NoError(t)
+	t.Cleanup(func() { safe.Close(context.Background(), resp.Body) })
 
-	if resp.StatusCode != http.StatusTemporaryRedirect && resp.StatusCode != http.StatusFound {
-		t.Errorf("expected 302 or 307, got %d", resp.StatusCode)
-	}
-	loc := resp.Header.Get("Location")
-	if loc != "/" {
-		t.Errorf("expected redirect to '/', got %q", loc)
-	}
+	gt.B(t, resp.StatusCode == http.StatusTemporaryRedirect || resp.StatusCode == http.StatusFound).True()
+	gt.S(t, resp.Header.Get("Location")).Equal("/")
 }

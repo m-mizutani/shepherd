@@ -3,6 +3,7 @@ package config_test
 import (
 	"testing"
 
+	"github.com/m-mizutani/gt"
 	"github.com/m-mizutani/shepherd/pkg/domain/model/config"
 	"github.com/m-mizutani/shepherd/pkg/domain/types"
 )
@@ -37,65 +38,49 @@ func validSchema() *config.FieldSchema {
 }
 
 func TestFieldSchema_Validate_Valid(t *testing.T) {
-	if err := validSchema().Validate(); err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
+	gt.NoError(t, validSchema().Validate())
 }
 
 func TestFieldSchema_Validate_NoStatuses(t *testing.T) {
 	s := validSchema()
 	s.Statuses = nil
-	if err := s.Validate(); err == nil {
-		t.Fatal("expected error for missing statuses")
-	}
+	gt.Error(t, s.Validate())
 }
 
 func TestFieldSchema_Validate_InvalidStatusID(t *testing.T) {
 	s := validSchema()
 	s.Statuses[0].ID = "INVALID"
-	if err := s.Validate(); err == nil {
-		t.Fatal("expected error for invalid status ID")
-	}
+	gt.Error(t, s.Validate())
 }
 
 func TestFieldSchema_Validate_DuplicateStatusID(t *testing.T) {
 	s := validSchema()
 	s.Statuses = append(s.Statuses, config.StatusDef{ID: "open", Name: "Dup"})
-	if err := s.Validate(); err == nil {
-		t.Fatal("expected error for duplicate status ID")
-	}
+	gt.Error(t, s.Validate())
 }
 
 func TestFieldSchema_Validate_InvalidDefaultStatus(t *testing.T) {
 	s := validSchema()
 	s.TicketConfig.DefaultStatusID = "nonexistent"
-	if err := s.Validate(); err == nil {
-		t.Fatal("expected error for invalid default status")
-	}
+	gt.Error(t, s.Validate())
 }
 
 func TestFieldSchema_Validate_DefaultStatusIsClosed(t *testing.T) {
 	s := validSchema()
 	s.TicketConfig.DefaultStatusID = "closed"
-	if err := s.Validate(); err == nil {
-		t.Fatal("expected error when default status is a closed status")
-	}
+	gt.Error(t, s.Validate())
 }
 
 func TestFieldSchema_Validate_InvalidClosedStatus(t *testing.T) {
 	s := validSchema()
 	s.TicketConfig.ClosedStatusIDs = []string{"nonexistent"}
-	if err := s.Validate(); err == nil {
-		t.Fatal("expected error for invalid closed status reference")
-	}
+	gt.Error(t, s.Validate())
 }
 
 func TestFieldSchema_Validate_InvalidFieldID(t *testing.T) {
 	s := validSchema()
 	s.Fields[0].ID = "INVALID!"
-	if err := s.Validate(); err == nil {
-		t.Fatal("expected error for invalid field ID")
-	}
+	gt.Error(t, s.Validate())
 }
 
 func TestFieldSchema_Validate_DuplicateFieldID(t *testing.T) {
@@ -105,49 +90,37 @@ func TestFieldSchema_Validate_DuplicateFieldID(t *testing.T) {
 		Name: "Dup Priority",
 		Type: types.FieldTypeText,
 	})
-	if err := s.Validate(); err == nil {
-		t.Fatal("expected error for duplicate field ID")
-	}
+	gt.Error(t, s.Validate())
 }
 
 func TestFieldSchema_Validate_MissingFieldName(t *testing.T) {
 	s := validSchema()
 	s.Fields[0].Name = ""
-	if err := s.Validate(); err == nil {
-		t.Fatal("expected error for missing field name")
-	}
+	gt.Error(t, s.Validate())
 }
 
 func TestFieldSchema_Validate_InvalidFieldType(t *testing.T) {
 	s := validSchema()
 	s.Fields[0].Type = "invalid-type"
-	if err := s.Validate(); err == nil {
-		t.Fatal("expected error for invalid field type")
-	}
+	gt.Error(t, s.Validate())
 }
 
 func TestFieldSchema_Validate_SelectWithoutOptions(t *testing.T) {
 	s := validSchema()
 	s.Fields[0].Options = nil
-	if err := s.Validate(); err == nil {
-		t.Fatal("expected error for select field without options")
-	}
+	gt.Error(t, s.Validate())
 }
 
 func TestFieldSchema_Validate_DuplicateOptionID(t *testing.T) {
 	s := validSchema()
 	s.Fields[0].Options = append(s.Fields[0].Options, config.FieldOption{ID: "high", Name: "Dup"})
-	if err := s.Validate(); err == nil {
-		t.Fatal("expected error for duplicate option ID")
-	}
+	gt.Error(t, s.Validate())
 }
 
 func TestFieldSchema_Validate_InvalidOptionID(t *testing.T) {
 	s := validSchema()
 	s.Fields[0].Options[0].ID = "BAD ID!"
-	if err := s.Validate(); err == nil {
-		t.Fatal("expected error for invalid option ID")
-	}
+	gt.Error(t, s.Validate())
 }
 
 func TestFieldSchema_Validate_TextFieldNoOptionsOK(t *testing.T) {
@@ -155,9 +128,7 @@ func TestFieldSchema_Validate_TextFieldNoOptionsOK(t *testing.T) {
 	s.Fields = []config.FieldDefinition{
 		{ID: "note", Name: "Note", Type: types.FieldTypeText},
 	}
-	if err := s.Validate(); err != nil {
-		t.Fatalf("expected no error for text field without options, got %v", err)
-	}
+	gt.NoError(t, s.Validate())
 }
 
 func TestFieldSchema_Validate_AllFieldTypes(t *testing.T) {
@@ -169,21 +140,13 @@ func TestFieldSchema_Validate_AllFieldTypes(t *testing.T) {
 		s.Fields = []config.FieldDefinition{
 			{ID: "f", Name: "F", Type: ft},
 		}
-		if err := s.Validate(); err != nil {
-			t.Errorf("expected no error for field type %q, got %v", ft, err)
-		}
+		gt.NoError(t, s.Validate())
 	}
 }
 
 func TestFieldSchema_IsClosedStatus(t *testing.T) {
 	s := validSchema()
-	if !s.IsClosedStatus("closed") {
-		t.Error("expected 'closed' to be a closed status")
-	}
-	if s.IsClosedStatus("open") {
-		t.Error("expected 'open' to not be a closed status")
-	}
-	if s.IsClosedStatus("nonexistent") {
-		t.Error("expected 'nonexistent' to not be a closed status")
-	}
+	gt.B(t, s.IsClosedStatus("closed")).True()
+	gt.B(t, s.IsClosedStatus("open")).False()
+	gt.B(t, s.IsClosedStatus("nonexistent")).False()
 }
