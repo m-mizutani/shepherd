@@ -13,6 +13,7 @@ import (
 	server "github.com/m-mizutani/shepherd/pkg/controller/http"
 	"github.com/m-mizutani/shepherd/pkg/domain/model"
 	"github.com/m-mizutani/shepherd/pkg/domain/model/config"
+	"github.com/m-mizutani/shepherd/pkg/domain/types"
 	"github.com/m-mizutani/shepherd/pkg/repository/memory"
 	"github.com/m-mizutani/shepherd/pkg/usecase"
 	"github.com/m-mizutani/shepherd/pkg/utils/safe"
@@ -34,7 +35,7 @@ func setupTestServer(t *testing.T) *httptest.Server {
 			},
 			TicketConfig: config.TicketConfig{
 				DefaultStatusID: "open",
-				ClosedStatusIDs: []string{"closed"},
+				ClosedStatusIDs: []types.StatusID{"closed"},
 			},
 			Fields: []config.FieldDefinition{
 				{

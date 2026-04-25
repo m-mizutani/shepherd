@@ -16,6 +16,7 @@ import (
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/go-chi/chi/v5"
+	"github.com/m-mizutani/shepherd/pkg/domain/types"
 	"github.com/oapi-codegen/runtime"
 )
 
@@ -99,8 +100,8 @@ type FieldType string
 
 // FieldValue defines model for FieldValue.
 type FieldValue struct {
-	FieldId string      `json:"fieldId"`
-	Value   interface{} `json:"value"`
+	FieldId types.FieldID `json:"fieldId"`
+	Value   interface{}   `json:"value"`
 }
 
 // StatusDef defines model for StatusDef.
@@ -705,26 +706,27 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"H4sIAAAAAAAC/+RZzXLbNhB+lQzaI2MqjacH3VK5aTXNxJlKaQ+ZHCBiJSEmARoA42o8fPcOABIESVAi",
-	"LdVNpzdJ2F3s9+0fAD2ihGc5Z8CURPNHlGOBM1AgzLc1Te5ALYn+TBmaoxyrPYoQwxmgOVL1coQE3BdU",
-	"AEFzJQqIkEz2kGGtpw65lpVKULZDZRmhP7m4kzlOYNDwgycxxXZZLxrvFzzLgCkDS/AchKJgFjacHALq",
-	"EUoEYAXkjdHZcpFhheaIYAUvFc0ARX0VSoKWZIqTu48SxJKESWhAfdI22hqRddF36LPbm2++QKL0Jguz",
-	"aoP0O9wXIANgsZR0xwCWYUcJyETQXFHOgutbCikxhqiCzHz4XsAWzdF3cZM6cUV7/FaL/4HTArRyZQ0L",
-	"gQ+GFYVVIQc8UVSlcJosKxai42emqDq8wxtIZZ+HU0BtMp/nmbFQy7e5DTlsyLqBLWW0dmuazwPJZ6so",
-	"sMCNqYnRvLX7B8LZgHd7bThPAXvSIzZYa8FgTRgglSVveZDL2zzMY8JTLqYwmIHCBCvTZDAhJjw4/eAZ",
-	"ta2o58YA9YPgBqGsK/aAFZlJLvhLpxYrsg0I3S4g1eIRyopU0ZfuayHNsu5Z+ptIvS0afF6Z9sgyFT9Q",
-	"o18rlS6gWqeWCMFameK/0clwdnyoXKRcDmXecP4LAv4+lCnYgTiafNa3WtfbOoRx7ZrIpCb8hLnzrH17",
-	"IAoCci4UiNXRYadz9f69zmIPG2Xqx+sGlwtENQcXe8wYpMsjw3W9F4DJWoYlnjJoIlTkZFocgoPcom3G",
-	"gHPGRcWPuL/rcEotONvSXaByTC6uqh3a8e4D74SVwBYXqVoNk9XB11WIevuHEHw0+P4Hx5QecnfS7eOd",
-	"NronzQ+361DSPIUs75gSYCx1h65jhloHNMczjPekGSEBH1SnUI4ZahVVl13nVsemV74V3j772hZlW25i",
-	"aDMFrfaQ70GQF28+LPWEBCFNGqPZ1aurmT2XAcM5RXP0+mp29RpF5j5k6IhxTuOvr+I94FTt9S87O2B0",
-	"QLGOh85T9AuoX62ExiJzzipef5jN7IRlqroL4TxPaWJU4y/S1lNzpWpniqXidEJWcmE+WrWLbn/Tv5aR",
-	"Q/YgB1G9o1K5bJaXhfbQ2B2bfk0599Kvw4dn/ImcxI/eJbg8FvfGq6h1ff8UBtOIxP5FvPx8JrsjiQuD",
-	"j9D17Lp340HvuXrxlheMnKAnTlzVn2TJFfO3zpXrTv8IY7azHS+9dSVzFldR9cJzX4A4NE883qHoyFtR",
-	"WNcdwQO67hpwdpDa7cLja1SvqG4CpxpFbXZslxgT9gjlXAZC6j8XXSD/zUHup+op7SKpH3rPKtuM6Wt3",
-	"2Qvsq4u5UIetz751jlys8uLH+vm0tMZSUNAP2o35/RJBi06Ku+feQO0EEFvXyNikHOrM/z622TOkz4Ti",
-	"xSrZ95nyb1HPTNblKz10JRxV6d9SqKYVufYhq/9mGRy5i1roP1MO3Ze8BuSoOVn/SXNqUDrDl5yUZVn+",
-	"HQAA//9fU5I+ARsAAA==",
+	"H4sIAAAAAAAC/+RZzXLbNhB+lQzaIyUqjacH3VK5aTXNxJlaaQ+ZHCBiJSEmARoA47gavnsHAAmCIiiR",
+	"luqm05MtYbG737d/ALRHCc9yzoApieZ7lGOBM1AgzKcVTe5ALYn+nzI0RzlWOxQhhjNAc6Tq5QgJuC+o",
+	"AILmShQQIZnsIMN6n3rMtaxUgrItKssI/cnFncxxAr2KHzyJMbrLetF4v+BZBkwZWILnIBQFs7Dm5DGw",
+	"PUKJAKyAvDZ7NlxkWKE5IljBRNEMUNTdQklQk0xxcvdBgliSMAkNqI9aR3tHZF30HfrkbPP1Z0iUNrIw",
+	"qzZIv8N9ATIAFktJtwxgGXaUgEwEzRXlLLi+oZASo4gqyMw/3wvYoDn6Lm5SJ65oj99o8T9wWoDeXGnD",
+	"QuBHw4rCqpA9niiqUjhNlhUL0fEzU1Q9vsVrSGWXh1NAbTKf55nRUMu3uQ05bMi6hg1ltHZrnM89yWer",
+	"KLDAjaqR0byx9gPhbMA7W2vOU8Ce9AADKy0YrAkDpNLkLfdyeZOHeUx4ysUYBjNQmGBlmgwmxIQHp+89",
+	"pbYVddzoob4XXC+UVcUesCIzyQVfdWqxIluD0O0CUi0eoaxIFZ24j4U0y7pn6U8i9Uw0+Lwy7ZBlKj5U",
+	"oxH6OtnySfWl/iOnRtHy2l+b0CznwnYi3dXnaEvVrlhPE57F2SSjfxUKMxrLHeQ7ECTO77Yx4RmmLDZK",
+	"DV1fKucOqau9qyVCBN6aNnOt0+7sTKBykXLZl+P9lSYI+HYoU7AFcTTNrW/1Xs90COPKtatR7f4JE+5Z",
+	"J0RPFATolAJxe3Ss6qq4f6frxcNGmfrxqsHlAlFN3MUOMwbp8sgYX+0EYLKSYYmnjLQIFTkZF4fgkcGi",
+	"bQaOc8ZFxY+4b7U/pRacbeg2UDkmF28rC+14d4EfhJXABhepuu0n6wDf4YaoYz+E4IPB9z84EHWQuzN1",
+	"F++4Q8KoSeWs9iXNU8jyDkQBxlJ3vDumqHUUdDzDcE+aERLwQR0UyjFFraI6ZNe5daDTK98Kb5d9rYuy",
+	"DTcxtJmCbquR+uL1+6WekCCkSWM0m76czuwJEBjOKZqjV9PZ9BWKzIw2dMQ4p/GXl/EOcKrH9h5t7YDR",
+	"AcU6HjpP0S+gfrUSGovMOat4/WE2sxOWqerWhfM8pYnZGn+Wtp6ay1s7UywVpxOykgvz0apddPOb/raM",
+	"HLIH2YvqLZXKZbO8LLSHRu/Q9GvKuZN+B3x4yp/ISbz3rtvlsbg3XkWth4KPYTCNSOxf+ctPZ7I7kLgw",
+	"+Ahdza46dyv0jqsXb3jByAl64sRV/UmWXDF/61y57vSPMGY72/HSW1UyZ3EVVW9J9wWIx+YxyTsUHXmV",
+	"Cu91R/DAXncNODtI7Xbh8TWoV1Q3gVONolY7tEsMCXuEci4DIfUfpi6Q/+Yg91P1aHeR1A+9nJVtxvQF",
+	"v+wE9uXFXKjD1mXfOkcuVnnxvn6oLa2yFBR0g3Ztvr9E0KKT4u5hOVA7AcTWNTI0Kfs687+PbfYM6TOi",
+	"eLFKdl2m/FvUM5N1+UoPXQkHVfq3FKpxRa59yOofdHpH7qIW+s+Uw+FLXgNy0Jysfw46NSid4ktOyrIs",
+	"/w4AAP//03rsbWsbAAA=",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

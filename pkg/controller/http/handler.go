@@ -9,6 +9,7 @@ import (
 	"github.com/m-mizutani/shepherd/pkg/domain/interfaces"
 	"github.com/m-mizutani/shepherd/pkg/domain/model"
 	"github.com/m-mizutani/shepherd/pkg/domain/model/config"
+	"github.com/m-mizutani/shepherd/pkg/domain/types"
 	"github.com/m-mizutani/shepherd/pkg/usecase"
 	"github.com/m-mizutani/shepherd/pkg/utils/errutil"
 )
@@ -35,22 +36,22 @@ func (h *APIHandler) ListWorkspaces(w http.ResponseWriter, r *http.Request) {
 	workspaces := h.workspaceUC.List()
 	resp := make([]Workspace, 0, len(workspaces))
 	for _, ws := range workspaces {
-		resp = append(resp, Workspace{Id: ws.ID, Name: ws.Name})
+		resp = append(resp, Workspace{Id: string(ws.ID), Name: ws.Name})
 	}
 	writeJSON(r.Context(), w, http.StatusOK, map[string][]Workspace{"workspaces": resp})
 }
 
 func (h *APIHandler) GetWorkspace(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId) {
-	ws, err := h.workspaceUC.Get(string(workspaceId))
+	ws, err := h.workspaceUC.Get(types.WorkspaceID(workspaceId))
 	if err != nil {
 		handleUseCaseError(r.Context(), w, err)
 		return
 	}
-	writeJSON(r.Context(), w, http.StatusOK, Workspace{Id: ws.ID, Name: ws.Name})
+	writeJSON(r.Context(), w, http.StatusOK, Workspace{Id: string(ws.ID), Name: ws.Name})
 }
 
 func (h *APIHandler) GetWorkspaceConfig(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId) {
-	schema, err := h.workspaceUC.GetConfig(string(workspaceId))
+	schema, err := h.workspaceUC.GetConfig(types.WorkspaceID(workspaceId))
 	if err != nil {
 		handleUseCaseError(r.Context(), w, err)
 		return
@@ -59,12 +60,12 @@ func (h *APIHandler) GetWorkspaceConfig(w http.ResponseWriter, r *http.Request, 
 }
 
 func (h *APIHandler) ListTickets(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId, params ListTicketsParams) {
-	var statusIDs []string
+	var statusIDs []types.StatusID
 	if params.StatusId != nil {
-		statusIDs = []string{*params.StatusId}
+		statusIDs = []types.StatusID{types.StatusID(*params.StatusId)}
 	}
 
-	tickets, err := h.ticketUC.List(r.Context(), string(workspaceId), params.IsClosed, statusIDs)
+	tickets, err := h.ticketUC.List(r.Context(), types.WorkspaceID(workspaceId), params.IsClosed, statusIDs)
 	if err != nil {
 		handleUseCaseError(r.Context(), w, err)
 		return
@@ -84,12 +85,13 @@ func (h *APIHandler) CreateTicket(w http.ResponseWriter, r *http.Request, worksp
 		return
 	}
 
-	var statusID, assigneeID string
+	var statusID types.StatusID
+	var assigneeID types.SlackUserID
 	if req.StatusId != nil {
-		statusID = *req.StatusId
+		statusID = types.StatusID(*req.StatusId)
 	}
 	if req.AssigneeId != nil {
-		assigneeID = *req.AssigneeId
+		assigneeID = types.SlackUserID(*req.AssigneeId)
 	}
 
 	fields := toModelFieldValues(req.Fields)
@@ -99,7 +101,7 @@ func (h *APIHandler) CreateTicket(w http.ResponseWriter, r *http.Request, worksp
 		description = *req.Description
 	}
 
-	ticket, err := h.ticketUC.Create(r.Context(), string(workspaceId), req.Title, description, statusID, assigneeID, fields)
+	ticket, err := h.ticketUC.Create(r.Context(), types.WorkspaceID(workspaceId), req.Title, description, statusID, assigneeID, fields)
 	if err != nil {
 		handleUseCaseError(r.Context(), w, err)
 		return
@@ -109,7 +111,7 @@ func (h *APIHandler) CreateTicket(w http.ResponseWriter, r *http.Request, worksp
 }
 
 func (h *APIHandler) GetTicket(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId, ticketId TicketId) {
-	ticket, err := h.ticketUC.Get(r.Context(), string(workspaceId), string(ticketId))
+	ticket, err := h.ticketUC.Get(r.Context(), types.WorkspaceID(workspaceId), types.TicketID(ticketId))
 	if err != nil {
 		handleUseCaseError(r.Context(), w, err)
 		return
@@ -126,7 +128,18 @@ func (h *APIHandler) UpdateTicket(w http.ResponseWriter, r *http.Request, worksp
 
 	fields := toModelFieldValues(req.Fields)
 
-	ticket, err := h.ticketUC.Update(r.Context(), string(workspaceId), string(ticketId), req.Title, req.Description, req.StatusId, req.AssigneeId, fields)
+	var statusID *types.StatusID
+	var assigneeID *types.SlackUserID
+	if req.StatusId != nil {
+		sid := types.StatusID(*req.StatusId)
+		statusID = &sid
+	}
+	if req.AssigneeId != nil {
+		aid := types.SlackUserID(*req.AssigneeId)
+		assigneeID = &aid
+	}
+
+	ticket, err := h.ticketUC.Update(r.Context(), types.WorkspaceID(workspaceId), types.TicketID(ticketId), req.Title, req.Description, statusID, assigneeID, fields)
 	if err != nil {
 		handleUseCaseError(r.Context(), w, err)
 		return
@@ -136,7 +149,7 @@ func (h *APIHandler) UpdateTicket(w http.ResponseWriter, r *http.Request, worksp
 }
 
 func (h *APIHandler) DeleteTicket(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId, ticketId TicketId) {
-	if err := h.ticketUC.Delete(r.Context(), string(workspaceId), string(ticketId)); err != nil {
+	if err := h.ticketUC.Delete(r.Context(), types.WorkspaceID(workspaceId), types.TicketID(ticketId)); err != nil {
 		handleUseCaseError(r.Context(), w, err)
 		return
 	}
@@ -144,7 +157,7 @@ func (h *APIHandler) DeleteTicket(w http.ResponseWriter, r *http.Request, worksp
 }
 
 func (h *APIHandler) ListComments(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId, ticketId TicketId) {
-	comments, err := h.ticketUC.ListComments(r.Context(), string(workspaceId), string(ticketId))
+	comments, err := h.ticketUC.ListComments(r.Context(), types.WorkspaceID(workspaceId), types.TicketID(ticketId))
 	if err != nil {
 		handleUseCaseError(r.Context(), w, err)
 		return
@@ -153,8 +166,8 @@ func (h *APIHandler) ListComments(w http.ResponseWriter, r *http.Request, worksp
 	resp := make([]Comment, 0, len(comments))
 	for _, c := range comments {
 		resp = append(resp, Comment{
-			Id:          c.ID,
-			SlackUserId: c.SlackUserID,
+			Id:          string(c.ID),
+			SlackUserId: string(c.SlackUserID),
 			Body:        c.Body,
 			CreatedAt:   c.CreatedAt,
 		})
@@ -172,10 +185,10 @@ func toTicketResponse(t *model.Ticket) Ticket {
 	}
 
 	ticket := Ticket{
-		Id:        t.ID,
+		Id:        string(t.ID),
 		SeqNum:    t.SeqNum,
 		Title:     t.Title,
-		StatusId:  t.StatusID,
+		StatusId:  string(t.StatusID),
 		Fields:    fields,
 		CreatedAt: t.CreatedAt,
 		UpdatedAt: t.UpdatedAt,
@@ -185,16 +198,20 @@ func toTicketResponse(t *model.Ticket) Ticket {
 		ticket.Description = &t.Description
 	}
 	if t.AssigneeID != "" {
-		ticket.AssigneeId = &t.AssigneeID
+		s := string(t.AssigneeID)
+		ticket.AssigneeId = &s
 	}
 	if t.ReporterSlackUserID != "" {
-		ticket.ReporterSlackUserId = &t.ReporterSlackUserID
+		s := string(t.ReporterSlackUserID)
+		ticket.ReporterSlackUserId = &s
 	}
 	if t.SlackChannelID != "" {
-		ticket.SlackChannelId = &t.SlackChannelID
+		s := string(t.SlackChannelID)
+		ticket.SlackChannelId = &s
 	}
 	if t.SlackThreadTS != "" {
-		ticket.SlackThreadTs = &t.SlackThreadTS
+		s := string(t.SlackThreadTS)
+		ticket.SlackThreadTs = &s
 	}
 
 	return ticket
@@ -204,7 +221,7 @@ func toWorkspaceConfigResponse(schema *config.FieldSchema) WorkspaceConfig {
 	statuses := make([]StatusDef, 0, len(schema.Statuses))
 	for _, s := range schema.Statuses {
 		statuses = append(statuses, StatusDef{
-			Id:       s.ID,
+			Id:       string(s.ID),
 			Name:     s.Name,
 			Color:    s.Color,
 			Order:    s.Order,
@@ -244,15 +261,15 @@ func toWorkspaceConfigResponse(schema *config.FieldSchema) WorkspaceConfig {
 		fields = append(fields, fd)
 	}
 
-	closedIDs := schema.TicketConfig.ClosedStatusIDs
-	if closedIDs == nil {
-		closedIDs = []string{}
+	closedIDs := make([]string, len(schema.TicketConfig.ClosedStatusIDs))
+	for i, id := range schema.TicketConfig.ClosedStatusIDs {
+		closedIDs[i] = string(id)
 	}
 
 	return WorkspaceConfig{
 		Statuses: statuses,
 		TicketConfig: TicketConfig{
-			DefaultStatusId: schema.TicketConfig.DefaultStatusID,
+			DefaultStatusId: string(schema.TicketConfig.DefaultStatusID),
 			ClosedStatusIds: closedIDs,
 		},
 		Fields: fields,
@@ -270,7 +287,7 @@ func toModelFieldValues(fields *[]FieldValue) map[string]model.FieldValue {
 	}
 	result := make(map[string]model.FieldValue, len(*fields))
 	for _, f := range *fields {
-		result[f.FieldId] = model.FieldValue{
+		result[string(f.FieldId)] = model.FieldValue{
 			FieldID: f.FieldId,
 			Value:   f.Value,
 		}

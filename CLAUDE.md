@@ -44,6 +44,12 @@ Never call `slog.Info()`, `slog.Error()`, `slog.Debug()`, `slog.Warn()` or other
 - Examples: `feat: add Slack OAuth callback endpoint`, `fix: resolve nil pointer in ticket handler`
 - Do NOT include `Co-Authored-By` trailers
 
+## Firestore Storage (CRITICAL)
+
+- Never use `firestore` struct tags — they are a bug magnet. Use Go's default field names (PascalCase) as Firestore keys.
+- Never create wrapper types or conversion functions (e.g., `ticketToMap` / `mapToTicket`) for Firestore serialization. Store domain models directly via `ref.Set(ctx, model)` and retrieve via `doc.DataTo(&model)`.
+- Domain model structs in `pkg/domain/model/` are the single source of truth for both application logic and persistence schema.
+
 ## Tech Stack
 
 - Backend: Go (chi/v5, goerr/v2, urfave/cli/v3)

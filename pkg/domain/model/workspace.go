@@ -2,27 +2,28 @@ package model
 
 import (
 	"github.com/m-mizutani/shepherd/pkg/domain/model/config"
+	"github.com/m-mizutani/shepherd/pkg/domain/types"
 )
 
 type Workspace struct {
-	ID   string
+	ID   types.WorkspaceID
 	Name string
 }
 
 type WorkspaceEntry struct {
 	Workspace       Workspace
 	FieldSchema     *config.FieldSchema
-	SlackChannelID  string
+	SlackChannelID  types.SlackChannelID
 }
 
 type WorkspaceRegistry struct {
-	entries map[string]*WorkspaceEntry
-	order   []string
+	entries map[types.WorkspaceID]*WorkspaceEntry
+	order   []types.WorkspaceID
 }
 
 func NewWorkspaceRegistry() *WorkspaceRegistry {
 	return &WorkspaceRegistry{
-		entries: make(map[string]*WorkspaceEntry),
+		entries: make(map[types.WorkspaceID]*WorkspaceEntry),
 	}
 }
 
@@ -34,7 +35,7 @@ func (r *WorkspaceRegistry) Register(entry *WorkspaceEntry) {
 	r.entries[id] = entry
 }
 
-func (r *WorkspaceRegistry) Get(id string) (*WorkspaceEntry, bool) {
+func (r *WorkspaceRegistry) Get(id types.WorkspaceID) (*WorkspaceEntry, bool) {
 	entry, ok := r.entries[id]
 	return entry, ok
 }
@@ -57,7 +58,7 @@ func (r *WorkspaceRegistry) Workspaces() []Workspace {
 
 func (r *WorkspaceRegistry) GetBySlackChannelID(channelID string) (*WorkspaceEntry, bool) {
 	for _, entry := range r.entries {
-		if entry.SlackChannelID == channelID {
+		if string(entry.SlackChannelID) == channelID {
 			return entry, true
 		}
 	}

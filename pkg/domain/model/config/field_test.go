@@ -16,7 +16,7 @@ func validSchema() *config.FieldSchema {
 		},
 		TicketConfig: config.TicketConfig{
 			DefaultStatusID: "open",
-			ClosedStatusIDs: []string{"closed"},
+			ClosedStatusIDs: []types.StatusID{"closed"},
 		},
 		Fields: []config.FieldDefinition{
 			{
@@ -73,7 +73,7 @@ func TestFieldSchema_Validate_DefaultStatusIsClosed(t *testing.T) {
 
 func TestFieldSchema_Validate_InvalidClosedStatus(t *testing.T) {
 	s := validSchema()
-	s.TicketConfig.ClosedStatusIDs = []string{"nonexistent"}
+	s.TicketConfig.ClosedStatusIDs = []types.StatusID{"nonexistent"}
 	gt.Error(t, s.Validate())
 }
 

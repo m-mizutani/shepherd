@@ -73,20 +73,33 @@ func slackEventHandler(slackUC *usecase.SlackUseCase) http.HandlerFunc {
 					slog.String("subtype", ev.SubType),
 				)
 
-				if ev.BotID != "" || ev.SubType != "" {
-					logger.Debug("slack event skipped: bot message or subtype")
-					w.WriteHeader(http.StatusOK)
-					return
-				}
-
-				if ev.ThreadTimeStamp == "" || ev.ThreadTimeStamp == ev.TimeStamp {
-					async.Dispatch(r.Context(), func(ctx context.Context) error {
-						return slackUC.HandleNewMessage(ctx, ev.Channel, ev.User, ev.Text, ev.TimeStamp)
-					})
-				} else {
-					async.Dispatch(r.Context(), func(ctx context.Context) error {
-						return slackUC.HandleThreadReply(ctx, ev.Channel, ev.ThreadTimeStamp, ev.User, ev.Text, ev.TimeStamp)
-					})
+				switch ev.SubType {
+				case "message_changed":
+					if ev.Message != nil {
+						async.Dispatch(r.Context(), func(ctx context.Context) error {
+							return slackUC.HandleMessageChanged(ctx, ev.Channel, ev.Message.Timestamp, ev.Message.Text)
+						})
+					}
+				case "":
+					isBot := ev.BotID != ""
+					if ev.ThreadTimeStamp == "" || ev.ThreadTimeStamp == ev.TimeStamp {
+						if isBot {
+							logger.Debug("slack event skipped: bot message on parent thread")
+							w.WriteHeader(http.StatusOK)
+							return
+						}
+						async.Dispatch(r.Context(), func(ctx context.Context) error {
+							return slackUC.HandleNewMessage(ctx, ev.Channel, ev.User, ev.Text, ev.TimeStamp)
+						})
+					} else {
+						async.Dispatch(r.Context(), func(ctx context.Context) error {
+							return slackUC.HandleThreadReply(ctx, ev.Channel, ev.ThreadTimeStamp, ev.User, ev.Text, ev.TimeStamp, isBot)
+						})
+					}
+				default:
+					logger.Debug("slack message subtype skipped",
+						slog.String("subtype", ev.SubType),
+					)
 				}
 
 			default:

@@ -10,9 +10,10 @@ import (
 )
 
 type Repository struct {
-	client  *firestore.Client
-	ticket  *ticketRepository
-	comment *commentRepository
+	client        *firestore.Client
+	ticket        *ticketRepository
+	comment       *commentRepository
+	ticketHistory *ticketHistoryRepository
 }
 
 func New(ctx context.Context, projectID, databaseID string) (*Repository, error) {
@@ -32,9 +33,10 @@ func New(ctx context.Context, projectID, databaseID string) (*Repository, error)
 	}
 
 	return &Repository{
-		client:  client,
-		ticket:  &ticketRepository{client: client},
-		comment: &commentRepository{client: client},
+		client:        client,
+		ticket:        &ticketRepository{client: client},
+		comment:       &commentRepository{client: client},
+		ticketHistory: &ticketHistoryRepository{client: client},
 	}, nil
 }
 
@@ -44,6 +46,10 @@ func (r *Repository) Ticket() interfaces.TicketRepository {
 
 func (r *Repository) Comment() interfaces.CommentRepository {
 	return r.comment
+}
+
+func (r *Repository) TicketHistory() interfaces.TicketHistoryRepository {
+	return r.ticketHistory
 }
 
 func (r *Repository) PutToken(ctx context.Context, token *auth.Token) error {

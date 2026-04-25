@@ -119,7 +119,7 @@ func (a *AppConfig) ToDomainFieldSchema() *domainConfig.FieldSchema {
 	statuses := make([]domainConfig.StatusDef, len(a.Statuses))
 	for i, s := range a.Statuses {
 		statuses[i] = domainConfig.StatusDef{
-			ID:    s.ID,
+			ID:    types.StatusID(s.ID),
 			Name:  s.Name,
 			Color: s.Color,
 			Order: i,
@@ -162,16 +162,21 @@ func (a *AppConfig) ToDomainFieldSchema() *domainConfig.FieldSchema {
 		labels.Description = "Description"
 	}
 
-	defaultStatusID := a.Ticket.DefaultStatus
+	defaultStatusID := types.StatusID(a.Ticket.DefaultStatus)
 	if defaultStatusID == "" && len(statuses) > 0 {
 		defaultStatusID = statuses[0].ID
+	}
+
+	closedStatusIDs := make([]types.StatusID, len(a.Ticket.ClosedStatuses))
+	for i, cs := range a.Ticket.ClosedStatuses {
+		closedStatusIDs[i] = types.StatusID(cs)
 	}
 
 	return &domainConfig.FieldSchema{
 		Statuses: statuses,
 		TicketConfig: domainConfig.TicketConfig{
 			DefaultStatusID: defaultStatusID,
-			ClosedStatusIDs: a.Ticket.ClosedStatuses,
+			ClosedStatusIDs: closedStatusIDs,
 		},
 		Fields: fields,
 		Labels: labels,
@@ -300,11 +305,11 @@ func BuildRegistry(ctx context.Context, configs []*WorkspaceConfig, resolve Chan
 
 		registry.Register(&model.WorkspaceEntry{
 			Workspace: model.Workspace{
-				ID:   wc.ID,
+				ID:   types.WorkspaceID(wc.ID),
 				Name: wc.Name,
 			},
 			FieldSchema:    wc.FieldSchema,
-			SlackChannelID: channelID,
+			SlackChannelID: types.SlackChannelID(channelID),
 		})
 		logger.Info("Registered workspace", "id", wc.ID, "name", wc.Name, "channel", channelID)
 	}
