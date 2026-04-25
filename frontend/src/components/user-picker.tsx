@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { Avatar } from "./ui/avatar";
 import { Icon } from "./ui/icon";
+import { useTranslation } from "../i18n";
 
 interface SlackUser {
   id: string;
@@ -28,7 +29,8 @@ interface MultiProps extends BaseProps {
 }
 
 export function UserPicker(props: SingleProps | MultiProps) {
-  const { users, placeholder = "Select a user...", disabled = false } = props;
+  const { t } = useTranslation();
+  const { users, placeholder = t("userPickerSelectUser"), disabled = false } = props;
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [highlightedIndex, setHighlightedIndex] = useState(0);
@@ -164,7 +166,7 @@ export function UserPicker(props: SingleProps | MultiProps) {
                     removeUser(id);
                   }}
                   className="text-ink-4 hover:text-ink-1"
-                  aria-label="Remove"
+                  aria-label={t("userPickerRemove")}
                 >
                   <Icon name="x" size={10} />
                 </button>
@@ -192,6 +194,7 @@ export function UserPicker(props: SingleProps | MultiProps) {
             highlightedIndex={highlightedIndex}
             onHighlight={setHighlightedIndex}
             onSelect={selectUser}
+            emptyLabel={t("userPickerEmptyResults")}
           />
         )}
       </div>
@@ -230,7 +233,7 @@ export function UserPicker(props: SingleProps | MultiProps) {
                   removeUser(props.value);
                 }}
                 className="text-ink-4 hover:text-ink-1 px-0.5"
-                aria-label="Clear"
+                aria-label={t("userPickerClear")}
               >
                 <Icon name="x" size={11} />
               </span>
@@ -245,7 +248,7 @@ export function UserPicker(props: SingleProps | MultiProps) {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Type to search..."
+          placeholder={t("userPickerSearchPlaceholder")}
           className="w-full px-2 py-1 text-[13px] border border-brand rounded-2 bg-bg-elev text-ink-1 focus:outline-none focus:ring-2 focus:ring-brand-soft"
         />
       )}
@@ -258,6 +261,7 @@ export function UserPicker(props: SingleProps | MultiProps) {
           highlightedIndex={highlightedIndex}
           onHighlight={setHighlightedIndex}
           onSelect={selectUser}
+          emptyLabel={t("userPickerEmptyResults")}
         />
       )}
     </div>
@@ -270,6 +274,7 @@ interface UserListProps {
   highlightedIndex: number;
   onHighlight: (i: number) => void;
   onSelect: (user: SlackUser) => void;
+  emptyLabel: string;
 }
 
 const UserList = ({
@@ -279,6 +284,7 @@ const UserList = ({
   highlightedIndex,
   onHighlight,
   onSelect,
+  emptyLabel,
 }: UserListProps & { ref: React.RefObject<HTMLUListElement | null> }) => {
   return (
     <ul
@@ -288,7 +294,7 @@ const UserList = ({
     >
       {users.length === 0 && (
         <li className="px-2 py-2 text-[13px] text-ink-4 text-center">
-          No users found
+          {emptyLabel}
         </li>
       )}
       {users.map((u, i) => (

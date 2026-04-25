@@ -11,24 +11,29 @@ import { Skeleton } from "../components/ui/skeleton";
 import { ErrorBox } from "../components/ui/error-box";
 import { EmptyState } from "../components/ui/empty-state";
 import { cn } from "../lib/utils";
+import { useTranslation } from "../i18n";
+import type { MsgKey } from "../i18n/keys";
+
+type NavGroup = "workspace" | "integration";
 
 const NAV_ITEMS: {
   id: string;
-  label: string;
+  labelKey: MsgKey;
   icon: IconName;
-  group: "Workspace" | "Integration";
+  group: NavGroup;
 }[] = [
-  { id: "general", label: "General", icon: "hash", group: "Workspace" },
-  { id: "statuses", label: "Statuses", icon: "flag", group: "Workspace" },
-  { id: "fields", label: "Fields", icon: "filter", group: "Workspace" },
-  { id: "ticket-config", label: "Ticket Config", icon: "inbox", group: "Workspace" },
-  { id: "labels", label: "Labels", icon: "book", group: "Workspace" },
-  { id: "slack", label: "Slack", icon: "slack", group: "Integration" },
-  { id: "members", label: "Members", icon: "user", group: "Integration" },
+  { id: "general", labelKey: "settingsNavGeneral", icon: "hash", group: "workspace" },
+  { id: "statuses", labelKey: "settingsNavStatuses", icon: "flag", group: "workspace" },
+  { id: "fields", labelKey: "settingsNavFields", icon: "filter", group: "workspace" },
+  { id: "ticket-config", labelKey: "settingsNavTicketConfig", icon: "inbox", group: "workspace" },
+  { id: "labels", labelKey: "settingsNavLabels", icon: "book", group: "workspace" },
+  { id: "slack", labelKey: "settingsNavSlack", icon: "slack", group: "integration" },
+  { id: "members", labelKey: "settingsNavMembers", icon: "user", group: "integration" },
 ];
 
 export default function WorkspaceSettingsPage() {
   const { workspaceId } = useParams<{ workspaceId: string }>();
+  const { t } = useTranslation();
   const [active, setActive] = useState<string>("statuses");
   const [editMode, setEditMode] = useState(false);
 
@@ -44,11 +49,17 @@ export default function WorkspaceSettingsPage() {
     },
   });
 
-  const groups = Array.from(new Set(NAV_ITEMS.map((i) => i.group)));
+  const groups: NavGroup[] = Array.from(
+    new Set(NAV_ITEMS.map((i) => i.group)),
+  );
+  const groupLabel = (g: NavGroup) =>
+    g === "workspace"
+      ? t("settingsGroupWorkspace")
+      : t("settingsGroupIntegration");
 
   return (
     <PageShell
-      crumbs={[{ label: "Settings" }]}
+      crumbs={[{ label: t("settingsCrumbSettings") }]}
       showSettings
       settingsActive
     >
@@ -57,7 +68,7 @@ export default function WorkspaceSettingsPage() {
           {groups.map((g) => (
             <div key={g}>
               <div className="text-[11px] font-semibold uppercase tracking-[0.05em] text-ink-3 px-2 pt-3 pb-1">
-                {g}
+                {groupLabel(g)}
               </div>
               {NAV_ITEMS.filter((i) => i.group === g).map((it) => (
                 <button
@@ -78,7 +89,7 @@ export default function WorkspaceSettingsPage() {
                       it.id === active ? "text-brand" : "text-ink-4"
                     }
                   />
-                  {it.label}
+                  {t(it.labelKey)}
                 </button>
               ))}
             </div>
@@ -90,17 +101,16 @@ export default function WorkspaceSettingsPage() {
           <div className="px-3.5 py-2.5 mb-5 bg-info-soft border border-[#bfdbfe] rounded-3 flex items-center gap-2.5">
             <Icon name="eye" size={14} className="text-info" />
             <div className="flex-1 text-[12.5px] text-[#1e3a8a]">
-              {editMode ? (
-                <>Edit mode is on. Most fields are still managed in <code className="bg-white px-1.5 py-px rounded-1 border border-[#bfdbfe] font-mono">workspace.yaml</code>.</>
-              ) : (
-                <>Read-only — workspace settings are managed in <code className="bg-white px-1.5 py-px rounded-1 border border-[#bfdbfe] font-mono">workspace.yaml</code> for now. Editing UI is coming soon.</>
-              )}
+              {editMode
+                ? t("settingsBannerEditMode")
+                : t("settingsBannerReadOnly")}
             </div>
             <Button
               size="sm"
               onClick={() => setEditMode((m) => !m)}
             >
-              <Icon name="edit" size={11} /> {editMode ? "Done" : "Edit"}
+              <Icon name="edit" size={11} />{" "}
+              {editMode ? t("settingsBannerDone") : t("settingsBannerEdit")}
             </Button>
           </div>
 
@@ -117,20 +127,23 @@ export default function WorkspaceSettingsPage() {
 
           {error && (
             <ErrorBox
-              title="Failed to load workspace config"
+              title={t("settingsLoadFailed")}
               onRetry={() => refetch()}
             />
           )}
 
           {data && active === "general" && (
-            <Section title="General" subtitle="Basic workspace metadata.">
+            <Section
+              title={t("settingsTitleGeneral")}
+              subtitle={t("settingsSubtitleGeneral")}
+            >
               <Card className="px-4 py-3.5">
-                <Row label="Workspace ID">
+                <Row label={t("settingsRowWorkspaceId")}>
                   <code className="font-mono text-[13px]">{workspaceId}</code>
                 </Row>
-                <Row label="Display name">
+                <Row label={t("settingsRowDisplayName")}>
                   <span className="text-[13px]">
-                    Defined in <code className="font-mono">workspace.yaml</code>
+                    {t("settingsRowDisplayNameValue")}
                   </span>
                 </Row>
               </Card>
@@ -139,11 +152,11 @@ export default function WorkspaceSettingsPage() {
 
           {data && active === "statuses" && (
             <Section
-              title="Statuses"
-              subtitle="Lifecycle stages a ticket flows through. The chosen color is used for badges and chart segments."
+              title={t("settingsTitleStatuses")}
+              subtitle={t("settingsSubtitleStatuses")}
               action={
                 <Button size="sm" disabled={!editMode}>
-                  <Icon name="plus" size={11} /> Add
+                  <Icon name="plus" size={11} /> {t("settingsBtnAdd")}
                 </Button>
               }
             >
@@ -151,10 +164,10 @@ export default function WorkspaceSettingsPage() {
                 <table className="w-full border-separate border-spacing-0">
                   <thead>
                     <tr>
-                      <Th width={240}>Name</Th>
-                      <Th width={160}>ID</Th>
-                      <Th width={160}>Color</Th>
-                      <Th>Closed?</Th>
+                      <Th width={240}>{t("settingsThName")}</Th>
+                      <Th width={160}>{t("settingsThId")}</Th>
+                      <Th width={160}>{t("settingsThColor")}</Th>
+                      <Th>{t("settingsThClosed")}</Th>
                     </tr>
                   </thead>
                   <tbody>
@@ -181,10 +194,12 @@ export default function WorkspaceSettingsPage() {
                           <Td>
                             {closed ? (
                               <Badge tone="neutral" dot={false}>
-                                Yes
+                                {t("settingsClosedYes")}
                               </Badge>
                             ) : (
-                              <span className="text-[12px] text-ink-3">No</span>
+                              <span className="text-[12px] text-ink-3">
+                                {t("settingsClosedNo")}
+                              </span>
                             )}
                           </Td>
                         </tr>
@@ -198,11 +213,11 @@ export default function WorkspaceSettingsPage() {
 
           {data && active === "fields" && (
             <Section
-              title="Custom Fields"
-              subtitle="Per-workspace metadata attached to every ticket."
+              title={t("settingsTitleFields")}
+              subtitle={t("settingsSubtitleFields")}
               action={
                 <Button size="sm" disabled={!editMode}>
-                  <Icon name="plus" size={11} /> Add
+                  <Icon name="plus" size={11} /> {t("settingsBtnAdd")}
                 </Button>
               }
             >
@@ -210,11 +225,11 @@ export default function WorkspaceSettingsPage() {
                 <table className="w-full border-separate border-spacing-0">
                   <thead>
                     <tr>
-                      <Th>Name</Th>
-                      <Th width={160}>ID</Th>
-                      <Th width={140}>Type</Th>
-                      <Th width={100}>Required</Th>
-                      <Th width={100}>Options</Th>
+                      <Th>{t("settingsThName")}</Th>
+                      <Th width={160}>{t("settingsThId")}</Th>
+                      <Th width={140}>{t("settingsThType")}</Th>
+                      <Th width={100}>{t("settingsThRequired")}</Th>
+                      <Th width={100}>{t("settingsThOptions")}</Th>
                     </tr>
                   </thead>
                   <tbody>
@@ -230,11 +245,11 @@ export default function WorkspaceSettingsPage() {
                         <Td>
                           {f.required ? (
                             <Badge tone="danger" dot={false}>
-                              Required
+                              {t("settingsRequired")}
                             </Badge>
                           ) : (
                             <span className="text-[12px] text-ink-3">
-                              Optional
+                              {t("settingsOptional")}
                             </span>
                           )}
                         </Td>
@@ -250,9 +265,9 @@ export default function WorkspaceSettingsPage() {
           )}
 
           {data && active === "ticket-config" && (
-            <Section title="Ticket Config">
+            <Section title={t("settingsTitleTicketConfig")}>
               <Card className="px-4 py-3.5">
-                <Row label="Default Status">
+                <Row label={t("settingsRowDefaultStatus")}>
                   {(() => {
                     const s = data.statuses.find(
                       (x) => x.id === data.ticketConfig.defaultStatusId,
@@ -266,7 +281,7 @@ export default function WorkspaceSettingsPage() {
                     );
                   })()}
                 </Row>
-                <Row label="Closed Statuses">
+                <Row label={t("settingsRowClosedStatuses")}>
                   <div className="flex gap-1.5">
                     {data.ticketConfig.closedStatusIds.map((id) => {
                       const s = data.statuses.find((x) => x.id === id);
@@ -281,21 +296,15 @@ export default function WorkspaceSettingsPage() {
                       );
                     })}
                     {data.ticketConfig.closedStatusIds.length === 0 && (
-                      <span className="text-[13px] text-ink-3">None</span>
+                      <span className="text-[13px] text-ink-3">
+                        {t("settingsClosedNone")}
+                      </span>
                     )}
                   </div>
                 </Row>
-                <Row label="Auto-close after">
+                <Row label={t("settingsRowAutoClose")}>
                   <span className="text-[13px] text-ink-3">
-                    Coming soon — see{" "}
-                    <a
-                      href="https://github.com/m-mizutani/shepherd/issues/9"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-info underline"
-                    >
-                      #9
-                    </a>
+                    {t("settingsAutoCloseSoon")}
                   </span>
                 </Row>
               </Card>
@@ -303,19 +312,22 @@ export default function WorkspaceSettingsPage() {
           )}
 
           {data && active === "labels" && (
-            <Section title="Labels" subtitle="Strings shown in the UI. Used for i18n.">
+            <Section
+              title={t("settingsTitleLabels")}
+              subtitle={t("settingsSubtitleLabels")}
+            >
               <Card className="px-4 py-3.5">
-                <Row label="Ticket">
+                <Row label={t("settingsLabelTicket")}>
                   <span className="font-mono text-[13px] text-ink-1">
                     "{data.labels.ticket}"
                   </span>
                 </Row>
-                <Row label="Title">
+                <Row label={t("settingsLabelTitle")}>
                   <span className="font-mono text-[13px] text-ink-1">
                     "{data.labels.title}"
                   </span>
                 </Row>
-                <Row label="Description">
+                <Row label={t("settingsLabelDescription")}>
                   <span className="font-mono text-[13px] text-ink-1">
                     "{data.labels.description}"
                   </span>
@@ -326,29 +338,14 @@ export default function WorkspaceSettingsPage() {
 
           {active === "slack" && (
             <Section
-              title="Slack integration"
-              subtitle="Channel mappings and bot-user configuration."
+              title={t("settingsTitleSlack")}
+              subtitle={t("settingsSubtitleSlack")}
             >
               <Card className="p-2">
                 <EmptyState
                   icon="slack"
-                  title="Slack integration view"
-                  description={
-                    <>
-                      Channel-level configuration is read from{" "}
-                      <code className="font-mono">workspace.yaml</code>. A
-                      dedicated UI is tracked in{" "}
-                      <a
-                        href="https://github.com/m-mizutani/shepherd/issues/8"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-info underline"
-                      >
-                        #8
-                      </a>
-                      .
-                    </>
-                  }
+                  title={t("settingsSlackEmptyTitle")}
+                  description={t("settingsSlackEmptyDescription")}
                 />
               </Card>
             </Section>
@@ -356,27 +353,14 @@ export default function WorkspaceSettingsPage() {
 
           {active === "members" && (
             <Section
-              title="Members"
-              subtitle="Slack users with access to this workspace."
+              title={t("settingsTitleMembers")}
+              subtitle={t("settingsSubtitleMembers")}
             >
               <Card className="p-2">
                 <EmptyState
                   icon="user"
-                  title="Members listing"
-                  description={
-                    <>
-                      Coming with{" "}
-                      <a
-                        href="https://github.com/m-mizutani/shepherd/issues/8"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-info underline"
-                      >
-                        #8
-                      </a>
-                      .
-                    </>
-                  }
+                  title={t("settingsMembersEmptyTitle")}
+                  description={t("settingsMembersEmptyDescription")}
                 />
               </Card>
             </Section>

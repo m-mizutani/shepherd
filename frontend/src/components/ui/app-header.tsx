@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { api } from "../../lib/api";
 import { useAuth } from "../../contexts/auth-context";
 import { useTheme } from "../../contexts/theme-context";
+import { useTranslation, type Lang } from "../../i18n";
 import { Logo } from "./logo";
 import { Icon } from "./icon";
 import { Avatar } from "./avatar";
@@ -30,6 +31,7 @@ export function AppHeader({
 }: Props) {
   const { user, logout } = useAuth();
   const { theme, toggle } = useTheme();
+  const { t, lang, setLang } = useTranslation();
   const navigate = useNavigate();
   const { workspaceId } = useParams<{ workspaceId: string }>();
 
@@ -68,7 +70,7 @@ export function AppHeader({
         >
           {(close) => (
             <>
-              <PopoverHeader>Switch workspace</PopoverHeader>
+              <PopoverHeader>{t("navSwitchWorkspace")}</PopoverHeader>
               {workspaces.map((w) => (
                 <PopoverItem
                   key={w.id}
@@ -93,7 +95,7 @@ export function AppHeader({
                 }}
               >
                 <Icon name="folder" size={12} className="text-ink-4" />
-                <span>All workspaces</span>
+                <span>{t("navWorkspaces")}</span>
               </PopoverItem>
             </>
           )}
@@ -128,14 +130,14 @@ export function AppHeader({
                 : "text-ink-3 hover:bg-bg-sunken hover:text-ink-1",
             )}
           >
-            <Icon name="settings" size={13} /> Settings
+            <Icon name="settings" size={13} /> {t("navSettings")}
           </Link>
         )}
 
         <button
           type="button"
           onClick={toggle}
-          title={theme === "dark" ? "Switch to light" : "Switch to dark"}
+          title={theme === "dark" ? t("menuSwitchToLight") : t("menuSwitchToDark")}
           className="w-7 h-7 rounded-2 flex items-center justify-center text-ink-3 hover:bg-bg-sunken hover:text-ink-1"
         >
           <Icon name={theme === "dark" ? "sun" : "moon"} size={14} />
@@ -156,7 +158,7 @@ export function AppHeader({
           <button
             type="button"
             onClick={toggle}
-            aria-label="User menu"
+            aria-label={t("ariaUserMenu")}
             className="ml-1.5 flex items-center gap-2 pl-1 pr-1.5 py-1 rounded-2 hover:bg-bg-sunken"
           >
             <Avatar name={user?.name ?? "?"} size="sm" />
@@ -169,7 +171,7 @@ export function AppHeader({
       >
         {(close) => (
           <>
-            <PopoverHeader>Signed in as</PopoverHeader>
+            <PopoverHeader>{user?.name ?? "—"}</PopoverHeader>
             <div className="px-2 py-1 text-[12px] text-ink-3">
               {user?.email ?? user?.name ?? "—"}
             </div>
@@ -181,8 +183,30 @@ export function AppHeader({
               }}
             >
               <Icon name={theme === "dark" ? "sun" : "moon"} size={13} className="text-ink-4" />
-              {theme === "dark" ? "Light theme" : "Dark theme"}
+              {theme === "dark" ? t("menuThemeLight") : t("menuThemeDark")}
             </PopoverItem>
+            <PopoverSep />
+            <div className="px-2 pt-1.5 pb-1 text-[11px] text-ink-4 flex items-center gap-1.5">
+              <Icon name="globe" size={12} />
+              <span>{t("menuLanguage")}</span>
+            </div>
+            {(["en", "ja"] as Lang[]).map((l) => (
+              <PopoverItem
+                key={l}
+                active={lang === l}
+                onClick={() => {
+                  setLang(l);
+                }}
+              >
+                <span className="w-3" />
+                <span className="flex-1">
+                  {l === "en" ? t("menuLangEnglish") : t("menuLangJapanese")}
+                </span>
+                {lang === l && (
+                  <Icon name="check" size={12} className="text-brand" />
+                )}
+              </PopoverItem>
+            ))}
             <PopoverSep />
             <PopoverItem
               onClick={() => {
@@ -191,7 +215,7 @@ export function AppHeader({
               }}
             >
               <Icon name="arrow" size={13} className="text-ink-4" />
-              Sign out
+              {t("menuSignOut")}
             </PopoverItem>
           </>
         )}

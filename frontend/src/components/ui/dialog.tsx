@@ -1,5 +1,6 @@
 import { type ReactNode, useEffect } from "react";
 import { cn } from "../../lib/utils";
+import { useTranslation } from "../../i18n";
 
 interface Props {
   open: boolean;
@@ -11,6 +12,7 @@ interface Props {
 }
 
 export function Dialog({ open, onClose, title, children, footer, width = 480 }: Props) {
+  const { t } = useTranslation();
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -41,7 +43,7 @@ export function Dialog({ open, onClose, title, children, footer, width = 480 }: 
               type="button"
               onClick={onClose}
               className="text-ink-4 hover:text-ink-1 w-6 h-6 inline-flex items-center justify-center rounded-1 hover:bg-bg-sunken"
-              aria-label="Close"
+              aria-label={t("btnClose")}
             >
               ×
             </button>
