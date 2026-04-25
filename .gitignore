@@ -46,3 +46,6 @@ frontend/e2e/test-results/
 
 # Spec (working documents)
 .spec/
+
+# Task runner cache
+.task/
