@@ -18,7 +18,7 @@ type Ticket struct {
 	ReporterSlackUserID types.SlackUserID
 	SlackChannelID      types.SlackChannelID
 	SlackThreadTS       types.SlackThreadTS
-	FieldValues         map[types.FieldID]FieldValue
+	FieldValues         map[string]FieldValue
 	CreatedAt           time.Time
 	UpdatedAt           time.Time
 }

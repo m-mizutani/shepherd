@@ -61,12 +61,12 @@ func TestTicketUseCase_Create_WithFields(t *testing.T) {
 	uc, _ := setupTicketUseCase(t)
 	ctx := context.Background()
 
-	fields := map[types.FieldID]model.FieldValue{
+	fields := map[string]model.FieldValue{
 		"priority": {FieldID: "priority", Type: types.FieldTypeSelect, Value: "high"},
 	}
 	ticket := gt.R1(uc.Create(ctx, "ws-test", "With Fields", "", "", "", fields)).NoError(t)
-	gt.M(t, ticket.FieldValues).HasKey(types.FieldID("priority"))
-	gt.V(t, ticket.FieldValues[types.FieldID("priority")].Value).Equal(any("high"))
+	gt.M(t, ticket.FieldValues).HasKey("priority")
+	gt.V(t, ticket.FieldValues["priority"].Value).Equal(any("high"))
 }
 
 func TestTicketUseCase_Create_UnknownWorkspace(t *testing.T) {
@@ -125,17 +125,17 @@ func TestTicketUseCase_Update_MergeFields(t *testing.T) {
 	uc, _ := setupTicketUseCase(t)
 	ctx := context.Background()
 
-	initial := map[types.FieldID]model.FieldValue{
+	initial := map[string]model.FieldValue{
 		"priority": {FieldID: "priority", Value: "high"},
 	}
 	created := gt.R1(uc.Create(ctx, "ws-test", "T", "", "", "", initial)).NoError(t)
 
-	newFields := map[types.FieldID]model.FieldValue{
+	newFields := map[string]model.FieldValue{
 		"category": {FieldID: "category", Value: "bug"},
 	}
 	updated := gt.R1(uc.Update(ctx, "ws-test", created.ID, nil, nil, nil, nil, newFields)).NoError(t)
-	gt.M(t, updated.FieldValues).HasKey(types.FieldID("priority"))
-	gt.M(t, updated.FieldValues).HasKey(types.FieldID("category"))
+	gt.M(t, updated.FieldValues).HasKey("priority")
+	gt.M(t, updated.FieldValues).HasKey("category")
 }
 
 func TestTicketUseCase_Delete(t *testing.T) {

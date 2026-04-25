@@ -23,7 +23,7 @@ func TestTicketCreate(t *testing.T) {
 			Title:       "Test Ticket",
 			Description: "Test Description",
 			StatusID:    "open",
-			FieldValues: map[types.FieldID]model.FieldValue{
+			FieldValues: map[string]model.FieldValue{
 				"priority": {FieldID: types.FieldID("priority"), Type: types.FieldTypeSelect, Value: "high"},
 			},
 			CreatedAt: now,
@@ -47,7 +47,7 @@ func TestTicketGet(t *testing.T) {
 			WorkspaceID: "test-ws",
 			Title:       "Get Test",
 			StatusID:    "open",
-			FieldValues: make(map[types.FieldID]model.FieldValue),
+			FieldValues: make(map[string]model.FieldValue),
 			CreatedAt:   now,
 			UpdatedAt:   now,
 		}
@@ -71,7 +71,7 @@ func TestTicketList(t *testing.T) {
 				WorkspaceID: wsID,
 				Title:       title,
 				StatusID:    "open",
-				FieldValues: make(map[types.FieldID]model.FieldValue),
+				FieldValues: make(map[string]model.FieldValue),
 				CreatedAt:   now.Add(time.Duration(i) * time.Second),
 				UpdatedAt:   now.Add(time.Duration(i) * time.Second),
 			}
@@ -94,7 +94,7 @@ func TestTicketUpdate(t *testing.T) {
 			WorkspaceID: "test-ws",
 			Title:       "Before Update",
 			StatusID:    "open",
-			FieldValues: make(map[types.FieldID]model.FieldValue),
+			FieldValues: make(map[string]model.FieldValue),
 			CreatedAt:   now,
 			UpdatedAt:   now,
 		}
@@ -123,7 +123,7 @@ func TestTicketDelete(t *testing.T) {
 			WorkspaceID: "test-ws",
 			Title:       "To Delete",
 			StatusID:    "open",
-			FieldValues: make(map[types.FieldID]model.FieldValue),
+			FieldValues: make(map[string]model.FieldValue),
 			CreatedAt:   now,
 			UpdatedAt:   now,
 		}
@@ -148,7 +148,7 @@ func TestTicketSeqNumIncrement(t *testing.T) {
 				WorkspaceID: wsID,
 				Title:       "Seq Test",
 				StatusID:    "open",
-				FieldValues: make(map[types.FieldID]model.FieldValue),
+				FieldValues: make(map[string]model.FieldValue),
 				CreatedAt:   now,
 				UpdatedAt:   now,
 			}
@@ -175,7 +175,7 @@ func TestTicketGetBySlackThreadTS(t *testing.T) {
 			StatusID:       "open",
 			SlackChannelID: "C123456",
 			SlackThreadTS:  "1234567890.123456",
-			FieldValues:    make(map[types.FieldID]model.FieldValue),
+			FieldValues:    make(map[string]model.FieldValue),
 			CreatedAt:      now,
 			UpdatedAt:      now,
 		}

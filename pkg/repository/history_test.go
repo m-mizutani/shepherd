@@ -20,7 +20,7 @@ func createTestTicket(t *testing.T, repo interfaces.Repository, wsID types.Works
 		WorkspaceID: wsID,
 		Title:       "History Test Ticket",
 		StatusID:    "open",
-		FieldValues: make(map[types.FieldID]model.FieldValue),
+		FieldValues: make(map[string]model.FieldValue),
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
@@ -105,7 +105,7 @@ func TestTicketInitialMessage(t *testing.T) {
 			Title:          "Initial Message Test",
 			InitialMessage: "original message text",
 			StatusID:       "open",
-			FieldValues:    make(map[types.FieldID]model.FieldValue),
+			FieldValues:    make(map[string]model.FieldValue),
 			CreatedAt:      now,
 			UpdatedAt:      now,
 		}

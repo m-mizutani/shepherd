@@ -281,13 +281,13 @@ func toWorkspaceConfigResponse(schema *config.FieldSchema) WorkspaceConfig {
 	}
 }
 
-func toModelFieldValues(fields *[]FieldValue) map[types.FieldID]model.FieldValue {
+func toModelFieldValues(fields *[]FieldValue) map[string]model.FieldValue {
 	if fields == nil {
 		return nil
 	}
-	result := make(map[types.FieldID]model.FieldValue, len(*fields))
+	result := make(map[string]model.FieldValue, len(*fields))
 	for _, f := range *fields {
-		result[f.FieldId] = model.FieldValue{
+		result[string(f.FieldId)] = model.FieldValue{
 			FieldID: f.FieldId,
 			Value:   f.Value,
 		}

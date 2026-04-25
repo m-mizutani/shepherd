@@ -25,7 +25,7 @@ func TestCommentCreate(t *testing.T) {
 			WorkspaceID: wsID,
 			Title:       "Comment Test Ticket",
 			StatusID:    "open",
-			FieldValues: make(map[types.FieldID]model.FieldValue),
+			FieldValues: make(map[string]model.FieldValue),
 			CreatedAt:   now,
 			UpdatedAt:   now,
 		}
@@ -56,7 +56,7 @@ func TestCommentList(t *testing.T) {
 			WorkspaceID: wsID,
 			Title:       "Comment List Test",
 			StatusID:    "open",
-			FieldValues: make(map[types.FieldID]model.FieldValue),
+			FieldValues: make(map[string]model.FieldValue),
 			CreatedAt:   now,
 			UpdatedAt:   now,
 		}
@@ -91,7 +91,7 @@ func TestCommentGetBySlackTS(t *testing.T) {
 			WorkspaceID: wsID,
 			Title:       "Comment Slack TS Test",
 			StatusID:    "open",
-			FieldValues: make(map[types.FieldID]model.FieldValue),
+			FieldValues: make(map[string]model.FieldValue),
 			CreatedAt:   now,
 			UpdatedAt:   now,
 		}

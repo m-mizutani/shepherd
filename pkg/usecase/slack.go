@@ -74,7 +74,7 @@ func (uc *SlackUseCase) HandleNewMessage(ctx context.Context, channelID, userID,
 		ReporterSlackUserID: types.SlackUserID(userID),
 		SlackChannelID:      types.SlackChannelID(channelID),
 		SlackThreadTS:       types.SlackThreadTS(messageTS),
-		FieldValues:         make(map[types.FieldID]model.FieldValue),
+		FieldValues:         make(map[string]model.FieldValue),
 		CreatedAt:           now,
 		UpdatedAt:           now,
 	}
