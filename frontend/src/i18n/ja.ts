@@ -13,6 +13,8 @@ export const ja: Messages = {
   menuTheme: "テーマ",
   menuThemeLight: "ライト",
   menuThemeDark: "ダーク",
+  menuSwitchToLight: "ライトテーマに切替",
+  menuSwitchToDark: "ダークテーマに切替",
   menuLanguage: "言語",
   menuLangEnglish: "English",
   menuLangJapanese: "日本語",

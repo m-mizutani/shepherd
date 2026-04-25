@@ -13,6 +13,8 @@ export const en: Messages = {
   menuTheme: "Theme",
   menuThemeLight: "Light",
   menuThemeDark: "Dark",
+  menuSwitchToLight: "Switch to light theme",
+  menuSwitchToDark: "Switch to dark theme",
   menuLanguage: "Language",
   menuLangEnglish: "English",
   menuLangJapanese: "日本語",

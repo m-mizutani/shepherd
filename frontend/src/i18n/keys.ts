@@ -14,6 +14,8 @@ export const msgKeys = {
   menuTheme: "menuTheme",
   menuThemeLight: "menuThemeLight",
   menuThemeDark: "menuThemeDark",
+  menuSwitchToLight: "menuSwitchToLight",
+  menuSwitchToDark: "menuSwitchToDark",
   menuLanguage: "menuLanguage",
   menuLangEnglish: "menuLangEnglish",
   menuLangJapanese: "menuLangJapanese",

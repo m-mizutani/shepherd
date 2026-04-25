@@ -137,7 +137,7 @@ export function AppHeader({
         <button
           type="button"
           onClick={toggle}
-          title={t("ariaThemeToggle")}
+          title={theme === "dark" ? t("menuSwitchToLight") : t("menuSwitchToDark")}
           className="w-7 h-7 rounded-2 flex items-center justify-center text-ink-3 hover:bg-bg-sunken hover:text-ink-1"
         >
           <Icon name={theme === "dark" ? "sun" : "moon"} size={14} />
