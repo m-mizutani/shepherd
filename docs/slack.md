@@ -147,15 +147,15 @@ Invite the Shepherd bot to each channel configured in your workspace TOML files:
 /invite @Shepherd
 ```
 
-## LLM-Assisted Replies (optional)
+## LLM-Assisted Replies (required)
 
-When a user mentions the bot (`@Shepherd ...`) inside a ticket thread, Shepherd can generate a reply using an LLM. The bot reads the ticket title, description, prior comments, and the latest mention, then posts a generated answer in the thread.
+When a user mentions the bot (`@Shepherd ...`) inside a ticket thread, Shepherd generates a reply using an LLM. The bot reads the ticket title, description, prior comments, and the latest mention, then posts a generated answer in the thread.
 
-Enable the feature by configuring an LLM provider on `serve`:
+Configuring an LLM provider is **required** — `serve` aborts at startup when no provider is set. Choose one of the providers below:
 
 | Flag | Env Var | Notes |
 |------|---------|-------|
-| `--llm-provider` | `SHEPHERD_LLM_PROVIDER` | `openai` / `claude` / `gemini`. Empty disables LLM. |
+| `--llm-provider` | `SHEPHERD_LLM_PROVIDER` | `openai` / `claude` / `gemini`. Required. |
 | `--llm-model` | `SHEPHERD_LLM_MODEL` | Optional model name override. |
 | `--llm-openai-api-key` | `SHEPHERD_LLM_OPENAI_API_KEY` | Required when provider is `openai`. |
 | `--llm-claude-api-key` | `SHEPHERD_LLM_CLAUDE_API_KEY` | Used when provider is `claude` and you want direct Anthropic access. |
@@ -168,7 +168,7 @@ For Claude on Google Cloud, set `--llm-provider=claude` together with `--llm-gem
 
 1. **New message in a monitored channel** → Shepherd creates a ticket with the message as the title/description, then replies in a thread with a link to the ticket in the Web UI
 2. **Thread reply on a ticket message** → Shepherd records the reply as a comment on the corresponding ticket
-3. **`@Shepherd` mention in a ticket thread** → If LLM is configured, Shepherd generates a reply based on the ticket context and posts it in the thread
+3. **`@Shepherd` mention in a ticket thread** → Shepherd generates a reply based on the ticket context and posts it in the thread
 4. Bot messages and subtypes (join/leave/etc.) are ignored
 
 ## Development Mode (NoAuthn)

@@ -25,7 +25,7 @@ func (x *LLM) Flags() []cli.Flag {
 	return []cli.Flag{
 		&cli.StringFlag{
 			Name:        "llm-provider",
-			Usage:       "LLM provider: openai, claude, or gemini (empty disables LLM features)",
+			Usage:       "LLM provider: openai, claude, or gemini (required)",
 			Sources:     cli.EnvVars("SHEPHERD_LLM_PROVIDER"),
 			Destination: &x.provider,
 		},
