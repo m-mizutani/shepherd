@@ -57,6 +57,27 @@ func slackEventHandler(slackUC *usecase.SlackUseCase) http.HandlerFunc {
 			)
 
 			switch ev := innerEvent.Data.(type) {
+			case *slackevents.AppMentionEvent:
+				if slackUC == nil {
+					logger.Debug("app_mention ignored: slackUC is nil")
+					w.WriteHeader(http.StatusOK)
+					return
+				}
+				logger.Debug("slack app_mention event",
+					slog.String("channel", ev.Channel),
+					slog.String("user", ev.User),
+					slog.String("ts", ev.TimeStamp),
+					slog.String("thread_ts", ev.ThreadTimeStamp),
+				)
+				if ev.BotID != "" {
+					logger.Debug("app_mention skipped: bot mention")
+					w.WriteHeader(http.StatusOK)
+					return
+				}
+				async.Dispatch(r.Context(), func(ctx context.Context) error {
+					return slackUC.HandleAppMention(ctx, ev.Channel, ev.User, ev.Text, ev.TimeStamp, ev.ThreadTimeStamp)
+				})
+
 			case *slackevents.MessageEvent:
 				if slackUC == nil {
 					logger.Debug("slack event ignored: slackUC is nil")

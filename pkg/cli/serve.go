@@ -29,6 +29,7 @@ func cmdServe() *cli.Command {
 		repoCfg      config.Repository
 		slackCfg     config.Slack
 		sentryCfg    config.Sentry
+		llmCfg       config.LLM
 	)
 
 	flags := []cli.Flag{
@@ -57,6 +58,7 @@ func cmdServe() *cli.Command {
 	flags = append(flags, repoCfg.Flags()...)
 	flags = append(flags, slackCfg.Flags()...)
 	flags = append(flags, sentryCfg.Flags()...)
+	flags = append(flags, llmCfg.Flags()...)
 
 	return &cli.Command{
 		Name:  "serve",
@@ -108,10 +110,19 @@ func cmdServe() *cli.Command {
 				return err
 			}
 
+			if !llmCfg.IsEnabled() {
+				return goerr.New("--llm-provider is required (openai, claude, or gemini)")
+			}
+			llmClient, err := llmCfg.NewClient(ctx)
+			if err != nil {
+				return goerr.Wrap(err, "failed to configure LLM client")
+			}
+			logger.Info("LLM integration enabled")
+
 			var serverOpts []httpController.ServerOption
 			if slackCfg.IsWebhookConfigured() {
 				slackClient := slackCfg.NewSlackClient()
-				slackUC := slackCfg.NewSlackUseCase(repo, registry, baseURL)
+				slackUC := slackCfg.NewSlackUseCase(repo, registry, baseURL, llmClient)
 				serverOpts = append(serverOpts, httpController.WithSlack(httpController.SlackConfig{
 					SigningSecret: slackCfg.SignSecret(),
 					SlackUC:       slackUC,
