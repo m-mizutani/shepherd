@@ -108,18 +108,13 @@ func TestListWorkspaces(t *testing.T) {
 	resp := doGet(t, ts.URL+"/api/v1/ws")
 	gt.N(t, resp.StatusCode).Equal(http.StatusOK)
 
-	var body struct {
+	type wsListResp struct {
 		Workspaces []struct {
 			Id   string `json:"id"`
 			Name string `json:"name"`
 		} `json:"workspaces"`
 	}
-	body = decodeJSON[struct {
-		Workspaces []struct {
-			Id   string `json:"id"`
-			Name string `json:"name"`
-		} `json:"workspaces"`
-	}](t, resp)
+	body := decodeJSON[wsListResp](t, resp)
 	gt.A(t, body.Workspaces).Length(1)
 	gt.S(t, body.Workspaces[0].Id).Equal("support")
 }
