@@ -9,8 +9,26 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
+// clearLLMEnv neutralizes any SHEPHERD_LLM_* values that the test runner
+// (zenv, .env.*) may have injected. Without this, tests that expect a flag to
+// be absent see env-supplied defaults and produce confusing failures.
+func clearLLMEnv(t *testing.T) {
+	t.Helper()
+	for _, k := range []string{
+		"SHEPHERD_LLM_PROVIDER",
+		"SHEPHERD_LLM_MODEL",
+		"SHEPHERD_LLM_OPENAI_API_KEY",
+		"SHEPHERD_LLM_CLAUDE_API_KEY",
+		"SHEPHERD_LLM_GEMINI_PROJECT_ID",
+		"SHEPHERD_LLM_GEMINI_LOCATION",
+	} {
+		t.Setenv(k, "")
+	}
+}
+
 func runWithLLMArgs(t *testing.T, args []string) (*config.LLM, error) {
 	t.Helper()
+	clearLLMEnv(t)
 	llm := &config.LLM{}
 	cmd := &cli.Command{
 		Name:  "test",

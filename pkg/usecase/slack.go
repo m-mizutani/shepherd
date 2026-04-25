@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/m-mizutani/goerr/v2"
 	"github.com/m-mizutani/gollem"
+	"github.com/m-mizutani/gollem/trace"
 	"github.com/m-mizutani/shepherd/pkg/domain/interfaces"
 	"github.com/m-mizutani/shepherd/pkg/domain/model"
 	"github.com/m-mizutani/shepherd/pkg/domain/types"
@@ -30,21 +32,29 @@ type SlackClient interface {
 }
 
 type SlackUseCase struct {
-	repo      interfaces.Repository
-	registry  *model.WorkspaceRegistry
-	slack     SlackClient
-	baseURL   string
-	llm       gollem.LLMClient
-	userCache sync.Map
+	repo        interfaces.Repository
+	registry    *model.WorkspaceRegistry
+	slack       SlackClient
+	baseURL     string
+	llm         gollem.LLMClient
+	historyRepo gollem.HistoryRepository
+	traceRepo   trace.Repository
+	userCache   sync.Map
 }
 
-func NewSlackUseCase(repo interfaces.Repository, registry *model.WorkspaceRegistry, slack SlackClient, baseURL string, llm gollem.LLMClient) *SlackUseCase {
+// NewSlackUseCase constructs a SlackUseCase. When llm is non-nil, both
+// historyRepo and traceRepo MUST also be non-nil — agent persistence is
+// mandatory for any deployment that has the LLM enabled. Tests that drive
+// HandleAppMention with a fake LLM should pass test doubles for both.
+func NewSlackUseCase(repo interfaces.Repository, registry *model.WorkspaceRegistry, slack SlackClient, baseURL string, llm gollem.LLMClient, historyRepo gollem.HistoryRepository, traceRepo trace.Repository) *SlackUseCase {
 	return &SlackUseCase{
-		repo:     repo,
-		registry: registry,
-		slack:    slack,
-		baseURL:  baseURL,
-		llm:      llm,
+		repo:        repo,
+		registry:    registry,
+		slack:       slack,
+		baseURL:     baseURL,
+		llm:         llm,
+		historyRepo: historyRepo,
+		traceRepo:   traceRepo,
 	}
 }
 
@@ -230,29 +240,63 @@ func (uc *SlackUseCase) HandleAppMention(ctx context.Context, channelID, userID,
 		return goerr.Wrap(err, "failed to list comments for app_mention")
 	}
 
-	mentionAuthor := uc.resolveDisplayName(ctx, userID)
-	rendered, err := prompt.RenderMention(prompt.MentionInput{
+	systemPrompt, err := prompt.RenderSystem(prompt.SystemInput{
 		Title:          ticket.Title,
 		Description:    ticket.Description,
 		InitialMessage: ticket.InitialMessage,
-		Comments:       uc.buildMentionComments(ctx, comments),
-		MentionAuthor:  mentionAuthor,
-		Mention:        stripMentionTokens(text),
+	})
+	if err != nil {
+		return goerr.Wrap(err, "failed to render system prompt")
+	}
+
+	mentionAuthor := uc.resolveDisplayName(ctx, userID)
+	userPrompt, err := prompt.RenderMention(prompt.MentionInput{
+		MentionAuthor: mentionAuthor,
+		Mention:       stripMentionTokens(text),
 	})
 	if err != nil {
 		return goerr.Wrap(err, "failed to render mention prompt")
 	}
 
-	session, err := uc.llm.NewSession(ctx)
-	if err != nil {
-		return goerr.Wrap(err, "failed to start LLM session")
+	sessionID := string(wsID) + "/" + string(ticket.ID)
+
+	// Per-mention sequence number = number of bot replies already on the
+	// thread + 1. Used as trace metadata so traces can be ordered after the
+	// fact even though their TraceIDs are UUID v7.
+	botReplies := 0
+	for _, c := range comments {
+		if c.IsBot {
+			botReplies++
+		}
 	}
-	resp, err := session.Generate(ctx, []gollem.Input{gollem.Text(rendered)})
+	seq := botReplies + 1
+
+	opts := []gollem.Option{
+		gollem.WithSystemPrompt(systemPrompt),
+		gollem.WithHistoryRepository(uc.historyRepo, sessionID),
+	}
+	if uc.traceRepo != nil {
+		recorder := trace.New(
+			trace.WithRepository(uc.traceRepo),
+			trace.WithMetadata(trace.TraceMetadata{
+				Labels: map[string]string{
+					"workspace_id": string(wsID),
+					"ticket_id":    string(ticket.ID),
+					"channel_id":   channelID,
+					"seq":          strconv.Itoa(seq),
+				},
+			}),
+		)
+		opts = append(opts, gollem.WithTrace(recorder))
+	}
+
+	agent := gollem.New(uc.llm, opts...)
+	resp, err := agent.Execute(ctx, gollem.Text(userPrompt))
 	if err != nil {
-		return goerr.Wrap(err, "failed to generate LLM response")
+		return goerr.Wrap(err, "failed to execute LLM agent")
 	}
 	if resp == nil || len(resp.Texts) == 0 {
-		logger.Debug("app_mention: LLM returned no text",
+		logger.Debug("app_mention: agent returned no text",
 			slog.String("ticket_id", string(ticket.ID)),
 		)
 		return nil
@@ -273,22 +317,6 @@ func (uc *SlackUseCase) HandleAppMention(ctx context.Context, channelID, userID,
 		slog.String("channel_id", channelID),
 	)
 	return nil
-}
-
-func (uc *SlackUseCase) buildMentionComments(ctx context.Context, comments []*model.Comment) []prompt.MentionComment {
-	out := make([]prompt.MentionComment, 0, len(comments))
-	for _, c := range comments {
-		role := "user"
-		if c.IsBot {
-			role = "bot"
-		}
-		out = append(out, prompt.MentionComment{
-			Author: uc.resolveDisplayName(ctx, string(c.SlackUserID)),
-			Role:   role,
-			Body:   c.Body,
-		})
-	}
-	return out
 }
 
 func (uc *SlackUseCase) resolveDisplayName(ctx context.Context, userID string) string {
