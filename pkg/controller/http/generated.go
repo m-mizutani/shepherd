@@ -24,6 +24,7 @@ import (
 const (
 	Date        FieldType = "date"
 	MultiSelect FieldType = "multi-select"
+	MultiUser   FieldType = "multi-user"
 	Number      FieldType = "number"
 	Select      FieldType = "select"
 	Text        FieldType = "text"
@@ -37,6 +38,8 @@ func (e FieldType) Valid() bool {
 	case Date:
 		return true
 	case MultiSelect:
+		return true
+	case MultiUser:
 		return true
 	case Number:
 		return true
@@ -102,6 +105,14 @@ type FieldType string
 type FieldValue struct {
 	FieldId types.FieldID `json:"fieldId"`
 	Value   interface{}   `json:"value"`
+}
+
+// SlackUserInfo defines model for SlackUserInfo.
+type SlackUserInfo struct {
+	Email    *string `json:"email,omitempty"`
+	Id       string  `json:"id"`
+	ImageUrl *string `json:"imageUrl,omitempty"`
+	Name     string  `json:"name"`
 }
 
 // StatusDef defines model for StatusDef.
@@ -191,6 +202,12 @@ type ServerInterface interface {
 	// (GET /api/v1/ws/{workspaceId}/config)
 	GetWorkspaceConfig(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId)
 
+	// (GET /api/v1/ws/{workspaceId}/slack/users)
+	ListSlackUsers(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId)
+
+	// (GET /api/v1/ws/{workspaceId}/slack/users/{userId})
+	GetSlackUserInfo(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId, userId string)
+
 	// (GET /api/v1/ws/{workspaceId}/tickets)
 	ListTickets(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId, params ListTicketsParams)
 
@@ -231,6 +248,16 @@ func (_ Unimplemented) GetWorkspace(w http.ResponseWriter, r *http.Request, work
 
 // (GET /api/v1/ws/{workspaceId}/config)
 func (_ Unimplemented) GetWorkspaceConfig(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /api/v1/ws/{workspaceId}/slack/users)
+func (_ Unimplemented) ListSlackUsers(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /api/v1/ws/{workspaceId}/slack/users/{userId})
+func (_ Unimplemented) GetSlackUserInfo(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId, userId string) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -342,6 +369,65 @@ func (siw *ServerInterfaceWrapper) GetWorkspaceConfig(w http.ResponseWriter, r *
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetWorkspaceConfig(w, r, workspaceId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListSlackUsers operation middleware
+func (siw *ServerInterfaceWrapper) ListSlackUsers(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "workspaceId" -------------
+	var workspaceId WorkspaceId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "workspaceId", chi.URLParam(r, "workspaceId"), &workspaceId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "workspaceId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListSlackUsers(w, r, workspaceId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetSlackUserInfo operation middleware
+func (siw *ServerInterfaceWrapper) GetSlackUserInfo(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "workspaceId" -------------
+	var workspaceId WorkspaceId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "workspaceId", chi.URLParam(r, "workspaceId"), &workspaceId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "workspaceId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "userId" -------------
+	var userId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "userId", chi.URLParam(r, "userId"), &userId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "userId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSlackUserInfo(w, r, workspaceId, userId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -682,6 +768,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/api/v1/ws/{workspaceId}/config", wrapper.GetWorkspaceConfig)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/ws/{workspaceId}/slack/users", wrapper.ListSlackUsers)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/ws/{workspaceId}/slack/users/{userId}", wrapper.GetSlackUserInfo)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/ws/{workspaceId}/tickets", wrapper.ListTickets)
 	})
 	r.Group(func(r chi.Router) {
@@ -706,27 +798,28 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"H4sIAAAAAAAC/+RZzXLbNhB+lQzaIyUqjacH3VK5aTXNxJlaaQ+ZHCBiJSEmARoA47gavnsHAAmCIiiR",
-	"luqm05MtYbG737d/ALRHCc9yzoApieZ7lGOBM1AgzKcVTe5ALYn+nzI0RzlWOxQhhjNAc6Tq5QgJuC+o",
-	"AILmShQQIZnsIMN6n3rMtaxUgrItKssI/cnFncxxAr2KHzyJMbrLetF4v+BZBkwZWILnIBQFs7Dm5DGw",
-	"PUKJAKyAvDZ7NlxkWKE5IljBRNEMUNTdQklQk0xxcvdBgliSMAkNqI9aR3tHZF30HfrkbPP1Z0iUNrIw",
-	"qzZIv8N9ATIAFktJtwxgGXaUgEwEzRXlLLi+oZASo4gqyMw/3wvYoDn6Lm5SJ65oj99o8T9wWoDeXGnD",
-	"QuBHw4rCqpA9niiqUjhNlhUL0fEzU1Q9vsVrSGWXh1NAbTKf55nRUMu3uQ05bMi6hg1ltHZrnM89yWer",
-	"KLDAjaqR0byx9gPhbMA7W2vOU8Ce9AADKy0YrAkDpNLkLfdyeZOHeUx4ysUYBjNQmGBlmgwmxIQHp+89",
-	"pbYVddzoob4XXC+UVcUesCIzyQVfdWqxIluD0O0CUi0eoaxIFZ24j4U0y7pn6U8i9Uw0+Lwy7ZBlKj5U",
-	"oxH6OtnySfWl/iOnRtHy2l+b0CznwnYi3dXnaEvVrlhPE57F2SSjfxUKMxrLHeQ7ECTO77Yx4RmmLDZK",
-	"DV1fKucOqau9qyVCBN6aNnOt0+7sTKBykXLZl+P9lSYI+HYoU7AFcTTNrW/1Xs90COPKtatR7f4JE+5Z",
-	"J0RPFATolAJxe3Ss6qq4f6frxcNGmfrxqsHlAlFN3MUOMwbp8sgYX+0EYLKSYYmnjLQIFTkZF4fgkcGi",
-	"bQaOc8ZFxY+4b7U/pRacbeg2UDkmF28rC+14d4EfhJXABhepuu0n6wDf4YaoYz+E4IPB9z84EHWQuzN1",
-	"F++4Q8KoSeWs9iXNU8jyDkQBxlJ3vDumqHUUdDzDcE+aERLwQR0UyjFFraI6ZNe5daDTK98Kb5d9rYuy",
-	"DTcxtJmCbquR+uL1+6WekCCkSWM0m76czuwJEBjOKZqjV9PZ9BWKzIw2dMQ4p/GXl/EOcKrH9h5t7YDR",
-	"AcU6HjpP0S+gfrUSGovMOat4/WE2sxOWqerWhfM8pYnZGn+Wtp6ay1s7UywVpxOykgvz0apddPOb/raM",
-	"HLIH2YvqLZXKZbO8LLSHRu/Q9GvKuZN+B3x4yp/ISbz3rtvlsbg3XkWth4KPYTCNSOxf+ctPZ7I7kLgw",
-	"+Ahdza46dyv0jqsXb3jByAl64sRV/UmWXDF/61y57vSPMGY72/HSW1UyZ3EVVW9J9wWIx+YxyTsUHXmV",
-	"Cu91R/DAXncNODtI7Xbh8TWoV1Q3gVONolY7tEsMCXuEci4DIfUfpi6Q/+Yg91P1aHeR1A+9nJVtxvQF",
-	"v+wE9uXFXKjD1mXfOkcuVnnxvn6oLa2yFBR0g3Ztvr9E0KKT4u5hOVA7AcTWNTI0Kfs687+PbfYM6TOi",
-	"eLFKdl2m/FvUM5N1+UoPXQkHVfq3FKpxRa59yOofdHpH7qIW+s+Uw+FLXgNy0Jysfw46NSid4ktOyrIs",
-	"/w4AAP//03rsbWsbAAA=",
+	"H4sIAAAAAAAC/+RZwXLbNhD9lQzaIyXKjacH3VK5aTXNxJlKbg+ZHCByJSEmARoA47ga/nsHAAmCIiiR",
+	"Nu2k05MtYbHY93YfsIAOKGJpxihQKdD8gDLMcQoSuP60JtEtyGWs/icUzVGG5R4FiOIU0BzJajhAHO5y",
+	"wiFGc8lzCJCI9pBiNU8+ZMpWSE7oDhVFgP5m/FZkOIJOx/eOxRDfRTWoo1+wNAUqNSzOMuCSgB7YsPjB",
+	"Mz1AEQcsIX6j52wZT7FEcxRjCRNJUkBBewqJvZ5EgqPbGwF8GftJqEF9VD6aMwITohvQJ7s223yGSKpF",
+	"FnrUJOlPuMtBeMBiIciOAiz9gcYgIk4ySRj1jm8JJLF2RCSk+p8fOWzRHP0Q1qUTlrSHb5X5XzjJQU0u",
+	"vWHO8YNmRWKZi45IJJEJnCfLmPno+JVKIh/e4Q0kos3DOaCmmJ8WmfZQ2Te59QWsybqCLaGkCmtYzB3F",
+	"Z1TkGWDa1cBsXpv1Pemswdu1NowlgB3rHguslaFXExpI6ckZ7uTyOvPzGLGE8SEMpiBxjKXeZHAc6/Tg",
+	"5IPj1GxFrTA6qO8E1wllXbIHNE91ccFXVVo0TzfA1XYBiTIPUJonkkzsx1zoYfNt+UFtYGqIJ856NVhH",
+	"sy3mtPx9gg3Q18mOTcov1R8x1Y6WV+7YhKQZ42ZbUlv8HO2I3OebacTSMJ2k5J9cYkpCsYdsDzwOs9td",
+	"GLMUExpqp5q7L2VwxzxW0VUWPjZXdl+lW9YGCCkmyZDSICnewQ1PhihvUPpXepO8UqJ5ch0TsUiY6FJo",
+	"9z7BY3DXIVTCDvhJkZrYqrnO0j6Ma7vZDjqsHnE+v+j51pEFDkoDwFcnmwKl6bv3Su0ONkLlz5c1LpuI",
+	"sl9Y7DGlkCxPNCHrPQccr4Xf4jEHcoDyLB6WB2/DY9DWx6UNxmbFzbi7andJLRjdkp1HOboWV+UKzXy3",
+	"gR+lNYYtzhO56ibrCN/xhKC1vg/Bjcb3P2jnWsjtjaCNd1iLM2ijtat2Fc1jyHLaOQ9jiW1OTzlqNLKW",
+	"Z+gfSX2EeGKQR0I55aghqmN2bVhHPh35lnjb7CtfpDyQy0pBq7IHePXmw1Id6cCFLmM0m15MZ6Z/BYoz",
+	"gubo9XQ2fY0C3VRoOkKckfDLRbgHnKg+44B25oBRCcUqH6pO0W8gfzcWCovIGC15/Wk2MycsleWdEWdZ",
+	"QiI9NfwsjJ7qq2ezUgwV5wuytPPz0dAuuv5DfVsEFtm96ET1jghpq1mMC+2+9tu3/Go5t8rviA/H+SM5",
+	"CQ/OY0FxKu91VEHjmeOjH0xtEroPFsWnJ7Lbkzg/+ABdzi5bN0P0nslXb1lO4zP0hJFV/VmWrJi/d67s",
+	"7vQsjOkeKlQXqdPys72d+LaUNcVr4+53bDSuSue0a3z3le2IeQgPue6hT6q9ieVJKQm8b5R59VTX/3ny",
+	"OeVwlLvnSYI55k8LYV3ajEL5XQ78oebcuSGceGD2z7X3Uc9ceyceWX4OX70EWF6Lzymvcjum9gKUMeFJ",
+	"qfvGPMLOpm81v5Tv76MUvu8RvGgypnRZtBJ7MVoIVdra7Jvg4tGUFx6q31wK4ywBCe2kXenvx0hacNbc",
+	"/kbk0Y4HsQkt7luUXdv7t8c2e4HyGSBeLKN9myn3SeGFyRpf6b73kV5K/55SNUzkKoa0+m2288hdVEb/",
+	"GTkcP2vXIHudk9Uvu+cOSut41C61KP4NAAD//0T8dt02HwAA",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

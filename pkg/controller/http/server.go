@@ -56,10 +56,12 @@ func New(registry *model.WorkspaceRegistry, repo interfaces.Repository, authUC u
 
 	// API endpoints (auth required)
 	var notifier usecase.StatusChangeNotifier
+	var slackUC *usecase.SlackUseCase
 	if s.slackCfg != nil {
 		notifier = s.slackCfg.Notifier
+		slackUC = s.slackCfg.SlackUC
 	}
-	apiHandler := NewAPIHandler(registry, repo, notifier)
+	apiHandler := NewAPIHandler(registry, repo, notifier, slackUC)
 	s.mux.Group(func(r chi.Router) {
 		r.Use(authMiddleware(authUC))
 		HandlerFromMux(apiHandler, r)

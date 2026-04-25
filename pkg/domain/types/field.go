@@ -8,6 +8,7 @@ const (
 	FieldTypeSelect      FieldType = "select"
 	FieldTypeMultiSelect FieldType = "multi-select"
 	FieldTypeUser        FieldType = "user"
+	FieldTypeMultiUser   FieldType = "multi-user"
 	FieldTypeDate        FieldType = "date"
 	FieldTypeURL         FieldType = "url"
 )
@@ -15,7 +16,8 @@ const (
 func (ft FieldType) IsValid() bool {
 	switch ft {
 	case FieldTypeText, FieldTypeNumber, FieldTypeSelect,
-		FieldTypeMultiSelect, FieldTypeUser, FieldTypeDate, FieldTypeURL:
+		FieldTypeMultiSelect, FieldTypeUser, FieldTypeMultiUser,
+		FieldTypeDate, FieldTypeURL:
 		return true
 	}
 	return false
