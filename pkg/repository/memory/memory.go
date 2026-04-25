@@ -10,24 +10,27 @@ import (
 )
 
 type Repository struct {
-	mu       sync.RWMutex
-	tickets  *TicketRepo
-	comments *CommentRepo
-	tokens   map[string]*auth.Token
+	mu            sync.RWMutex
+	tickets       *TicketRepo
+	comments      *CommentRepo
+	ticketHistory *TicketHistoryRepo
+	tokens        map[string]*auth.Token
 }
 
 func New() *Repository {
 	return &Repository{
-		tickets:  newTicketRepo(),
-		comments: newCommentRepo(),
-		tokens:   make(map[string]*auth.Token),
+		tickets:       newTicketRepo(),
+		comments:      newCommentRepo(),
+		ticketHistory: newTicketHistoryRepo(),
+		tokens:        make(map[string]*auth.Token),
 	}
 }
 
 var _ interfaces.Repository = (*Repository)(nil)
 
-func (r *Repository) Ticket() interfaces.TicketRepository  { return r.tickets }
-func (r *Repository) Comment() interfaces.CommentRepository { return r.comments }
+func (r *Repository) Ticket() interfaces.TicketRepository              { return r.tickets }
+func (r *Repository) Comment() interfaces.CommentRepository            { return r.comments }
+func (r *Repository) TicketHistory() interfaces.TicketHistoryRepository { return r.ticketHistory }
 
 func (r *Repository) PutToken(ctx context.Context, token *auth.Token) error {
 	r.mu.Lock()

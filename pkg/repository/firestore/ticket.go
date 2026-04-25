@@ -6,7 +6,6 @@ import (
 	"cloud.google.com/go/firestore"
 	"github.com/m-mizutani/goerr/v2"
 	"github.com/m-mizutani/shepherd/pkg/domain/model"
-	"github.com/m-mizutani/shepherd/pkg/domain/types"
 	"google.golang.org/api/iterator"
 )
 
@@ -52,7 +51,7 @@ func (r *ticketRepository) Create(ctx context.Context, workspaceID string, t *mo
 	t.SeqNum = seqNum
 
 	ref := r.ticketsCollection(workspaceID).Doc(t.ID)
-	if _, err := ref.Set(ctx, ticketToMap(t)); err != nil {
+	if _, err := ref.Set(ctx, t); err != nil {
 		return nil, goerr.Wrap(err, "failed to create ticket")
 	}
 	return t, nil
@@ -66,14 +65,20 @@ func (r *ticketRepository) Get(ctx context.Context, workspaceID string, id strin
 		}
 		return nil, goerr.Wrap(err, "failed to get ticket")
 	}
-	return mapToTicket(doc.Data(), id, workspaceID), nil
+	var t model.Ticket
+	if err := doc.DataTo(&t); err != nil {
+		return nil, goerr.Wrap(err, "failed to decode ticket")
+	}
+	t.ID = id
+	t.WorkspaceID = workspaceID
+	return &t, nil
 }
 
 func (r *ticketRepository) List(ctx context.Context, workspaceID string, statusIDs []string) ([]*model.Ticket, error) {
-	query := r.ticketsCollection(workspaceID).OrderBy("created_at", firestore.Desc)
+	query := r.ticketsCollection(workspaceID).OrderBy("CreatedAt", firestore.Desc)
 
 	if len(statusIDs) > 0 {
-		query = r.ticketsCollection(workspaceID).Where("status_id", "in", statusIDs).OrderBy("created_at", firestore.Desc)
+		query = r.ticketsCollection(workspaceID).Where("StatusID", "in", statusIDs).OrderBy("CreatedAt", firestore.Desc)
 	}
 
 	iter := query.Documents(ctx)
@@ -88,14 +93,20 @@ func (r *ticketRepository) List(ctx context.Context, workspaceID string, statusI
 		if err != nil {
 			return nil, goerr.Wrap(err, "failed to iterate tickets")
 		}
-		tickets = append(tickets, mapToTicket(doc.Data(), doc.Ref.ID, workspaceID))
+		var t model.Ticket
+		if err := doc.DataTo(&t); err != nil {
+			return nil, goerr.Wrap(err, "failed to decode ticket")
+		}
+		t.ID = doc.Ref.ID
+		t.WorkspaceID = workspaceID
+		tickets = append(tickets, &t)
 	}
 	return tickets, nil
 }
 
 func (r *ticketRepository) Update(ctx context.Context, workspaceID string, t *model.Ticket) (*model.Ticket, error) {
 	ref := r.ticketsCollection(workspaceID).Doc(t.ID)
-	if _, err := ref.Set(ctx, ticketToMap(t)); err != nil {
+	if _, err := ref.Set(ctx, t); err != nil {
 		return nil, goerr.Wrap(err, "failed to update ticket")
 	}
 	return t, nil
@@ -111,8 +122,8 @@ func (r *ticketRepository) Delete(ctx context.Context, workspaceID string, id st
 
 func (r *ticketRepository) GetBySlackThreadTS(ctx context.Context, workspaceID string, channelID, threadTS string) (*model.Ticket, error) {
 	iter := r.ticketsCollection(workspaceID).
-		Where("slack_channel_id", "==", channelID).
-		Where("slack_thread_ts", "==", threadTS).
+		Where("SlackChannelID", "==", channelID).
+		Where("SlackThreadTS", "==", threadTS).
 		Limit(1).
 		Documents(ctx)
 	defer iter.Stop()
@@ -124,84 +135,11 @@ func (r *ticketRepository) GetBySlackThreadTS(ctx context.Context, workspaceID s
 	if err != nil {
 		return nil, goerr.Wrap(err, "failed to query ticket by slack thread ts")
 	}
-	return mapToTicket(doc.Data(), doc.Ref.ID, workspaceID), nil
-}
-
-func ticketToMap(t *model.Ticket) map[string]any {
-	fieldValues := map[string]any{}
-	for k, v := range t.FieldValues {
-		fieldValues[k] = map[string]any{
-			"field_id": v.FieldID,
-			"type":     string(v.Type),
-			"value":    v.Value,
-		}
+	var t model.Ticket
+	if err := doc.DataTo(&t); err != nil {
+		return nil, goerr.Wrap(err, "failed to decode ticket")
 	}
-
-	return map[string]any{
-		"seq_num":               t.SeqNum,
-		"title":                 t.Title,
-		"description":           t.Description,
-		"status_id":             t.StatusID,
-		"assignee_id":           t.AssigneeID,
-		"reporter_slack_user_id": t.ReporterSlackUserID,
-		"slack_channel_id":      t.SlackChannelID,
-		"slack_thread_ts":       t.SlackThreadTS,
-		"field_values":          fieldValues,
-		"created_at":            t.CreatedAt,
-		"updated_at":            t.UpdatedAt,
-	}
-}
-
-func mapToTicket(data map[string]any, id, workspaceID string) *model.Ticket {
-	t := &model.Ticket{
-		ID:          id,
-		WorkspaceID: workspaceID,
-		FieldValues: make(map[string]model.FieldValue),
-	}
-
-	if v, ok := data["seq_num"]; ok {
-		t.SeqNum = v.(int64)
-	}
-	if v, ok := data["title"]; ok {
-		t.Title = v.(string)
-	}
-	if v, ok := data["description"]; ok {
-		t.Description = v.(string)
-	}
-	if v, ok := data["status_id"]; ok {
-		t.StatusID = v.(string)
-	}
-	if v, ok := data["assignee_id"]; ok {
-		t.AssigneeID = v.(string)
-	}
-	if v, ok := data["reporter_slack_user_id"]; ok {
-		t.ReporterSlackUserID = v.(string)
-	}
-	if v, ok := data["slack_channel_id"]; ok {
-		t.SlackChannelID = v.(string)
-	}
-	if v, ok := data["slack_thread_ts"]; ok {
-		t.SlackThreadTS = v.(string)
-	}
-	if v, ok := data["created_at"]; ok {
-		t.CreatedAt = toTime(v)
-	}
-	if v, ok := data["updated_at"]; ok {
-		t.UpdatedAt = toTime(v)
-	}
-	if v, ok := data["field_values"]; ok {
-		if fvMap, ok := v.(map[string]any); ok {
-			for k, fv := range fvMap {
-				if m, ok := fv.(map[string]any); ok {
-					t.FieldValues[k] = model.FieldValue{
-						FieldID: m["field_id"].(string),
-						Type:    types.FieldType(m["type"].(string)),
-						Value:   m["value"],
-					}
-				}
-			}
-		}
-	}
-
-	return t
+	t.ID = doc.Ref.ID
+	t.WorkspaceID = workspaceID
+	return &t, nil
 }

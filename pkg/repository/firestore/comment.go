@@ -19,20 +19,14 @@ func (r *commentRepository) commentsCollection(workspaceID, ticketID string) *fi
 
 func (r *commentRepository) Create(ctx context.Context, workspaceID, ticketID string, c *model.Comment) (*model.Comment, error) {
 	ref := r.commentsCollection(workspaceID, ticketID).Doc(c.ID)
-	if _, err := ref.Set(ctx, map[string]any{
-		"ticket_id":     c.TicketID,
-		"slack_user_id": c.SlackUserID,
-		"body":          c.Body,
-		"slack_ts":      c.SlackTS,
-		"created_at":    c.CreatedAt,
-	}); err != nil {
+	if _, err := ref.Set(ctx, c); err != nil {
 		return nil, goerr.Wrap(err, "failed to create comment")
 	}
 	return c, nil
 }
 
 func (r *commentRepository) List(ctx context.Context, workspaceID, ticketID string) ([]*model.Comment, error) {
-	iter := r.commentsCollection(workspaceID, ticketID).OrderBy("created_at", firestore.Asc).Documents(ctx)
+	iter := r.commentsCollection(workspaceID, ticketID).OrderBy("CreatedAt", firestore.Asc).Documents(ctx)
 	defer iter.Stop()
 
 	var comments []*model.Comment
@@ -44,14 +38,20 @@ func (r *commentRepository) List(ctx context.Context, workspaceID, ticketID stri
 		if err != nil {
 			return nil, goerr.Wrap(err, "failed to iterate comments")
 		}
-		comments = append(comments, mapToComment(doc.Data(), doc.Ref.ID, ticketID))
+		var c model.Comment
+		if err := doc.DataTo(&c); err != nil {
+			return nil, goerr.Wrap(err, "failed to decode comment")
+		}
+		c.ID = doc.Ref.ID
+		c.TicketID = ticketID
+		comments = append(comments, &c)
 	}
 	return comments, nil
 }
 
 func (r *commentRepository) GetBySlackTS(ctx context.Context, workspaceID, ticketID, slackTS string) (*model.Comment, error) {
 	iter := r.commentsCollection(workspaceID, ticketID).
-		Where("slack_ts", "==", slackTS).
+		Where("SlackTS", "==", slackTS).
 		Limit(1).
 		Documents(ctx)
 	defer iter.Stop()
@@ -63,25 +63,11 @@ func (r *commentRepository) GetBySlackTS(ctx context.Context, workspaceID, ticke
 	if err != nil {
 		return nil, goerr.Wrap(err, "failed to query comment by slack ts")
 	}
-	return mapToComment(doc.Data(), doc.Ref.ID, ticketID), nil
-}
-
-func mapToComment(data map[string]any, id, ticketID string) *model.Comment {
-	c := &model.Comment{
-		ID:       id,
-		TicketID: ticketID,
+	var c model.Comment
+	if err := doc.DataTo(&c); err != nil {
+		return nil, goerr.Wrap(err, "failed to decode comment")
 	}
-	if v, ok := data["slack_user_id"]; ok {
-		c.SlackUserID = v.(string)
-	}
-	if v, ok := data["body"]; ok {
-		c.Body = v.(string)
-	}
-	if v, ok := data["slack_ts"]; ok {
-		c.SlackTS = v.(string)
-	}
-	if v, ok := data["created_at"]; ok {
-		c.CreatedAt = toTime(v)
-	}
-	return c
+	c.ID = doc.Ref.ID
+	c.TicketID = ticketID
+	return &c, nil
 }

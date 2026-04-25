@@ -10,6 +10,7 @@ import (
 type Repository interface {
 	Ticket() TicketRepository
 	Comment() CommentRepository
+	TicketHistory() TicketHistoryRepository
 	PutToken(ctx context.Context, token *auth.Token) error
 	GetToken(ctx context.Context, tokenID auth.TokenID) (*auth.Token, error)
 	DeleteToken(ctx context.Context, tokenID auth.TokenID) error
@@ -29,5 +30,10 @@ type CommentRepository interface {
 	Create(ctx context.Context, workspaceID string, ticketID string, c *model.Comment) (*model.Comment, error)
 	List(ctx context.Context, workspaceID string, ticketID string) ([]*model.Comment, error)
 	GetBySlackTS(ctx context.Context, workspaceID string, ticketID string, slackTS string) (*model.Comment, error)
+}
+
+type TicketHistoryRepository interface {
+	Create(ctx context.Context, workspaceID string, ticketID string, h *model.TicketHistory) (*model.TicketHistory, error)
+	List(ctx context.Context, workspaceID string, ticketID string) ([]*model.TicketHistory, error)
 }
 

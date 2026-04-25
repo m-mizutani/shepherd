@@ -10,6 +10,7 @@ import (
 	"github.com/m-mizutani/shepherd/pkg/domain/interfaces"
 	"github.com/m-mizutani/shepherd/pkg/domain/model"
 	"github.com/m-mizutani/shepherd/pkg/domain/model/auth"
+	"github.com/m-mizutani/shepherd/pkg/domain/types"
 )
 
 func TestCommentCreate(t *testing.T) {
@@ -24,7 +25,7 @@ func TestCommentCreate(t *testing.T) {
 			WorkspaceID: wsID,
 			Title:       "Comment Test Ticket",
 			StatusID:    "open",
-			FieldValues: make(map[string]model.FieldValue),
+			FieldValues: make(map[types.FieldID]model.FieldValue),
 			CreatedAt:   now,
 			UpdatedAt:   now,
 		}
@@ -55,7 +56,7 @@ func TestCommentList(t *testing.T) {
 			WorkspaceID: wsID,
 			Title:       "Comment List Test",
 			StatusID:    "open",
-			FieldValues: make(map[string]model.FieldValue),
+			FieldValues: make(map[types.FieldID]model.FieldValue),
 			CreatedAt:   now,
 			UpdatedAt:   now,
 		}
@@ -90,7 +91,7 @@ func TestCommentGetBySlackTS(t *testing.T) {
 			WorkspaceID: wsID,
 			Title:       "Comment Slack TS Test",
 			StatusID:    "open",
-			FieldValues: make(map[string]model.FieldValue),
+			FieldValues: make(map[types.FieldID]model.FieldValue),
 			CreatedAt:   now,
 			UpdatedAt:   now,
 		}

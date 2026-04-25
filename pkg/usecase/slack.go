@@ -10,6 +10,7 @@ import (
 	"github.com/m-mizutani/goerr/v2"
 	"github.com/m-mizutani/shepherd/pkg/domain/interfaces"
 	"github.com/m-mizutani/shepherd/pkg/domain/model"
+	"github.com/m-mizutani/shepherd/pkg/domain/types"
 	slackService "github.com/m-mizutani/shepherd/pkg/service/slack"
 	"github.com/m-mizutani/shepherd/pkg/utils/logging"
 )
@@ -67,11 +68,12 @@ func (uc *SlackUseCase) HandleNewMessage(ctx context.Context, channelID, userID,
 		WorkspaceID:         wsID,
 		Title:               truncate(text, 200),
 		Description:         text,
+		InitialMessage:      text,
 		StatusID:            entry.FieldSchema.TicketConfig.DefaultStatusID,
 		ReporterSlackUserID: userID,
 		SlackChannelID:      channelID,
 		SlackThreadTS:       messageTS,
-		FieldValues:         make(map[string]model.FieldValue),
+		FieldValues:         make(map[types.FieldID]model.FieldValue),
 		CreatedAt:           now,
 		UpdatedAt:           now,
 	}
@@ -96,7 +98,7 @@ func (uc *SlackUseCase) HandleNewMessage(ctx context.Context, channelID, userID,
 	return nil
 }
 
-func (uc *SlackUseCase) HandleThreadReply(ctx context.Context, channelID, threadTS, userID, text, messageTS string) error {
+func (uc *SlackUseCase) HandleThreadReply(ctx context.Context, channelID, threadTS, userID, text, messageTS string, isBot bool) error {
 	logger := logging.From(ctx)
 
 	entry, ok := uc.registry.GetBySlackChannelID(channelID)
@@ -137,6 +139,7 @@ func (uc *SlackUseCase) HandleThreadReply(ctx context.Context, channelID, thread
 		ID:          uuid.Must(uuid.NewV7()).String(),
 		TicketID:    ticket.ID,
 		SlackUserID: userID,
+		IsBot:       isBot,
 		Body:        text,
 		SlackTS:     messageTS,
 		CreatedAt:   time.Now(),
@@ -149,6 +152,44 @@ func (uc *SlackUseCase) HandleThreadReply(ctx context.Context, channelID, thread
 	logger.Debug("comment created from slack thread reply",
 		slog.String("ticket_id", ticket.ID),
 		slog.String("comment_id", comment.ID),
+	)
+
+	return nil
+}
+
+func (uc *SlackUseCase) HandleMessageChanged(ctx context.Context, channelID, messageTS, newText string) error {
+	logger := logging.From(ctx)
+
+	entry, ok := uc.registry.GetBySlackChannelID(channelID)
+	if !ok {
+		logger.Debug("slack message_changed ignored: channel not mapped to workspace",
+			slog.String("channel_id", channelID),
+		)
+		return nil
+	}
+
+	wsID := entry.Workspace.ID
+
+	ticket, err := uc.repo.Ticket().GetBySlackThreadTS(ctx, wsID, channelID, messageTS)
+	if err != nil {
+		return goerr.Wrap(err, "failed to find ticket by thread_ts for message_changed")
+	}
+	if ticket == nil {
+		logger.Debug("slack message_changed ignored: no ticket for message",
+			slog.String("channel_id", channelID),
+			slog.String("message_ts", messageTS),
+		)
+		return nil
+	}
+
+	ticket.InitialMessage = newText
+	ticket.UpdatedAt = time.Now()
+	if _, err := uc.repo.Ticket().Update(ctx, wsID, ticket); err != nil {
+		return goerr.Wrap(err, "failed to update initial message")
+	}
+
+	logger.Debug("initial message updated from slack message_changed",
+		slog.String("ticket_id", ticket.ID),
 	)
 
 	return nil

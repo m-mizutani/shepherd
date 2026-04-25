@@ -9,6 +9,8 @@ import (
 	"github.com/m-mizutani/goerr/v2"
 	"github.com/m-mizutani/shepherd/pkg/domain/interfaces"
 	"github.com/m-mizutani/shepherd/pkg/domain/model"
+	"github.com/m-mizutani/shepherd/pkg/domain/model/auth"
+	"github.com/m-mizutani/shepherd/pkg/domain/types"
 	"github.com/m-mizutani/shepherd/pkg/utils/errutil"
 	"github.com/m-mizutani/shepherd/pkg/utils/logging"
 )
@@ -31,7 +33,7 @@ func NewTicketUseCase(repo interfaces.Repository, registry *model.WorkspaceRegis
 	}
 }
 
-func (uc *TicketUseCase) Create(ctx context.Context, workspaceID string, title, description, statusID, assigneeID string, fields map[string]model.FieldValue) (*model.Ticket, error) {
+func (uc *TicketUseCase) Create(ctx context.Context, workspaceID string, title, description, statusID, assigneeID string, fields map[types.FieldID]model.FieldValue) (*model.Ticket, error) {
 	entry, ok := uc.registry.Get(workspaceID)
 	if !ok {
 		return nil, goerr.New("workspace not found", goerr.V("workspace_id", workspaceID), goerr.Tag(errutil.TagNotFound))
@@ -57,6 +59,18 @@ func (uc *TicketUseCase) Create(ctx context.Context, workspaceID string, title, 
 	created, err := uc.repo.Ticket().Create(ctx, workspaceID, ticket)
 	if err != nil {
 		return nil, goerr.Wrap(err, "failed to create ticket")
+	}
+
+	changedBy := changedByFromContext(ctx)
+	history := &model.TicketHistory{
+		ID:        uuid.Must(uuid.NewV7()).String(),
+		StatusID:  statusID,
+		ChangedBy: changedBy,
+		Action:    "created",
+		CreatedAt: now,
+	}
+	if _, err := uc.repo.TicketHistory().Create(ctx, workspaceID, created.ID, history); err != nil {
+		errutil.Handle(ctx, goerr.Wrap(err, "failed to create ticket history"))
 	}
 
 	return created, nil
@@ -92,7 +106,7 @@ func (uc *TicketUseCase) List(ctx context.Context, workspaceID string, isClosed 
 	return tickets, nil
 }
 
-func (uc *TicketUseCase) Update(ctx context.Context, workspaceID, ticketID string, title, description, statusID, assigneeID *string, fields map[string]model.FieldValue) (*model.Ticket, error) {
+func (uc *TicketUseCase) Update(ctx context.Context, workspaceID, ticketID string, title, description, statusID, assigneeID *string, fields map[types.FieldID]model.FieldValue) (*model.Ticket, error) {
 	existing, err := uc.repo.Ticket().Get(ctx, workspaceID, ticketID)
 	if err != nil {
 		return nil, goerr.Wrap(err, "failed to get ticket for update")
@@ -114,7 +128,7 @@ func (uc *TicketUseCase) Update(ctx context.Context, workspaceID, ticketID strin
 	}
 	if fields != nil {
 		if existing.FieldValues == nil {
-			existing.FieldValues = make(map[string]model.FieldValue)
+			existing.FieldValues = make(map[types.FieldID]model.FieldValue)
 		}
 		for k, v := range fields {
 			existing.FieldValues[k] = v
@@ -128,6 +142,19 @@ func (uc *TicketUseCase) Update(ctx context.Context, workspaceID, ticketID strin
 	}
 
 	if oldStatusID != updated.StatusID {
+		changedBy := changedByFromContext(ctx)
+		history := &model.TicketHistory{
+			ID:          uuid.Must(uuid.NewV7()).String(),
+			StatusID:    updated.StatusID,
+			OldStatusID: oldStatusID,
+			ChangedBy:   changedBy,
+			Action:      "changed",
+			CreatedAt:   time.Now(),
+		}
+		if _, err := uc.repo.TicketHistory().Create(ctx, workspaceID, ticketID, history); err != nil {
+			errutil.Handle(ctx, goerr.Wrap(err, "failed to create ticket history"))
+		}
+
 		uc.notifyStatusChange(ctx, workspaceID, updated, oldStatusID)
 	}
 
@@ -178,4 +205,20 @@ func (uc *TicketUseCase) ListComments(ctx context.Context, workspaceID, ticketID
 		return nil, goerr.Wrap(err, "failed to list comments")
 	}
 	return comments, nil
+}
+
+func (uc *TicketUseCase) ListHistory(ctx context.Context, workspaceID, ticketID string) ([]*model.TicketHistory, error) {
+	histories, err := uc.repo.TicketHistory().List(ctx, workspaceID, ticketID)
+	if err != nil {
+		return nil, goerr.Wrap(err, "failed to list ticket history")
+	}
+	return histories, nil
+}
+
+func changedByFromContext(ctx context.Context) string {
+	token, err := auth.TokenFromContext(ctx)
+	if err != nil || token == nil {
+		return "system"
+	}
+	return token.Sub
 }

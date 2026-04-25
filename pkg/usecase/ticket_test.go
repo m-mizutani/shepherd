@@ -61,12 +61,12 @@ func TestTicketUseCase_Create_WithFields(t *testing.T) {
 	uc, _ := setupTicketUseCase(t)
 	ctx := context.Background()
 
-	fields := map[string]model.FieldValue{
+	fields := map[types.FieldID]model.FieldValue{
 		"priority": {FieldID: "priority", Type: types.FieldTypeSelect, Value: "high"},
 	}
 	ticket := gt.R1(uc.Create(ctx, "ws-test", "With Fields", "", "", "", fields)).NoError(t)
-	gt.M(t, ticket.FieldValues).HasKey("priority")
-	gt.V(t, ticket.FieldValues["priority"].Value).Equal(any("high"))
+	gt.M(t, ticket.FieldValues).HasKey(types.FieldID("priority"))
+	gt.V(t, ticket.FieldValues[types.FieldID("priority")].Value).Equal(any("high"))
 }
 
 func TestTicketUseCase_Create_UnknownWorkspace(t *testing.T) {
@@ -125,17 +125,17 @@ func TestTicketUseCase_Update_MergeFields(t *testing.T) {
 	uc, _ := setupTicketUseCase(t)
 	ctx := context.Background()
 
-	initial := map[string]model.FieldValue{
+	initial := map[types.FieldID]model.FieldValue{
 		"priority": {FieldID: "priority", Value: "high"},
 	}
 	created := gt.R1(uc.Create(ctx, "ws-test", "T", "", "", "", initial)).NoError(t)
 
-	newFields := map[string]model.FieldValue{
+	newFields := map[types.FieldID]model.FieldValue{
 		"category": {FieldID: "category", Value: "bug"},
 	}
 	updated := gt.R1(uc.Update(ctx, "ws-test", created.ID, nil, nil, nil, nil, newFields)).NoError(t)
-	gt.M(t, updated.FieldValues).HasKey("priority")
-	gt.M(t, updated.FieldValues).HasKey("category")
+	gt.M(t, updated.FieldValues).HasKey(types.FieldID("priority"))
+	gt.M(t, updated.FieldValues).HasKey(types.FieldID("category"))
 }
 
 func TestTicketUseCase_Delete(t *testing.T) {
@@ -147,4 +147,48 @@ func TestTicketUseCase_Delete(t *testing.T) {
 
 	_, err := uc.Get(ctx, "ws-test", created.ID)
 	gt.Error(t, err)
+}
+
+func TestTicketUseCase_Create_RecordsHistory(t *testing.T) {
+	uc, _ := setupTicketUseCase(t)
+	ctx := context.Background()
+
+	ticket := gt.R1(uc.Create(ctx, "ws-test", "History Test", "", "", "", nil)).NoError(t)
+
+	histories := gt.R1(uc.ListHistory(ctx, "ws-test", ticket.ID)).NoError(t)
+	gt.A(t, histories).Length(1)
+	gt.S(t, histories[0].Action).Equal("created")
+	gt.S(t, histories[0].StatusID).Equal("open")
+	gt.S(t, histories[0].OldStatusID).Equal("")
+	gt.S(t, histories[0].ChangedBy).Equal("system")
+}
+
+func TestTicketUseCase_Update_StatusChange_RecordsHistory(t *testing.T) {
+	uc, _ := setupTicketUseCase(t)
+	ctx := context.Background()
+
+	ticket := gt.R1(uc.Create(ctx, "ws-test", "Status Change", "", "", "", nil)).NoError(t)
+
+	newStatus := "in-progress"
+	gt.R1(uc.Update(ctx, "ws-test", ticket.ID, nil, nil, &newStatus, nil, nil)).NoError(t)
+
+	histories := gt.R1(uc.ListHistory(ctx, "ws-test", ticket.ID)).NoError(t)
+	gt.A(t, histories).Length(2)
+	gt.S(t, histories[0].Action).Equal("created")
+	gt.S(t, histories[1].Action).Equal("changed")
+	gt.S(t, histories[1].OldStatusID).Equal("open")
+	gt.S(t, histories[1].StatusID).Equal("in-progress")
+}
+
+func TestTicketUseCase_Update_NoStatusChange_NoHistory(t *testing.T) {
+	uc, _ := setupTicketUseCase(t)
+	ctx := context.Background()
+
+	ticket := gt.R1(uc.Create(ctx, "ws-test", "No Status Change", "", "", "", nil)).NoError(t)
+
+	newTitle := "Updated Title"
+	gt.R1(uc.Update(ctx, "ws-test", ticket.ID, &newTitle, nil, nil, nil, nil)).NoError(t)
+
+	histories := gt.R1(uc.ListHistory(ctx, "ws-test", ticket.ID)).NoError(t)
+	gt.A(t, histories).Length(1) // only the "created" entry
 }
