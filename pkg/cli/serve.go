@@ -32,7 +32,7 @@ func cmdServe() *cli.Command {
 			Name:        "addr",
 			Usage:       "Listen address",
 			Sources:     cli.EnvVars("SHEPHERD_ADDR"),
-			Value:       ":8080",
+			Value:       "localhost:8080",
 			Destination: &addr,
 		},
 		&cli.StringFlag{
@@ -64,7 +64,17 @@ func cmdServe() *cli.Command {
 			if err != nil {
 				return goerr.Wrap(err, "failed to load workspace configs")
 			}
-			registry := config.BuildRegistry(workspaceConfigs)
+
+			var channelResolver config.ChannelResolver
+			if slackCfg.BotToken() != "" {
+				slackClient := slackCfg.NewSlackClient()
+				channelResolver = slackClient.ResolveChannelName
+			}
+
+			registry, err := config.BuildRegistry(ctx, workspaceConfigs, channelResolver)
+			if err != nil {
+				return goerr.Wrap(err, "failed to build workspace registry")
+			}
 
 			repo, err := repoCfg.Configure(ctx)
 			if err != nil {
@@ -83,10 +93,12 @@ func cmdServe() *cli.Command {
 
 			var serverOpts []httpController.ServerOption
 			if slackCfg.IsWebhookConfigured() {
+				slackClient := slackCfg.NewSlackClient()
 				slackUC := slackCfg.NewSlackUseCase(repo, registry, baseURL)
 				serverOpts = append(serverOpts, httpController.WithSlack(httpController.SlackConfig{
 					SigningSecret: slackCfg.SignSecret(),
 					SlackUC:       slackUC,
+					Notifier:      slackClient,
 				}))
 				logger.Info("Slack integration enabled")
 			}

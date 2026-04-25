@@ -24,6 +24,7 @@ type ServerOption func(*Server)
 type SlackConfig struct {
 	SigningSecret string
 	SlackUC       *usecase.SlackUseCase
+	Notifier      usecase.StatusChangeNotifier
 }
 
 func WithSlack(cfg SlackConfig) ServerOption {
@@ -43,6 +44,7 @@ func New(registry *model.WorkspaceRegistry, repo interfaces.Repository, authUC u
 
 	s.mux.Use(middleware.Recoverer)
 	s.mux.Use(middleware.RealIP)
+	s.mux.Use(httpLogger)
 
 	// Auth endpoints (no auth middleware)
 	s.mux.Route("/api/auth", func(r chi.Router) {
@@ -53,7 +55,11 @@ func New(registry *model.WorkspaceRegistry, repo interfaces.Repository, authUC u
 	})
 
 	// API endpoints (auth required)
-	apiHandler := NewAPIHandler(registry, repo)
+	var notifier usecase.StatusChangeNotifier
+	if s.slackCfg != nil {
+		notifier = s.slackCfg.Notifier
+	}
+	apiHandler := NewAPIHandler(registry, repo, notifier)
 	s.mux.Group(func(r chi.Router) {
 		r.Use(authMiddleware(authUC))
 		HandlerFromMux(apiHandler, r)

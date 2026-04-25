@@ -61,7 +61,22 @@ func (x *Slack) ConfigureAuth(ctx context.Context, repo interfaces.Repository, b
 
 	if x.noAuthn != "" {
 		logger.Warn("NoAuthn mode enabled", slog.String("user_id", x.noAuthn))
-		return usecase.NewNoAuthnUseCase(x.noAuthn, "test@example.com", "Test User"), nil
+
+		email := x.noAuthn + "@noauthn.local"
+		name := x.noAuthn
+		if x.botToken != "" {
+			client := x.NewSlackClient()
+			info, err := client.GetUserInfo(ctx, x.noAuthn)
+			if err != nil {
+				logger.Warn("Failed to fetch Slack user info, using user ID as name",
+					slog.String("user_id", x.noAuthn), slog.Any("error", err))
+			} else {
+				email = info.Email
+				name = info.Name
+				logger.Info("NoAuthn user resolved", slog.String("name", name), slog.String("email", email))
+			}
+		}
+		return usecase.NewNoAuthnUseCase(x.noAuthn, email, name), nil
 	}
 
 	if x.clientID != "" && x.clientSecret != "" {
@@ -83,7 +98,11 @@ func (x *Slack) IsWebhookConfigured() bool {
 func (x *Slack) BotToken() string    { return x.botToken }
 func (x *Slack) SignSecret() string  { return x.signSecret }
 
+func (x *Slack) NewSlackClient() *slackService.Client {
+	return slackService.NewClient(x.botToken)
+}
+
 func (x *Slack) NewSlackUseCase(repo interfaces.Repository, registry *model.WorkspaceRegistry, baseURL string) *usecase.SlackUseCase {
-	client := slackService.NewClient(x.botToken)
+	client := x.NewSlackClient()
 	return usecase.NewSlackUseCase(repo, registry, client, baseURL)
 }

@@ -20,10 +20,10 @@ type APIHandler struct {
 
 var _ ServerInterface = (*APIHandler)(nil)
 
-func NewAPIHandler(registry *model.WorkspaceRegistry, repo interfaces.Repository) *APIHandler {
+func NewAPIHandler(registry *model.WorkspaceRegistry, repo interfaces.Repository, notifier usecase.StatusChangeNotifier) *APIHandler {
 	return &APIHandler{
 		workspaceUC: usecase.NewWorkspaceUseCase(registry),
-		ticketUC:    usecase.NewTicketUseCase(repo, registry),
+		ticketUC:    usecase.NewTicketUseCase(repo, registry, notifier),
 	}
 }
 

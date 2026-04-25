@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -9,17 +10,24 @@ import (
 	"github.com/m-mizutani/shepherd/pkg/domain/interfaces"
 	"github.com/m-mizutani/shepherd/pkg/domain/model"
 	"github.com/m-mizutani/shepherd/pkg/utils/errutil"
+	"github.com/m-mizutani/shepherd/pkg/utils/logging"
 )
+
+type StatusChangeNotifier interface {
+	ReplyStatusChange(ctx context.Context, channelID, threadTS, oldStatusName, newStatusName string) error
+}
 
 type TicketUseCase struct {
 	repo     interfaces.Repository
 	registry *model.WorkspaceRegistry
+	notifier StatusChangeNotifier
 }
 
-func NewTicketUseCase(repo interfaces.Repository, registry *model.WorkspaceRegistry) *TicketUseCase {
+func NewTicketUseCase(repo interfaces.Repository, registry *model.WorkspaceRegistry, notifier StatusChangeNotifier) *TicketUseCase {
 	return &TicketUseCase{
 		repo:     repo,
 		registry: registry,
+		notifier: notifier,
 	}
 }
 
@@ -90,6 +98,8 @@ func (uc *TicketUseCase) Update(ctx context.Context, workspaceID, ticketID strin
 		return nil, goerr.Wrap(err, "failed to get ticket for update")
 	}
 
+	oldStatusID := existing.StatusID
+
 	if title != nil {
 		existing.Title = *title
 	}
@@ -117,7 +127,42 @@ func (uc *TicketUseCase) Update(ctx context.Context, workspaceID, ticketID strin
 		return nil, goerr.Wrap(err, "failed to update ticket")
 	}
 
+	if oldStatusID != updated.StatusID {
+		uc.notifyStatusChange(ctx, workspaceID, updated, oldStatusID)
+	}
+
 	return updated, nil
+}
+
+func (uc *TicketUseCase) notifyStatusChange(ctx context.Context, workspaceID string, ticket *model.Ticket, oldStatusID string) {
+	if uc.notifier == nil || ticket.SlackChannelID == "" || ticket.SlackThreadTS == "" {
+		return
+	}
+
+	entry, ok := uc.registry.Get(workspaceID)
+	if !ok {
+		return
+	}
+
+	oldName := statusName(entry, oldStatusID)
+	newName := statusName(entry, ticket.StatusID)
+
+	logger := logging.From(ctx)
+	if err := uc.notifier.ReplyStatusChange(ctx, ticket.SlackChannelID, ticket.SlackThreadTS, oldName, newName); err != nil {
+		logger.Warn("failed to notify status change to slack",
+			slog.String("ticket_id", ticket.ID),
+			slog.Any("error", err),
+		)
+	}
+}
+
+func statusName(entry *model.WorkspaceEntry, statusID string) string {
+	for _, s := range entry.FieldSchema.Statuses {
+		if s.ID == statusID {
+			return s.Name
+		}
+	}
+	return statusID
 }
 
 func (uc *TicketUseCase) Delete(ctx context.Context, workspaceID, ticketID string) error {

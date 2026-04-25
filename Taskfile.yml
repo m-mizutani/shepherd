@@ -52,3 +52,16 @@ tasks:
   dev:
     desc: "Run both Go server and frontend dev server"
     deps: [dev:go, dev:frontend]
+
+  test:
+    desc: "Run Go unit and integration tests"
+    cmds:
+      - go test ./...
+
+  test:e2e:
+    desc: "Run Playwright E2E tests"
+    dir: frontend/e2e
+    cmds:
+      - pnpm install --frozen-lockfile
+      - pnpm exec playwright install --with-deps chromium
+      - pnpm exec playwright test

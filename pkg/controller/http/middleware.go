@@ -1,13 +1,19 @@
 package http
 
 import (
+	"fmt"
 	"net/http"
 
-	"github.com/m-mizutani/goerr/v2"
 	"github.com/m-mizutani/shepherd/pkg/domain/model/auth"
 	"github.com/m-mizutani/shepherd/pkg/usecase"
 	"github.com/m-mizutani/shepherd/pkg/utils/errutil"
 )
+
+func writeUnauthorized(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusUnauthorized)
+	fmt.Fprintf(w, `{"error":"authentication required"}`)
+}
 
 func authMiddleware(authUC usecase.AuthUseCaseInterface) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
@@ -25,12 +31,12 @@ func authMiddleware(authUC usecase.AuthUseCaseInterface) func(http.Handler) http
 
 			tokenIDCookie, err := r.Cookie("token_id")
 			if err != nil {
-				errutil.HandleHTTP(r.Context(), w, goerr.New("authentication required"), http.StatusUnauthorized)
+				writeUnauthorized(w)
 				return
 			}
 			tokenSecretCookie, err := r.Cookie("token_secret")
 			if err != nil {
-				errutil.HandleHTTP(r.Context(), w, goerr.New("authentication required"), http.StatusUnauthorized)
+				writeUnauthorized(w)
 				return
 			}
 
@@ -38,7 +44,7 @@ func authMiddleware(authUC usecase.AuthUseCaseInterface) func(http.Handler) http
 				auth.TokenID(tokenIDCookie.Value),
 				auth.TokenSecret(tokenSecretCookie.Value))
 			if err != nil {
-				errutil.HandleHTTP(r.Context(), w, goerr.Wrap(err, "invalid token"), http.StatusUnauthorized)
+				writeUnauthorized(w)
 				return
 			}
 

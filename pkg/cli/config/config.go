@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -48,7 +49,7 @@ type TicketSection struct {
 }
 
 type SlackSection struct {
-	ChannelID string `toml:"channel_id"`
+	Channel string `toml:"channel"`
 }
 
 type StatusConfig struct {
@@ -89,10 +90,10 @@ type AppConfig struct {
 }
 
 type WorkspaceConfig struct {
-	ID             string
-	Name           string
-	SlackChannelID string
-	FieldSchema    *domainConfig.FieldSchema
+	ID           string
+	Name         string
+	SlackChannel string
+	FieldSchema  *domainConfig.FieldSchema
 }
 
 func (a *AppConfig) Validate() error {
@@ -106,8 +107,8 @@ func (a *AppConfig) Validate() error {
 			goerr.V(WorkspaceIDKey, wsID))
 	}
 
-	if a.Slack.ChannelID == "" {
-		return goerr.Wrap(ErrMissingChannelID, "[slack] channel_id is required",
+	if a.Slack.Channel == "" {
+		return goerr.Wrap(ErrMissingChannelID, "[slack] channel is required",
 			goerr.V(WorkspaceIDKey, wsID))
 	}
 
@@ -224,13 +225,13 @@ func LoadWorkspaceConfigs(paths []string) ([]*WorkspaceConfig, error) {
 		}
 		seenIDs[wc.ID] = f
 
-		if existing, ok := seenChannels[wc.SlackChannelID]; ok {
-			return nil, goerr.Wrap(ErrDuplicateChannelID, "duplicate slack channel_id",
-				goerr.V("channel_id", wc.SlackChannelID),
+		if existing, ok := seenChannels[wc.SlackChannel]; ok {
+			return nil, goerr.Wrap(ErrDuplicateChannelID, "duplicate slack channel",
+				goerr.V("channel", wc.SlackChannel),
 				goerr.V("first_file", existing),
 				goerr.V("second_file", f))
 		}
-		seenChannels[wc.SlackChannelID] = f
+		seenChannels[wc.SlackChannel] = f
 
 		configs = append(configs, wc)
 	}
@@ -265,25 +266,47 @@ func loadSingleWorkspaceConfig(path string) (*WorkspaceConfig, error) {
 	}
 
 	return &WorkspaceConfig{
-		ID:             appCfg.Workspace.ID,
-		Name:           wsName,
-		SlackChannelID: appCfg.Slack.ChannelID,
-		FieldSchema:    schema,
+		ID:           appCfg.Workspace.ID,
+		Name:         wsName,
+		SlackChannel: appCfg.Slack.Channel,
+		FieldSchema:  schema,
 	}, nil
 }
 
-func BuildRegistry(configs []*WorkspaceConfig) *model.WorkspaceRegistry {
+type ChannelResolver func(ctx context.Context, name string) (string, error)
+
+func BuildRegistry(ctx context.Context, configs []*WorkspaceConfig, resolve ChannelResolver) (*model.WorkspaceRegistry, error) {
 	registry := model.NewWorkspaceRegistry()
+	logger := logging.Default()
+
 	for _, wc := range configs {
+		channelID := wc.SlackChannel
+		if strings.HasPrefix(channelID, "#") {
+			if resolve == nil {
+				return nil, goerr.New("channel name resolution requires --slack-bot-token",
+					goerr.V(WorkspaceIDKey, wc.ID),
+					goerr.V("channel", wc.SlackChannel))
+			}
+			name := strings.TrimPrefix(channelID, "#")
+			resolved, err := resolve(ctx, name)
+			if err != nil {
+				return nil, goerr.Wrap(err, "failed to resolve slack channel name",
+					goerr.V(WorkspaceIDKey, wc.ID),
+					goerr.V("channel", wc.SlackChannel))
+			}
+			logger.Info("Resolved slack channel", "name", wc.SlackChannel, "id", resolved)
+			channelID = resolved
+		}
+
 		registry.Register(&model.WorkspaceEntry{
 			Workspace: model.Workspace{
 				ID:   wc.ID,
 				Name: wc.Name,
 			},
 			FieldSchema:    wc.FieldSchema,
-			SlackChannelID: wc.SlackChannelID,
+			SlackChannelID: channelID,
 		})
-		logging.Default().Info("Registered workspace", "id", wc.ID, "name", wc.Name)
+		logger.Info("Registered workspace", "id", wc.ID, "name", wc.Name, "channel", channelID)
 	}
-	return registry
+	return registry, nil
 }

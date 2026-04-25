@@ -11,6 +11,7 @@ export default defineConfig({
   },
   server: {
     host: "127.0.0.1",
+    allowedHosts: [".ts.net", ".ngrok-free.app", ".ngrok.io"],
     proxy: {
       "/api": "http://localhost:8080",
       "/hooks": "http://localhost:8080",

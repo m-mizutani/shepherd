@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"log/slog"
 	"net/url"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/m-mizutani/shepherd/pkg/domain/interfaces"
 	"github.com/m-mizutani/shepherd/pkg/domain/model"
 	slackService "github.com/m-mizutani/shepherd/pkg/service/slack"
+	"github.com/m-mizutani/shepherd/pkg/utils/logging"
 )
 
 type SlackUseCase struct {
@@ -29,18 +31,33 @@ func NewSlackUseCase(repo interfaces.Repository, registry *model.WorkspaceRegist
 }
 
 func (uc *SlackUseCase) HandleNewMessage(ctx context.Context, channelID, userID, text, messageTS string) error {
+	logger := logging.From(ctx)
+
 	entry, ok := uc.registry.GetBySlackChannelID(channelID)
 	if !ok {
+		logger.Debug("slack message ignored: channel not mapped to workspace",
+			slog.String("channel_id", channelID),
+		)
 		return nil
 	}
 
 	wsID := entry.Workspace.ID
+	logger.Debug("handling new slack message",
+		slog.String("workspace_id", wsID),
+		slog.String("channel_id", channelID),
+		slog.String("user_id", userID),
+		slog.String("message_ts", messageTS),
+	)
 
 	existing, err := uc.repo.Ticket().GetBySlackThreadTS(ctx, wsID, channelID, messageTS)
 	if err != nil {
 		return goerr.Wrap(err, "failed to check duplicate ticket")
 	}
 	if existing != nil {
+		logger.Debug("slack message ignored: ticket already exists",
+			slog.String("ticket_id", existing.ID),
+			slog.String("message_ts", messageTS),
+		)
 		return nil
 	}
 
@@ -64,6 +81,13 @@ func (uc *SlackUseCase) HandleNewMessage(ctx context.Context, channelID, userID,
 		return goerr.Wrap(err, "failed to create ticket from slack message")
 	}
 
+	logger.Info("ticket created from slack message",
+		slog.String("workspace_id", wsID),
+		slog.String("ticket_id", created.ID),
+		slog.Int64("seq_num", created.SeqNum),
+		slog.String("channel_id", channelID),
+	)
+
 	ticketURL, _ := url.JoinPath(uc.baseURL, "ws", wsID, "tickets", created.ID)
 	if err := uc.slack.ReplyTicketCreated(ctx, channelID, messageTS, created.SeqNum, ticketURL); err != nil {
 		return goerr.Wrap(err, "failed to reply ticket created")
@@ -73,8 +97,13 @@ func (uc *SlackUseCase) HandleNewMessage(ctx context.Context, channelID, userID,
 }
 
 func (uc *SlackUseCase) HandleThreadReply(ctx context.Context, channelID, threadTS, userID, text, messageTS string) error {
+	logger := logging.From(ctx)
+
 	entry, ok := uc.registry.GetBySlackChannelID(channelID)
 	if !ok {
+		logger.Debug("slack thread reply ignored: channel not mapped to workspace",
+			slog.String("channel_id", channelID),
+		)
 		return nil
 	}
 
@@ -85,6 +114,10 @@ func (uc *SlackUseCase) HandleThreadReply(ctx context.Context, channelID, thread
 		return goerr.Wrap(err, "failed to find ticket by thread_ts")
 	}
 	if ticket == nil {
+		logger.Debug("slack thread reply ignored: no ticket for thread",
+			slog.String("channel_id", channelID),
+			slog.String("thread_ts", threadTS),
+		)
 		return nil
 	}
 
@@ -93,6 +126,10 @@ func (uc *SlackUseCase) HandleThreadReply(ctx context.Context, channelID, thread
 		return goerr.Wrap(err, "failed to check duplicate comment")
 	}
 	if existing != nil {
+		logger.Debug("slack thread reply ignored: comment already exists",
+			slog.String("ticket_id", ticket.ID),
+			slog.String("message_ts", messageTS),
+		)
 		return nil
 	}
 
@@ -108,6 +145,11 @@ func (uc *SlackUseCase) HandleThreadReply(ctx context.Context, channelID, thread
 	if _, err := uc.repo.Comment().Create(ctx, wsID, ticket.ID, comment); err != nil {
 		return goerr.Wrap(err, "failed to create comment from slack thread")
 	}
+
+	logger.Debug("comment created from slack thread reply",
+		slog.String("ticket_id", ticket.ID),
+		slog.String("comment_id", comment.ID),
+	)
 
 	return nil
 }

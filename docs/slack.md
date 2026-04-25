@@ -1,0 +1,162 @@
+# Slack App Setup Guide
+
+Shepherd integrates with Slack for authentication (OIDC) and event-driven ticket management. This guide covers how to create and configure a Slack app for use with Shepherd.
+
+## Prerequisites
+
+- A Slack workspace where you have admin permissions
+- Shepherd deployed and accessible via a public URL (for OAuth callback and event webhooks)
+
+## 1. Create a Slack App
+
+1. Go to [https://api.slack.com/apps](https://api.slack.com/apps)
+2. Click **Create New App** > **From scratch**
+3. Enter an app name (e.g., "Shepherd") and select your workspace
+4. Click **Create App**
+
+## 2. Configure OAuth & Permissions
+
+### Redirect URL
+
+1. Navigate to **OAuth & Permissions** in the sidebar
+2. Under **Redirect URLs**, add: `{SHEPHERD_BASE_URL}/api/auth/callback`
+   - Example: `https://shepherd.example.com/api/auth/callback`
+
+### Bot Token Scopes
+
+Add the following **Bot Token Scopes**:
+
+| Scope | Purpose |
+|-------|---------|
+| `chat:write` | Post ticket creation replies in threads |
+| `channels:history` | Read messages in public channels |
+| `channels:read` | Resolve `#channel-name` to channel ID |
+| `groups:history` | Read messages in private channels |
+| `groups:read` | Resolve private `#channel-name` to channel ID |
+| `users:read` | Fetch user profile (name) for NoAuthn mode |
+| `users:read.email` | Fetch user email for NoAuthn mode |
+
+### User Token Scopes
+
+Add the following **User Token Scopes** (required for OpenID Connect authentication):
+
+| Scope | Purpose |
+|-------|---------|
+| `openid` | Required for OIDC flow |
+| `email` | Retrieve user's email address |
+| `profile` | Retrieve user's display name |
+
+## 3. Configure OpenID Connect (Sign in with Slack)
+
+1. Navigate to **OpenID Connect** in the sidebar (under Features)
+2. Verify the **Redirect URL** matches the one configured in OAuth & Permissions
+
+Shepherd uses Slack's OIDC for user authentication. The following claims are used:
+- `sub` — Slack User ID
+- `email` — User's email address
+- `name` — User's display name
+
+## 4. Enable Event Subscriptions
+
+1. Navigate to **Event Subscriptions** in the sidebar
+2. Toggle **Enable Events** to On
+3. Set **Request URL** to: `{SHEPHERD_BASE_URL}/hooks/slack/event`
+   - Example: `https://shepherd.example.com/hooks/slack/event`
+   - Slack will send a challenge request to verify the endpoint
+
+### Subscribe to Bot Events
+
+Add the following events under **Subscribe to bot events**:
+
+| Event | Purpose |
+|-------|---------|
+| `message.channels` | Detect new messages in public channels → auto-create tickets |
+| `message.groups` | Detect new messages in private channels → auto-create tickets |
+
+## 5. Install the App
+
+1. Navigate to **Install App** in the sidebar
+2. Click **Install to Workspace** and authorize
+
+## 6. Collect Credentials
+
+After installation, gather the following values from the Slack app settings:
+
+| Value | Location | Env Var |
+|-------|----------|---------|
+| **Client ID** | Basic Information > App Credentials | `SHEPHERD_SLACK_CLIENT_ID` |
+| **Client Secret** | Basic Information > App Credentials | `SHEPHERD_SLACK_CLIENT_SECRET` |
+| **Signing Secret** | Basic Information > App Credentials | `SHEPHERD_SLACK_SIGNING_SECRET` |
+| **Bot User OAuth Token** | OAuth & Permissions | `SHEPHERD_SLACK_BOT_TOKEN` |
+
+## 7. Configure Shepherd
+
+### Environment Variables
+
+```bash
+# Required for Slack OIDC authentication
+SHEPHERD_SLACK_CLIENT_ID=<your-client-id>
+SHEPHERD_SLACK_CLIENT_SECRET=<your-client-secret>
+
+# Required for Slack event webhooks
+SHEPHERD_SLACK_BOT_TOKEN=xoxb-...
+SHEPHERD_SLACK_SIGNING_SECRET=<your-signing-secret>
+
+# Required when Slack OAuth is enabled
+SHEPHERD_BASE_URL=https://shepherd.example.com
+```
+
+### CLI Flags
+
+The same values can be passed as CLI flags:
+
+```bash
+shepherd serve \
+  --slack-client-id <client-id> \
+  --slack-client-secret <client-secret> \
+  --slack-bot-token xoxb-... \
+  --slack-signing-secret <signing-secret> \
+  --base-url https://shepherd.example.com
+```
+
+### Workspace Configuration
+
+Each workspace's TOML config must specify the Slack channel to monitor:
+
+```toml
+[slack]
+channel = "#my-channel"       # Channel name (resolved to ID at startup via Slack API)
+```
+
+Or use a raw channel ID directly:
+
+```toml
+[slack]
+channel = "C0123456789"       # Channel ID (used as-is)
+```
+
+When using `#channel-name` format, `--slack-bot-token` must be set so Shepherd can resolve the name to a channel ID at startup. The bot also needs the `channels:read` and `groups:read` scopes.
+
+## 8. Invite the Bot
+
+Invite the Shepherd bot to each channel configured in your workspace TOML files:
+
+```
+/invite @Shepherd
+```
+
+## How It Works
+
+1. **New message in a monitored channel** → Shepherd creates a ticket with the message as the title/description, then replies in a thread with a link to the ticket in the Web UI
+2. **Thread reply on a ticket message** → Shepherd records the reply as a comment on the corresponding ticket
+3. Bot messages and subtypes (join/leave/etc.) are ignored
+
+## Development Mode (NoAuthn)
+
+For local development without Slack OAuth:
+
+```bash
+shepherd serve --no-authn U_DEV --repository-backend memory --config examples/config.toml
+```
+
+This skips all OAuth flows and authenticates as a test user. The `--no-authn` flag accepts a Slack User ID that will be used as the authenticated user's `sub` claim.
