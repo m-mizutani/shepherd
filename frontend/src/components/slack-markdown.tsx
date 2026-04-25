@@ -1,4 +1,5 @@
 import { type Node, NodeType, parseSlackMarkdown } from "../lib/slack-markdown-parser";
+import { cn } from "../lib/utils";
 
 function renderNode(node: Node, key: number): React.ReactNode {
   switch (node.type) {
@@ -6,7 +7,7 @@ function renderNode(node: Node, key: number): React.ReactNode {
       return <span key={key}>{node.text}</span>;
     case NodeType.Bold:
       return (
-        <strong key={key}>
+        <strong key={key} className="font-semibold">
           {node.children.map((c, i) => renderNode(c, i))}
         </strong>
       );
@@ -26,7 +27,7 @@ function renderNode(node: Node, key: number): React.ReactNode {
       return (
         <code
           key={key}
-          className="bg-gray-100 text-red-600 px-1 py-0.5 rounded text-xs font-mono"
+          className="font-mono text-[12px] px-1.5 py-px bg-bg-sunken text-ink-2 rounded-1 border border-line"
         >
           {node.text}
         </code>
@@ -35,7 +36,7 @@ function renderNode(node: Node, key: number): React.ReactNode {
       return (
         <pre
           key={key}
-          className="bg-gray-100 p-3 rounded text-sm font-mono overflow-x-auto my-1"
+          className="font-mono text-[12px] p-3 my-1.5 bg-bg-sunken rounded-2 border border-line overflow-x-auto"
         >
           <code>{node.text}</code>
         </pre>
@@ -47,7 +48,7 @@ function renderNode(node: Node, key: number): React.ReactNode {
           href={node.url}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-blue-600 hover:underline"
+          className="text-info border-b border-info/30 hover:border-info"
         >
           {node.label
             ? node.label.map((c, i) => renderNode(c, i))
@@ -64,10 +65,14 @@ interface SlackMarkdownProps {
 
 export function SlackMarkdown({ text, className }: SlackMarkdownProps) {
   const nodes = parseSlackMarkdown(text);
-
   return (
-    <span className={className}>
+    <div
+      className={cn(
+        "text-[13.5px] leading-[1.55] text-ink-1 whitespace-pre-wrap",
+        className,
+      )}
+    >
       {nodes.map((node, i) => renderNode(node, i))}
-    </span>
+    </div>
   );
 }

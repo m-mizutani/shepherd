@@ -1,37 +1,12 @@
 import { useState, useRef, useEffect, useMemo } from "react";
+import { Avatar } from "./ui/avatar";
+import { Icon } from "./ui/icon";
 
 interface SlackUser {
   id: string;
   name: string;
   email?: string;
   imageUrl?: string;
-}
-
-interface UserAvatarProps {
-  user: SlackUser;
-  size?: number;
-}
-
-function UserAvatar({ user, size = 20 }: UserAvatarProps) {
-  const px = `${size}px`;
-  if (user.imageUrl) {
-    return (
-      <img
-        src={user.imageUrl}
-        alt={user.name}
-        className="rounded-full shrink-0"
-        style={{ width: px, height: px }}
-      />
-    );
-  }
-  return (
-    <span
-      className="rounded-full bg-gray-300 flex items-center justify-center text-white font-medium shrink-0"
-      style={{ width: px, height: px, fontSize: `${Math.round(size * 0.5)}px` }}
-    >
-      {user.name.charAt(0).toUpperCase()}
-    </span>
-  );
 }
 
 interface BaseProps {
@@ -170,48 +145,28 @@ export function UserPicker(props: SingleProps | MultiProps) {
               inputRef.current?.focus();
             }
           }}
-          className={`w-full min-h-[34px] flex flex-wrap items-center gap-1 px-1.5 py-1 border border-gray-300 rounded text-sm bg-white cursor-text ${disabled ? "opacity-50 cursor-not-allowed" : "hover:border-gray-400"}`}
+          className={`w-full min-h-[34px] flex flex-wrap items-center gap-1 px-1.5 py-1 border border-line-strong rounded-2 text-[13px] bg-bg-elev cursor-text ${disabled ? "opacity-50 cursor-not-allowed" : "hover:border-ink-4"}`}
         >
           {props.value.map((id) => {
             const u = userMap.get(id);
-            if (!u) {
-              return (
-                <span
-                  key={id}
-                  className="inline-flex items-center gap-1 bg-gray-100 rounded px-1.5 py-0.5 text-xs"
-                >
-                  <span className="text-gray-500">{id}</span>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      removeUser(id);
-                    }}
-                    className="text-gray-400 hover:text-gray-700"
-                    aria-label="Remove"
-                  >
-                    ×
-                  </button>
-                </span>
-              );
-            }
+            const name = u?.name ?? id;
             return (
               <span
                 key={id}
-                className="inline-flex items-center gap-1 bg-blue-50 border border-blue-100 rounded-full pl-0.5 pr-1.5 py-0.5 text-xs"
+                className="inline-flex items-center gap-1 bg-bg-sunken border border-line rounded-2 pl-0.5 pr-1.5 py-0.5 text-[12px]"
               >
-                <UserAvatar user={u} size={18} />
-                <span>{u.name}</span>
+                {u && <Avatar name={name} src={u.imageUrl} size="xs" />}
+                <span className="text-ink-1">{name}</span>
                 <button
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
                     removeUser(id);
                   }}
-                  className="text-blue-400 hover:text-blue-700"
+                  className="text-ink-4 hover:text-ink-1"
                   aria-label="Remove"
                 >
-                  ×
+                  <Icon name="x" size={10} />
                 </button>
               </span>
             );
@@ -225,7 +180,7 @@ export function UserPicker(props: SingleProps | MultiProps) {
             onKeyDown={handleKeyDown}
             disabled={disabled}
             placeholder={props.value.length === 0 ? placeholder : ""}
-            className="flex-1 min-w-[80px] px-1 py-0.5 text-sm border-none outline-none bg-transparent"
+            className="flex-1 min-w-[80px] px-1 py-0.5 text-[13px] border-none outline-none bg-transparent text-ink-1"
           />
         </div>
 
@@ -243,7 +198,7 @@ export function UserPicker(props: SingleProps | MultiProps) {
     );
   }
 
-  // Single mode
+  // Single
   const selectedUser = props.value ? userMap.get(props.value) : undefined;
 
   return (
@@ -253,17 +208,17 @@ export function UserPicker(props: SingleProps | MultiProps) {
           type="button"
           disabled={disabled}
           onClick={() => setIsOpen(true)}
-          className="w-full flex items-center justify-between gap-2 px-2 py-1 border border-gray-300 rounded text-sm bg-white hover:border-gray-400 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full flex items-center justify-between gap-2 px-2 py-1 border border-line-strong rounded-2 text-[13px] bg-bg-elev hover:border-ink-4 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {selectedUser ? (
             <span className="flex items-center gap-1.5 min-w-0">
-              <UserAvatar user={selectedUser} size={20} />
-              <span className="truncate">{selectedUser.name}</span>
+              <Avatar name={selectedUser.name} src={selectedUser.imageUrl} size="sm" />
+              <span className="truncate text-ink-1">{selectedUser.name}</span>
             </span>
           ) : props.value ? (
-            <span className="text-gray-500 truncate">{props.value}</span>
+            <span className="text-ink-3 truncate">{props.value}</span>
           ) : (
-            <span className="text-gray-400">{placeholder}</span>
+            <span className="text-ink-4">{placeholder}</span>
           )}
           <span className="flex items-center gap-1 shrink-0">
             {props.value && (
@@ -274,25 +229,13 @@ export function UserPicker(props: SingleProps | MultiProps) {
                   e.stopPropagation();
                   removeUser(props.value);
                 }}
-                className="text-gray-400 hover:text-gray-600 px-1"
+                className="text-ink-4 hover:text-ink-1 px-0.5"
                 aria-label="Clear"
               >
-                ×
+                <Icon name="x" size={11} />
               </span>
             )}
-            <svg
-              className="w-4 h-4 text-gray-400"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M19 9l-7 7-7-7"
-              />
-            </svg>
+            <Icon name="chevron" size={12} className="text-ink-4" />
           </span>
         </button>
       ) : (
@@ -303,7 +246,7 @@ export function UserPicker(props: SingleProps | MultiProps) {
           onChange={(e) => setSearch(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="Type to search..."
-          className="w-full px-2 py-1 text-sm border border-blue-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+          className="w-full px-2 py-1 text-[13px] border border-brand rounded-2 bg-bg-elev text-ink-1 focus:outline-none focus:ring-2 focus:ring-brand-soft"
         />
       )}
 
@@ -340,11 +283,11 @@ const UserList = ({
   return (
     <ul
       ref={ref}
-      className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-y-auto py-1"
+      className="absolute z-30 mt-1 w-full bg-bg-elev border border-line rounded-3 shadow-pop max-h-60 overflow-y-auto p-1"
       role="listbox"
     >
       {users.length === 0 && (
-        <li className="px-2 py-2 text-sm text-gray-400 text-center">
+        <li className="px-2 py-2 text-[13px] text-ink-4 text-center">
           No users found
         </li>
       )}
@@ -356,28 +299,16 @@ const UserList = ({
             onSelect(u);
           }}
           onMouseEnter={() => onHighlight(i)}
-          className={`flex items-center gap-2 px-2 py-1.5 text-sm cursor-pointer ${
-            i === highlightedIndex ? "bg-blue-50" : ""
+          className={`flex items-center gap-2 px-2 py-1.5 rounded-2 text-[13px] cursor-pointer ${
+            i === highlightedIndex ? "bg-bg-sunken" : ""
           } ${selectedIds.includes(u.id) ? "font-medium" : ""}`}
           role="option"
           aria-selected={selectedIds.includes(u.id)}
         >
-          <UserAvatar user={u} size={24} />
-          <span className="truncate">{u.name}</span>
+          <Avatar name={u.name} src={u.imageUrl} size="md" />
+          <span className="truncate text-ink-1">{u.name}</span>
           {selectedIds.includes(u.id) && (
-            <svg
-              className="w-4 h-4 ml-auto text-blue-500 shrink-0"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M5 13l4 4L19 7"
-              />
-            </svg>
+            <Icon name="check" size={13} className="ml-auto text-brand shrink-0" />
           )}
         </li>
       ))}
