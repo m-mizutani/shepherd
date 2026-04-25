@@ -167,7 +167,7 @@ func toTicketResponse(t *model.Ticket) Ticket {
 	fields := make([]FieldValue, 0, len(t.FieldValues))
 	for _, fv := range t.FieldValues {
 		fields = append(fields, FieldValue{
-			FieldId: string(fv.FieldID),
+			FieldId: fv.FieldID,
 			Value:   fv.Value,
 		})
 	}
@@ -271,9 +271,8 @@ func toModelFieldValues(fields *[]FieldValue) map[types.FieldID]model.FieldValue
 	}
 	result := make(map[types.FieldID]model.FieldValue, len(*fields))
 	for _, f := range *fields {
-		id := types.FieldID(f.FieldId)
-		result[id] = model.FieldValue{
-			FieldID: id,
+		result[f.FieldId] = model.FieldValue{
+			FieldID: f.FieldId,
 			Value:   f.Value,
 		}
 	}

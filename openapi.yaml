@@ -303,6 +303,9 @@ components:
       properties:
         fieldId:
           type: string
+          x-go-type: types.FieldID
+          x-go-type-import:
+            path: github.com/m-mizutani/shepherd/pkg/domain/types
         value: {}
       required: [fieldId, value]
 
