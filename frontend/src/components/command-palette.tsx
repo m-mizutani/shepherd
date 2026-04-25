@@ -146,6 +146,9 @@ export function CommandPalette() {
     >
       <div
         onMouseDown={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Command palette"
         className="bg-bg-elev border border-line rounded-4 shadow-pop w-full max-w-xl overflow-hidden"
       >
         <div className="flex items-center gap-2 px-3 py-2 border-b border-line">

@@ -12,14 +12,20 @@ export function useClickOutside<T extends HTMLElement>(
   onClose: () => void,
   enabled = true,
 ) {
+  const savedCallback = useRef(onClose);
+  useEffect(() => {
+    savedCallback.current = onClose;
+  });
+
   useEffect(() => {
     if (!enabled) return;
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+      if (ref.current && !ref.current.contains(e.target as Node))
+        savedCallback.current();
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, [ref, onClose, enabled]);
+  }, [ref, enabled]);
 }
 
 interface PopoverProps {

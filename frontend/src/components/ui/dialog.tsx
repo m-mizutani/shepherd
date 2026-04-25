@@ -25,6 +25,9 @@ export function Dialog({ open, onClose, title, children, footer, width = 480 }: 
   return (
     <div className="fixed inset-0 z-40 flex items-start justify-center pt-24 px-4 bg-black/30 backdrop-blur-[2px]">
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
         className={cn(
           "bg-bg-elev border border-line rounded-4 shadow-pop w-full max-w-full",
         )}

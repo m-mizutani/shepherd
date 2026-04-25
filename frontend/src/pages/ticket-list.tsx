@@ -655,6 +655,14 @@ function FilterChip({
                 e.stopPropagation();
                 onClear();
               }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onClear();
+                }
+              }}
+              aria-label={`Clear ${label} filter`}
               className="text-ink-3 hover:text-ink-1 ml-0.5"
             >
               <Icon name="x" size={10} />
