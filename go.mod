@@ -5,7 +5,7 @@ go 1.26.2
 require (
 	cloud.google.com/go/firestore v1.22.0
 	github.com/fatih/color v1.19.0
-	github.com/getkin/kin-openapi v0.128.0
+	github.com/getkin/kin-openapi v0.131.0
 	github.com/getsentry/sentry-go v0.46.0
 	github.com/go-chi/chi/v5 v5.2.5
 	github.com/google/uuid v1.6.0
@@ -43,7 +43,6 @@ require (
 	github.com/googleapis/enterprise-certificate-proxy v0.3.15 // indirect
 	github.com/googleapis/gax-go/v2 v2.22.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
-	github.com/invopop/yaml v0.3.1 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/k0kubun/pp/v3 v3.5.1 // indirect
 	github.com/lestrrat-go/blackmagic v1.0.4 // indirect
@@ -56,6 +55,8 @@ require (
 	github.com/mattn/go-isatty v0.0.21 // indirect
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826 // indirect
 	github.com/oapi-codegen/oapi-codegen/v2 v2.4.1 // indirect
+	github.com/oasdiff/yaml v0.0.0-20250309154309-f31be36b4037 // indirect
+	github.com/oasdiff/yaml3 v0.0.0-20250309153720-d2182401db90 // indirect
 	github.com/perimeterx/marshmallow v1.1.5 // indirect
 	github.com/segmentio/asm v1.2.1 // indirect
 	github.com/speakeasy-api/jsonpath v0.6.0 // indirect
