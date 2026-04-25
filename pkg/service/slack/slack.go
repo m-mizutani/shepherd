@@ -137,6 +137,115 @@ func (c *Client) ReplyStatusChange(ctx context.Context, channelID, threadTS, old
 	return nil
 }
 
+// Message is a minimal representation of a Slack message used by tools and
+// downstream consumers. It hides the noisy slack-go Message struct behind a
+// small surface of fields that LLMs actually care about.
+type Message struct {
+	User      string
+	Text      string
+	Timestamp string
+	ThreadTS  string
+	BotID     string
+}
+
+// SearchMatch is one hit returned by the search.messages API.
+type SearchMatch struct {
+	ChannelID   string
+	ChannelName string
+	User        string
+	Username    string
+	Text        string
+	Timestamp   string
+	Permalink   string
+}
+
+// SearchMessages calls the Slack search.messages API.
+// count is clamped to slack-go defaults when zero. sort is "score" (default) or "timestamp".
+func (c *Client) SearchMessages(ctx context.Context, query string, count int, sort string) ([]*SearchMatch, error) {
+	params := slackgo.NewSearchParameters()
+	if count > 0 {
+		params.Count = count
+	}
+	if sort != "" {
+		params.Sort = sort
+	}
+	res, _, err := c.api.SearchContext(ctx, query, params)
+	if err != nil {
+		return nil, goerr.Wrap(err, "failed to search slack messages",
+			goerr.V("query", query),
+			goerr.Tag(errutil.TagSlackError),
+		)
+	}
+	matches := make([]*SearchMatch, 0, len(res.Matches))
+	for _, m := range res.Matches {
+		matches = append(matches, &SearchMatch{
+			ChannelID:   m.Channel.ID,
+			ChannelName: m.Channel.Name,
+			User:        m.User,
+			Username:    m.Username,
+			Text:        m.Text,
+			Timestamp:   m.Timestamp,
+			Permalink:   m.Permalink,
+		})
+	}
+	return matches, nil
+}
+
+// GetThreadMessages returns the messages of a thread (root + replies).
+func (c *Client) GetThreadMessages(ctx context.Context, channelID, threadTS string, limit int) ([]*Message, error) {
+	params := &slackgo.GetConversationRepliesParameters{
+		ChannelID: channelID,
+		Timestamp: threadTS,
+	}
+	if limit > 0 {
+		params.Limit = limit
+	}
+	msgs, _, _, err := c.api.GetConversationRepliesContext(ctx, params)
+	if err != nil {
+		return nil, goerr.Wrap(err, "failed to get slack thread replies",
+			goerr.V("channel_id", channelID),
+			goerr.V("thread_ts", threadTS),
+			goerr.Tag(errutil.TagSlackError),
+		)
+	}
+	return convertMessages(msgs), nil
+}
+
+// GetChannelHistory returns recent messages in a channel.
+// oldest/latest are RFC-style Slack TS strings. Empty values mean unbounded.
+func (c *Client) GetChannelHistory(ctx context.Context, channelID, oldest, latest string, limit int) ([]*Message, error) {
+	params := &slackgo.GetConversationHistoryParameters{
+		ChannelID: channelID,
+		Oldest:    oldest,
+		Latest:    latest,
+	}
+	if limit > 0 {
+		params.Limit = limit
+	}
+	res, err := c.api.GetConversationHistoryContext(ctx, params)
+	if err != nil {
+		return nil, goerr.Wrap(err, "failed to get slack channel history",
+			goerr.V("channel_id", channelID),
+			goerr.Tag(errutil.TagSlackError),
+		)
+	}
+	return convertMessages(res.Messages), nil
+}
+
+func convertMessages(msgs []slackgo.Message) []*Message {
+	out := make([]*Message, 0, len(msgs))
+	for _, m := range msgs {
+		out = append(out, &Message{
+			User:      m.User,
+			Text:      m.Text,
+			Timestamp: m.Timestamp,
+			ThreadTS:  m.ThreadTimestamp,
+			BotID:     m.BotID,
+		})
+	}
+	return out
+}
+
 func (c *Client) ResolveChannelName(ctx context.Context, name string) (string, error) {
 	var cursor string
 	for {
