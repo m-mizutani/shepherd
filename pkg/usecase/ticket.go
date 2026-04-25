@@ -63,11 +63,11 @@ func (uc *TicketUseCase) Create(ctx context.Context, workspaceID string, title, 
 
 	changedBy := changedByFromContext(ctx)
 	history := &model.TicketHistory{
-		ID:        uuid.Must(uuid.NewV7()).String(),
-		StatusID:  statusID,
-		ChangedBy: changedBy,
-		Action:    "created",
-		CreatedAt: now,
+		ID:          uuid.Must(uuid.NewV7()).String(),
+		NewStatusID: statusID,
+		ChangedBy:   changedBy,
+		Action:      "created",
+		CreatedAt:   now,
 	}
 	if _, err := uc.repo.TicketHistory().Create(ctx, workspaceID, created.ID, history); err != nil {
 		errutil.Handle(ctx, goerr.Wrap(err, "failed to create ticket history"))
@@ -145,7 +145,7 @@ func (uc *TicketUseCase) Update(ctx context.Context, workspaceID, ticketID strin
 		changedBy := changedByFromContext(ctx)
 		history := &model.TicketHistory{
 			ID:          uuid.Must(uuid.NewV7()).String(),
-			StatusID:    updated.StatusID,
+			NewStatusID: updated.StatusID,
 			OldStatusID: oldStatusID,
 			ChangedBy:   changedBy,
 			Action:      "changed",

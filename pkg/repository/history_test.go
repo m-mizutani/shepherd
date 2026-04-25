@@ -39,14 +39,14 @@ func TestTicketHistoryCreate(t *testing.T) {
 
 		history := &model.TicketHistory{
 			ID:        uuid.Must(uuid.NewV7()).String(),
-			StatusID:  "open",
+			NewStatusID:  "open",
 			ChangedBy: "U123",
 			Action:    "created",
 			CreatedAt: time.Now().Truncate(time.Millisecond),
 		}
 		created := gt.R1(repo.TicketHistory().Create(ctx(t), wsID, ticket.ID, history)).NoError(t)
 		gt.S(t, created.Action).Equal("created")
-		gt.S(t, created.StatusID).Equal("open")
+		gt.S(t, created.NewStatusID).Equal("open")
 		gt.S(t, created.ChangedBy).Equal("U123")
 	})
 }
@@ -60,7 +60,7 @@ func TestTicketHistoryList(t *testing.T) {
 		for i, action := range []string{"created", "changed", "changed"} {
 			h := &model.TicketHistory{
 				ID:        uuid.Must(uuid.NewV7()).String(),
-				StatusID:  "status-" + action,
+				NewStatusID:  "status-" + action,
 				ChangedBy: "U123",
 				Action:    action,
 				CreatedAt: now.Add(time.Duration(i) * time.Second),

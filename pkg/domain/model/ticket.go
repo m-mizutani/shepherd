@@ -41,7 +41,7 @@ type Comment struct {
 
 type TicketHistory struct {
 	ID          string
-	StatusID    string
+	NewStatusID string
 	OldStatusID string
 	ChangedBy   string
 	Action      string

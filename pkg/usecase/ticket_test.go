@@ -158,7 +158,7 @@ func TestTicketUseCase_Create_RecordsHistory(t *testing.T) {
 	histories := gt.R1(uc.ListHistory(ctx, "ws-test", ticket.ID)).NoError(t)
 	gt.A(t, histories).Length(1)
 	gt.S(t, histories[0].Action).Equal("created")
-	gt.S(t, histories[0].StatusID).Equal("open")
+	gt.S(t, histories[0].NewStatusID).Equal("open")
 	gt.S(t, histories[0].OldStatusID).Equal("")
 	gt.S(t, histories[0].ChangedBy).Equal("system")
 }
@@ -177,7 +177,7 @@ func TestTicketUseCase_Update_StatusChange_RecordsHistory(t *testing.T) {
 	gt.S(t, histories[0].Action).Equal("created")
 	gt.S(t, histories[1].Action).Equal("changed")
 	gt.S(t, histories[1].OldStatusID).Equal("open")
-	gt.S(t, histories[1].StatusID).Equal("in-progress")
+	gt.S(t, histories[1].NewStatusID).Equal("in-progress")
 }
 
 func TestTicketUseCase_Update_NoStatusChange_NoHistory(t *testing.T) {
