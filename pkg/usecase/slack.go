@@ -4,33 +4,47 @@ import (
 	"context"
 	"log/slog"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/m-mizutani/goerr/v2"
+	"github.com/m-mizutani/gollem"
 	"github.com/m-mizutani/shepherd/pkg/domain/interfaces"
 	"github.com/m-mizutani/shepherd/pkg/domain/model"
 	"github.com/m-mizutani/shepherd/pkg/domain/types"
 	slackService "github.com/m-mizutani/shepherd/pkg/service/slack"
+	"github.com/m-mizutani/shepherd/pkg/usecase/prompt"
 	"github.com/m-mizutani/shepherd/pkg/utils/errutil"
 	"github.com/m-mizutani/shepherd/pkg/utils/logging"
 )
 
+// SlackClient captures the subset of the Slack service the usecase depends on.
+// Defined as an interface so tests can substitute a fake without hitting Slack.
+type SlackClient interface {
+	ReplyThread(ctx context.Context, channelID, threadTS, text string) error
+	ReplyTicketCreated(ctx context.Context, channelID, threadTS string, seqNum int64, ticketURL string) error
+	GetUserInfo(ctx context.Context, userID string) (*slackService.UserInfo, error)
+	ListUsers(ctx context.Context) ([]*slackService.UserInfo, error)
+}
+
 type SlackUseCase struct {
 	repo      interfaces.Repository
 	registry  *model.WorkspaceRegistry
-	slack     *slackService.Client
+	slack     SlackClient
 	baseURL   string
+	llm       gollem.LLMClient
 	userCache sync.Map
 }
 
-func NewSlackUseCase(repo interfaces.Repository, registry *model.WorkspaceRegistry, slack *slackService.Client, baseURL string) *SlackUseCase {
+func NewSlackUseCase(repo interfaces.Repository, registry *model.WorkspaceRegistry, slack SlackClient, baseURL string, llm gollem.LLMClient) *SlackUseCase {
 	return &SlackUseCase{
 		repo:     repo,
 		registry: registry,
 		slack:    slack,
 		baseURL:  baseURL,
+		llm:      llm,
 	}
 }
 
@@ -169,6 +183,144 @@ func (uc *SlackUseCase) HandleThreadReply(ctx context.Context, channelID, thread
 	)
 
 	return nil
+}
+
+// HandleAppMention responds to an app_mention event by feeding the ticket
+// thread context to the configured LLM and posting the reply back to Slack.
+// When the LLM is not configured, or when the mentioned thread does not map to
+// a known ticket, the call is a debug-logged no-op.
+func (uc *SlackUseCase) HandleAppMention(ctx context.Context, channelID, userID, text, messageTS, threadTS string) error {
+	logger := logging.From(ctx)
+
+	if uc.llm == nil {
+		logger.Debug("app_mention ignored: LLM not configured",
+			slog.String("channel_id", channelID),
+		)
+		return nil
+	}
+
+	rootTS := threadTS
+	if rootTS == "" {
+		rootTS = messageTS
+	}
+
+	entry, ok := uc.registry.GetBySlackChannelID(channelID)
+	if !ok {
+		logger.Debug("app_mention ignored: channel not mapped to workspace",
+			slog.String("channel_id", channelID),
+		)
+		return nil
+	}
+	wsID := entry.Workspace.ID
+
+	ticket, err := uc.repo.Ticket().GetBySlackThreadTS(ctx, wsID, types.SlackChannelID(channelID), types.SlackThreadTS(rootTS))
+	if err != nil {
+		return goerr.Wrap(err, "failed to find ticket for app_mention")
+	}
+	if ticket == nil {
+		logger.Debug("app_mention ignored: no ticket for thread",
+			slog.String("channel_id", channelID),
+			slog.String("thread_ts", rootTS),
+		)
+		return nil
+	}
+
+	comments, err := uc.repo.Comment().List(ctx, wsID, ticket.ID)
+	if err != nil {
+		return goerr.Wrap(err, "failed to list comments for app_mention")
+	}
+
+	mentionAuthor := uc.resolveDisplayName(ctx, userID)
+	rendered, err := prompt.RenderMention(prompt.MentionInput{
+		Title:          ticket.Title,
+		Description:    ticket.Description,
+		InitialMessage: ticket.InitialMessage,
+		Comments:       uc.buildMentionComments(ctx, comments),
+		MentionAuthor:  mentionAuthor,
+		Mention:        stripMentionTokens(text),
+	})
+	if err != nil {
+		return goerr.Wrap(err, "failed to render mention prompt")
+	}
+
+	session, err := uc.llm.NewSession(ctx)
+	if err != nil {
+		return goerr.Wrap(err, "failed to start LLM session")
+	}
+	resp, err := session.Generate(ctx, []gollem.Input{gollem.Text(rendered)})
+	if err != nil {
+		return goerr.Wrap(err, "failed to generate LLM response")
+	}
+	if resp == nil || len(resp.Texts) == 0 {
+		logger.Debug("app_mention: LLM returned no text",
+			slog.String("ticket_id", string(ticket.ID)),
+		)
+		return nil
+	}
+
+	reply := strings.TrimSpace(strings.Join(resp.Texts, "\n"))
+	if reply == "" {
+		return nil
+	}
+
+	if err := uc.slack.ReplyThread(ctx, channelID, rootTS, reply); err != nil {
+		return goerr.Wrap(err, "failed to reply to app_mention")
+	}
+
+	logger.Info("app_mention answered",
+		slog.String("workspace_id", string(wsID)),
+		slog.String("ticket_id", string(ticket.ID)),
+		slog.String("channel_id", channelID),
+	)
+	return nil
+}
+
+func (uc *SlackUseCase) buildMentionComments(ctx context.Context, comments []*model.Comment) []prompt.MentionComment {
+	out := make([]prompt.MentionComment, 0, len(comments))
+	for _, c := range comments {
+		role := "user"
+		if c.IsBot {
+			role = "bot"
+		}
+		out = append(out, prompt.MentionComment{
+			Author: uc.resolveDisplayName(ctx, string(c.SlackUserID)),
+			Role:   role,
+			Body:   c.Body,
+		})
+	}
+	return out
+}
+
+func (uc *SlackUseCase) resolveDisplayName(ctx context.Context, userID string) string {
+	if userID == "" {
+		return "unknown"
+	}
+	info, err := uc.GetUserInfo(ctx, userID)
+	if err != nil || info == nil || info.Name == "" {
+		return userID
+	}
+	return info.Name
+}
+
+// stripMentionTokens removes Slack mention tokens like "<@U12345>" from the
+// raw event text so the LLM only sees the human-written content.
+func stripMentionTokens(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); {
+		if s[i] == '<' {
+			if end := strings.IndexByte(s[i:], '>'); end > 0 {
+				token := s[i : i+end+1]
+				if strings.HasPrefix(token, "<@") || strings.HasPrefix(token, "<!") {
+					i += end + 1
+					continue
+				}
+			}
+		}
+		b.WriteByte(s[i])
+		i++
+	}
+	return strings.TrimSpace(b.String())
 }
 
 func (uc *SlackUseCase) HandleMessageChanged(ctx context.Context, channelID, messageTS, newText string) error {

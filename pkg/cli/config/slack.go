@@ -5,6 +5,7 @@ import (
 	"log/slog"
 
 	"github.com/m-mizutani/goerr/v2"
+	"github.com/m-mizutani/gollem"
 	"github.com/m-mizutani/shepherd/pkg/domain/interfaces"
 	"github.com/m-mizutani/shepherd/pkg/domain/model"
 	slackService "github.com/m-mizutani/shepherd/pkg/service/slack"
@@ -102,7 +103,7 @@ func (x *Slack) NewSlackClient() *slackService.Client {
 	return slackService.NewClient(x.botToken)
 }
 
-func (x *Slack) NewSlackUseCase(repo interfaces.Repository, registry *model.WorkspaceRegistry, baseURL string) *usecase.SlackUseCase {
+func (x *Slack) NewSlackUseCase(repo interfaces.Repository, registry *model.WorkspaceRegistry, baseURL string, llm gollem.LLMClient) *usecase.SlackUseCase {
 	client := x.NewSlackClient()
-	return usecase.NewSlackUseCase(repo, registry, client, baseURL)
+	return usecase.NewSlackUseCase(repo, registry, client, baseURL, llm)
 }
