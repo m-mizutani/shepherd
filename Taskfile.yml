@@ -1,0 +1,67 @@
+version: '3'
+
+tasks:
+  generate:go:
+    desc: "Generate Go server code from OpenAPI spec"
+    cmds:
+      - go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen --config oapi-codegen.yaml openapi.yaml
+    sources:
+      - openapi.yaml
+      - oapi-codegen.yaml
+    generates:
+      - pkg/controller/http/generated.go
+
+  generate:ts:
+    desc: "Generate TypeScript types from OpenAPI spec"
+    dir: frontend
+    cmds:
+      - npx openapi-typescript ../openapi.yaml -o src/generated/api.d.ts
+    sources:
+      - ../openapi.yaml
+    generates:
+      - src/generated/api.d.ts
+
+  generate:
+    desc: "Run all code generation"
+    deps: [generate:go, generate:ts]
+
+  build:frontend:
+    desc: "Build frontend for production"
+    dir: frontend
+    cmds:
+      - pnpm install --frozen-lockfile
+      - pnpm build
+
+  build:
+    desc: "Full build (generate + frontend + go build)"
+    deps: [generate, build:frontend]
+    cmds:
+      - go build -o shepherd .
+
+  dev:go:
+    desc: "Run Go server in development mode"
+    cmds:
+      - go run . serve --no-authn U_DEV --repository-backend memory --config examples/config.toml --log-format console
+
+  dev:frontend:
+    desc: "Run frontend dev server"
+    dir: frontend
+    cmds:
+      - pnpm dev
+
+  dev:
+    desc: "Run both Go server and frontend dev server"
+    deps: [dev:go, dev:frontend]
+
+  test:
+    desc: "Run Go unit and integration tests"
+    cmds:
+      - go test ./...
+
+  test:e2e:
+    desc: "Run Playwright E2E tests"
+    dir: frontend/e2e
+    cmds:
+      - pnpm install --frozen-lockfile
+      - pnpm exec playwright install --with-deps chromium
+      - pnpm exec playwright test

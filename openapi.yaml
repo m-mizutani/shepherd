@@ -1,0 +1,388 @@
+openapi: "3.0.3"
+info:
+  title: Shepherd API
+  version: "0.1.0"
+
+paths:
+  /api/v1/health:
+    get:
+      operationId: getHealth
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                required: [status]
+
+  /api/v1/ws:
+    get:
+      operationId: listWorkspaces
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  workspaces:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Workspace"
+                required: [workspaces]
+
+  /api/v1/ws/{workspaceId}:
+    get:
+      operationId: getWorkspace
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Workspace"
+        "404":
+          description: Not Found
+
+  /api/v1/ws/{workspaceId}/config:
+    get:
+      operationId: getWorkspaceConfig
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceConfig"
+        "404":
+          description: Not Found
+
+  /api/v1/ws/{workspaceId}/tickets:
+    get:
+      operationId: listTickets
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - name: statusId
+          in: query
+          schema:
+            type: string
+        - name: isClosed
+          in: query
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tickets:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Ticket"
+                required: [tickets]
+        "404":
+          description: Not Found
+    post:
+      operationId: createTicket
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTicketRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ticket"
+        "404":
+          description: Not Found
+
+  /api/v1/ws/{workspaceId}/tickets/{ticketId}:
+    get:
+      operationId: getTicket
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/TicketId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ticket"
+        "404":
+          description: Not Found
+    patch:
+      operationId: updateTicket
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/TicketId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTicketRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ticket"
+        "404":
+          description: Not Found
+    delete:
+      operationId: deleteTicket
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/TicketId"
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not Found
+
+  /api/v1/ws/{workspaceId}/tickets/{ticketId}/comments:
+    get:
+      operationId: listComments
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/TicketId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  comments:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Comment"
+                required: [comments]
+        "404":
+          description: Not Found
+
+components:
+  parameters:
+    WorkspaceId:
+      name: workspaceId
+      in: path
+      required: true
+      schema:
+        type: string
+    TicketId:
+      name: ticketId
+      in: path
+      required: true
+      schema:
+        type: string
+
+  schemas:
+    Workspace:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+      required: [id, name]
+
+    StatusDef:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        color:
+          type: string
+        order:
+          type: integer
+        isClosed:
+          type: boolean
+      required: [id, name, color, order, isClosed]
+
+    TicketConfig:
+      type: object
+      properties:
+        defaultStatusId:
+          type: string
+        closedStatusIds:
+          type: array
+          items:
+            type: string
+      required: [defaultStatusId, closedStatusIds]
+
+    FieldType:
+      type: string
+      enum: [text, number, select, multi-select, user, date, url]
+
+    FieldOption:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        color:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+      required: [id, name]
+
+    FieldDefinition:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          $ref: "#/components/schemas/FieldType"
+        required:
+          type: boolean
+        description:
+          type: string
+        options:
+          type: array
+          items:
+            $ref: "#/components/schemas/FieldOption"
+      required: [id, name, type, required]
+
+    EntityLabels:
+      type: object
+      properties:
+        ticket:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+      required: [ticket, title, description]
+
+    WorkspaceConfig:
+      type: object
+      properties:
+        statuses:
+          type: array
+          items:
+            $ref: "#/components/schemas/StatusDef"
+        ticketConfig:
+          $ref: "#/components/schemas/TicketConfig"
+        fields:
+          type: array
+          items:
+            $ref: "#/components/schemas/FieldDefinition"
+        labels:
+          $ref: "#/components/schemas/EntityLabels"
+      required: [statuses, ticketConfig, fields, labels]
+
+    FieldValue:
+      type: object
+      properties:
+        fieldId:
+          type: string
+        value: {}
+      required: [fieldId, value]
+
+    Ticket:
+      type: object
+      properties:
+        id:
+          type: string
+        seqNum:
+          type: integer
+          format: int64
+        title:
+          type: string
+        description:
+          type: string
+        statusId:
+          type: string
+        assigneeId:
+          type: string
+        reporterSlackUserId:
+          type: string
+        slackChannelId:
+          type: string
+        slackThreadTs:
+          type: string
+        fields:
+          type: array
+          items:
+            $ref: "#/components/schemas/FieldValue"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, seqNum, title, statusId, fields, createdAt, updatedAt]
+
+    CreateTicketRequest:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        statusId:
+          type: string
+        assigneeId:
+          type: string
+        fields:
+          type: array
+          items:
+            $ref: "#/components/schemas/FieldValue"
+      required: [title]
+
+    UpdateTicketRequest:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        statusId:
+          type: string
+        assigneeId:
+          type: string
+        fields:
+          type: array
+          items:
+            $ref: "#/components/schemas/FieldValue"
+
+    Comment:
+      type: object
+      properties:
+        id:
+          type: string
+        slackUserId:
+          type: string
+        body:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, slackUserId, body, createdAt]
