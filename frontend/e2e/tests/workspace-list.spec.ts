@@ -8,7 +8,7 @@ test.describe("Workspace List", () => {
   });
 
   test("displays workspace cards", async ({ page }) => {
-    await expect(page.getByText("Workspaces")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Workspaces" })).toBeVisible();
     // examples/config.toml defines "support" workspace with name "Support Team"
     await expect(page.getByRole("heading", { name: "Support Team" })).toBeVisible();
     await expect(page.getByText("support", { exact: true })).toBeVisible();
@@ -17,6 +17,6 @@ test.describe("Workspace List", () => {
   test("clicking workspace navigates to ticket list", async ({ page }) => {
     await page.getByRole("heading", { name: "Support Team" }).click();
     await page.waitForURL("/ws/support/tickets");
-    await expect(page.getByText("Tickets")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Tickets" })).toBeVisible();
   });
 });

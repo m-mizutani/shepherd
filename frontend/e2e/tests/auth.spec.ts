@@ -8,7 +8,7 @@ test.describe("Authentication (NoAuthn mode)", () => {
     // so /login should redirect to /
     await page.goto("/login");
     await page.waitForURL("/");
-    await expect(page.getByText("Workspaces")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Workspaces" })).toBeVisible();
   });
 
   test("/api/auth/login redirects to root", async ({ request }) => {
@@ -33,8 +33,9 @@ test.describe("Authentication (NoAuthn mode)", () => {
     await page.goto("/api/auth/login");
     await page.waitForURL("/");
 
-    // Click sign out
-    await page.getByText("Sign out").click();
+    // Open the user menu, then click sign out
+    await page.getByRole("button", { name: "User menu" }).click();
+    await page.getByRole("button", { name: "Sign out" }).click();
     await page.waitForURL("/login");
     await expect(page.getByText("Sign in with Slack")).toBeVisible();
   });

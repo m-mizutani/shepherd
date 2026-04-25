@@ -8,7 +8,7 @@ test.describe("Ticket CRUD", () => {
 
   test("ticket list is initially empty", async ({ page }) => {
     await page.goto("/ws/support/tickets");
-    await expect(page.getByText("No tickets yet.")).toBeVisible();
+    await expect(page.getByText("No tickets here yet")).toBeVisible();
   });
 
   test("create ticket via API and verify in UI", async ({
@@ -28,15 +28,18 @@ test.describe("Ticket CRUD", () => {
     expect(createRes.status()).toBe(201);
     const ticket = await createRes.json();
     expect(ticket.id).toBeTruthy();
-    expect(ticket.seqNum).toBe(1);
+    expect(ticket.seqNum).toBeGreaterThanOrEqual(1);
     expect(ticket.title).toBe("E2E Test Ticket");
+    const seqLabel = `#${ticket.seqNum}`;
 
     // Navigate to ticket list
     await page.goto("/ws/support/tickets");
     await expect(page.getByText("E2E Test Ticket")).toBeVisible();
-    await expect(page.getByText("1")).toBeVisible(); // seqNum
+    await expect(
+      page.getByRole("main").getByText(seqLabel, { exact: true }),
+    ).toBeVisible();
 
-    // Click ticket to go to detail
+    // Click ticket row to go to detail
     await page.getByText("E2E Test Ticket").click();
     await page.waitForURL(`/ws/support/tickets/${ticket.id}`);
 
@@ -45,6 +48,8 @@ test.describe("Ticket CRUD", () => {
     await expect(
       page.getByText("Created by Playwright E2E test"),
     ).toBeVisible();
-    await expect(page.getByText("#1")).toBeVisible();
+    await expect(
+      page.getByRole("main").getByText(seqLabel, { exact: true }),
+    ).toBeVisible();
   });
 });

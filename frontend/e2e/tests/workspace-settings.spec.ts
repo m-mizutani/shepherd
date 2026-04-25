@@ -21,10 +21,11 @@ test.describe("Workspace Settings (Read-Only)", () => {
 
   test("displays field definitions", async ({ page }) => {
     await page.goto("/ws/support/settings");
+    await page.getByRole("button", { name: "Fields", exact: true }).click();
 
-    await expect(page.getByRole("heading", { name: "Fields" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Custom Fields" })).toBeVisible();
     // Fields from examples/config.toml: priority, category, due-date, reference-url
-    const fieldsSection = page.locator("section").filter({ hasText: "Fields" });
+    const fieldsSection = page.locator("section").filter({ hasText: "Custom Fields" });
     const fieldsTable = fieldsSection.locator("table");
     await expect(fieldsTable.getByRole("cell", { name: "Priority", exact: true })).toBeVisible();
     await expect(fieldsTable.getByRole("cell", { name: "Category", exact: true })).toBeVisible();
@@ -34,18 +35,21 @@ test.describe("Workspace Settings (Read-Only)", () => {
 
   test("displays ticket config", async ({ page }) => {
     await page.goto("/ws/support/settings");
+    // Activate the Ticket Config section in the side nav
+    await page.getByRole("button", { name: "Ticket Config" }).click();
 
     await expect(page.getByRole("heading", { name: "Ticket Config" })).toBeVisible();
-    await expect(page.getByText("Default Status")).toBeVisible();
-    // Use the specific dd element for "open" value
-    const ticketConfigSection = page.locator("section").filter({ hasText: "Ticket Config" });
-    await expect(ticketConfigSection.locator("dd").first()).toHaveText("open");
-    await expect(page.getByText("Closed Statuses")).toBeVisible();
-    await expect(ticketConfigSection.locator("dd").nth(1)).toHaveText("resolved, closed");
+    const section = page.locator("section").filter({ hasText: "Ticket Config" });
+    await expect(section.getByText("Default Status")).toBeVisible();
+    await expect(section.getByText("Open", { exact: true })).toBeVisible();
+    await expect(section.getByText("Closed Statuses")).toBeVisible();
+    await expect(section.getByText("Resolved", { exact: true })).toBeVisible();
+    await expect(section.getByText("Closed", { exact: true })).toBeVisible();
   });
 
   test("displays labels", async ({ page }) => {
     await page.goto("/ws/support/settings");
+    await page.getByRole("button", { name: "Labels" }).click();
 
     await expect(page.getByRole("heading", { name: "Labels" })).toBeVisible();
   });

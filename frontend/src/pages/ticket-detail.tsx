@@ -1,11 +1,21 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect, useMemo, type ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { api } from "../lib/api";
-import { useAuth } from "../contexts/auth-context";
+import { PageShell } from "../components/ui/page-shell";
+import { Card } from "../components/ui/card";
+import { Button } from "../components/ui/button";
+import { Badge } from "../components/ui/badge";
+import { Icon } from "../components/ui/icon";
+import { Skeleton } from "../components/ui/skeleton";
+import { ErrorBox } from "../components/ui/error-box";
+import { Avatar } from "../components/ui/avatar";
+import { Popover, PopoverItem } from "../components/ui/popover";
 import { SlackUserName } from "../components/slack-user-name";
 import { SlackMarkdown } from "../components/slack-markdown";
 import { UserPicker } from "../components/user-picker";
+import { slackThreadUrl } from "../lib/slack";
+import { cn } from "../lib/utils";
 
 const ALLOWED_URL_PROTOCOLS = ["http:", "https:", "mailto:", "ssh:", "ftp:", "ftps:"];
 
@@ -23,29 +33,14 @@ export default function TicketDetailPage() {
     workspaceId: string;
     ticketId: string;
   }>();
-  const { user, logout } = useAuth();
   const queryClient = useQueryClient();
 
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const [editDescription, setEditDescription] = useState("");
   const [editAssigneeId, setEditAssigneeId] = useState("");
-  const [editFields, setEditFields] = useState<
-    Record<string, unknown>
-  >({});
+  const [editFields, setEditFields] = useState<Record<string, unknown>>({});
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
-  const statusRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (statusRef.current && !statusRef.current.contains(e.target as Node)) {
-        setStatusDropdownOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
 
   const { data: configData } = useQuery({
     queryKey: ["workspace-config", workspaceId],
@@ -76,6 +71,7 @@ export default function TicketDetailPage() {
     data: ticket,
     isLoading,
     error,
+    refetch,
   } = useQuery({
     queryKey: ["ticket", workspaceId, ticketId],
     queryFn: async () => {
@@ -136,13 +132,16 @@ export default function TicketDetailPage() {
     },
   });
 
-  const statusMap = new Map(
-    configData?.statuses?.map((s) => [s.id, s]) ?? [],
+  const statusMap = useMemo(
+    () => new Map(configData?.statuses?.map((s) => [s.id, s]) ?? []),
+    [configData],
+  );
+  const fieldMap = useMemo(
+    () => new Map(configData?.fields?.map((f) => [f.id, f]) ?? []),
+    [configData],
   );
   const currentStatus = ticket ? statusMap.get(ticket.statusId) : null;
-  const fieldMap = new Map(
-    configData?.fields?.map((f) => [f.id, f]) ?? [],
-  );
+  const threadUrl = slackThreadUrl(ticket?.slackChannelId, ticket?.slackThreadTs);
 
   const startEditing = () => {
     if (!ticket) return;
@@ -150,10 +149,9 @@ export default function TicketDetailPage() {
     setEditDescription(ticket.description ?? "");
     setEditAssigneeId(ticket.assigneeId ?? "");
     const fields: Record<string, unknown> = {};
-    for (const f of ticket.fields ?? []) {
-      fields[f.fieldId] = f.value;
-    }
+    for (const f of ticket.fields ?? []) fields[f.fieldId] = f.value;
     setEditFields(fields);
+    setFieldErrors({});
     setIsEditing(true);
   };
 
@@ -169,7 +167,6 @@ export default function TicketDetailPage() {
       setFieldErrors(errors);
       return;
     }
-
     const fieldValues = Object.entries(editFields).map(([fieldId, value]) => ({
       fieldId,
       value,
@@ -182,16 +179,11 @@ export default function TicketDetailPage() {
     });
   };
 
-  const renderFieldValue = (
-    fieldId: string,
-    value: unknown,
-  ) => {
+  const renderFieldValue = (fieldId: string, value: unknown): ReactNode => {
     const def = fieldMap.get(fieldId);
     if (!def) return String(value ?? "");
-
-    if (value === null || value === undefined || value === "") {
-      return <span className="text-gray-400">—</span>;
-    }
+    if (value === null || value === undefined || value === "")
+      return <span className="text-ink-4">—</span>;
 
     switch (def.type) {
       case "url":
@@ -200,17 +192,14 @@ export default function TicketDetailPage() {
             href={String(value)}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-blue-600 hover:underline text-sm break-all"
+            className="text-info text-[12.5px] break-all underline-offset-2 hover:underline"
           >
             {String(value)}
           </a>
         );
       case "user":
         return (
-          <SlackUserName
-            workspaceId={workspaceId!}
-            userId={String(value)}
-          />
+          <SlackUserName workspaceId={workspaceId!} userId={String(value)} />
         );
       case "multi-user": {
         const ids = (Array.isArray(value) ? value : [value]).filter(
@@ -230,21 +219,13 @@ export default function TicketDetailPage() {
       }
       case "select": {
         const opt = def.options?.find((o) => o.id === String(value));
-        if (opt) {
+        if (opt)
           return (
-            <span
-              className="inline-block px-2 py-0.5 rounded-full text-xs font-medium"
-              style={
-                opt.color
-                  ? { backgroundColor: opt.color + "20", color: opt.color }
-                  : { backgroundColor: "#e5e7eb", color: "#374151" }
-              }
-            >
+            <Badge color={opt.color} dot={false}>
               {opt.name}
-            </span>
+            </Badge>
           );
-        }
-        return <span className="text-sm">{String(value)}</span>;
+        return <span className="text-[13px]">{String(value)}</span>;
       }
       case "multi-select": {
         const values = Array.isArray(value) ? value : [value];
@@ -253,17 +234,9 @@ export default function TicketDetailPage() {
             {values.map((v) => {
               const opt = def.options?.find((o) => o.id === String(v));
               return (
-                <span
-                  key={String(v)}
-                  className="inline-block px-2 py-0.5 rounded-full text-xs font-medium"
-                  style={
-                    opt?.color
-                      ? { backgroundColor: opt.color + "20", color: opt.color }
-                      : { backgroundColor: "#e5e7eb", color: "#374151" }
-                  }
-                >
+                <Badge key={String(v)} color={opt?.color} dot={false}>
                   {opt?.name ?? String(v)}
-                </span>
+                </Badge>
               );
             })}
           </div>
@@ -271,12 +244,12 @@ export default function TicketDetailPage() {
       }
       case "date":
         return (
-          <span className="text-sm">
+          <span className="text-[12.5px] font-mono text-ink-2">
             {new Date(String(value)).toLocaleDateString()}
           </span>
         );
       default:
-        return <span className="text-sm">{String(value)}</span>;
+        return <span className="text-[13px] text-ink-1">{String(value)}</span>;
     }
   };
 
@@ -293,7 +266,7 @@ export default function TicketDetailPage() {
             onChange={(e) =>
               setEditFields({ ...editFields, [fieldId]: e.target.value })
             }
-            className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+            className="w-full h-8 px-2 border border-line-strong bg-bg-elev rounded-2 text-[13px]"
           >
             <option value="">—</option>
             {def.options?.map((opt) => (
@@ -315,7 +288,7 @@ export default function TicketDetailPage() {
               );
               setEditFields({ ...editFields, [fieldId]: selected });
             }}
-            className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+            className="w-full px-2 py-1 border border-line-strong bg-bg-elev rounded-2 text-[13px]"
           >
             {def.options?.map((opt) => (
               <option key={opt.id} value={opt.id}>
@@ -337,7 +310,7 @@ export default function TicketDetailPage() {
                   : e.target.valueAsNumber,
               })
             }
-            className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+            className="w-full h-8 px-2 border border-line-strong bg-bg-elev rounded-2 text-[13px]"
           />
         );
       case "date":
@@ -348,7 +321,7 @@ export default function TicketDetailPage() {
             onChange={(e) =>
               setEditFields({ ...editFields, [fieldId]: e.target.value })
             }
-            className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+            className="w-full h-8 px-2 border border-line-strong bg-bg-elev rounded-2 text-[13px]"
           />
         );
       case "url":
@@ -367,10 +340,17 @@ export default function TicketDetailPage() {
                 }
               }}
               placeholder="https://example.com"
-              className={`w-full border rounded px-2 py-1 text-sm ${fieldErrors[fieldId] ? "border-red-300" : "border-gray-300"}`}
+              className={cn(
+                "w-full h-8 px-2 border bg-bg-elev rounded-2 text-[13px]",
+                fieldErrors[fieldId]
+                  ? "border-danger"
+                  : "border-line-strong",
+              )}
             />
             {fieldErrors[fieldId] && (
-              <p className="text-xs text-red-500 mt-0.5">{fieldErrors[fieldId]}</p>
+              <p className="text-[11px] text-danger mt-0.5">
+                {fieldErrors[fieldId]}
+              </p>
             )}
           </div>
         );
@@ -406,336 +386,424 @@ export default function TicketDetailPage() {
             onChange={(e) =>
               setEditFields({ ...editFields, [fieldId]: e.target.value })
             }
-            className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+            className="w-full h-8 px-2 border border-line-strong bg-bg-elev rounded-2 text-[13px]"
           />
         );
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b border-gray-200">
-        <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Link to="/" className="text-xl font-bold text-gray-900">
-              Shepherd
-            </Link>
-            <span className="text-gray-400">/</span>
-            <Link
-              to={`/ws/${workspaceId}/tickets`}
-              className="text-gray-600 hover:text-gray-900"
-            >
-              {workspaceId}
-            </Link>
+    <PageShell
+      crumbs={[
+        { label: "Tickets", to: `/ws/${workspaceId}/tickets` },
+        { label: ticket ? `#${ticket.seqNum}` : "" },
+      ]}
+      showSettings
+    >
+      <div className="max-w-[1240px] mx-auto px-8 pt-5 pb-24">
+        {isLoading && (
+          <div className="space-y-3">
+            <Skeleton width={120} />
+            <Skeleton width="50%" height={24} />
+            <Skeleton width="80%" />
+            <Skeleton width="70%" />
           </div>
-          <div className="flex items-center gap-4">
-            {user?.sub ? (
-              <SlackUserName workspaceId={workspaceId!} userId={user.sub} />
-            ) : (
-              <span className="text-sm text-gray-600">{user?.name}</span>
-            )}
-            <button
-              onClick={logout}
-              className="text-sm text-gray-500 hover:text-gray-700"
-            >
-              Sign out
-            </button>
-          </div>
-        </div>
-      </header>
-
-      <main className="max-w-5xl mx-auto px-4 py-8">
-        {isLoading && <p className="text-gray-500">Loading...</p>}
-        {error && <p className="text-red-600">Failed to load ticket.</p>}
+        )}
+        {error && (
+          <ErrorBox
+            title="Failed to load ticket"
+            onRetry={() => refetch()}
+          />
+        )}
 
         {ticket && (
-          <div className="grid grid-cols-3 gap-8">
-            {/* Left: Main content */}
-            <div className="col-span-2 space-y-6">
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm text-gray-500">
+          <div className="grid grid-cols-[1fr_320px] gap-7">
+            {/* Main */}
+            <div>
+              {/* Header row */}
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2.5">
+                  <span className="font-mono text-[13px] text-ink-4">
                     #{ticket.seqNum}
                   </span>
-                  {!isEditing && (
-                    <button
-                      onClick={startEditing}
-                      className="px-3 py-1 text-sm text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
-                    >
-                      Edit
-                    </button>
+                  {currentStatus && (
+                    <Badge color={currentStatus.color} size="md">
+                      {currentStatus.name}
+                    </Badge>
                   )}
                 </div>
-
-                {isEditing ? (
-                  <input
-                    type="text"
-                    value={editTitle}
-                    onChange={(e) => setEditTitle(e.target.value)}
-                    className="w-full text-2xl font-bold text-gray-900 border border-gray-300 rounded-md px-3 py-1"
-                  />
-                ) : (
-                  <h2 className="text-2xl font-bold text-gray-900">
-                    {ticket.title}
-                  </h2>
-                )}
+                <div className="flex gap-1.5">
+                  {threadUrl && (
+                    <a href={threadUrl} target="_blank" rel="noopener noreferrer">
+                      <Button size="sm" variant="default" type="button">
+                        <Icon name="slack" size={12} /> Open thread
+                      </Button>
+                    </a>
+                  )}
+                  {!isEditing && (
+                    <Button size="sm" onClick={startEditing}>
+                      <Icon name="edit" size={12} /> Edit
+                    </Button>
+                  )}
+                </div>
               </div>
 
+              {/* Title */}
+              {isEditing ? (
+                <input
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  className="mt-3.5 w-full text-[24px] font-semibold tracking-[-0.02em] text-ink-1 bg-bg-elev border border-line-strong rounded-2 px-3 py-1.5 focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand-soft"
+                />
+              ) : (
+                <h1 className="mt-3.5 mb-1.5 text-[24px] font-semibold tracking-[-0.02em] text-ink-1">
+                  {ticket.title}
+                </h1>
+              )}
+
+              <div className="text-[12px] text-ink-3 mb-4">
+                {ticket.reporterSlackUserId && (
+                  <>
+                    Opened by{" "}
+                    <span className="text-ink-2 font-medium">
+                      <SlackUserName
+                        workspaceId={workspaceId!}
+                        userId={ticket.reporterSlackUserId}
+                        showAvatar={false}
+                      />
+                    </span>{" "}
+                    ·{" "}
+                  </>
+                )}
+                {new Date(ticket.createdAt).toLocaleString()} · last activity{" "}
+                {new Date(ticket.updatedAt).toLocaleString()}
+              </div>
+
+              {/* Description */}
               {isEditing ? (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-[12px] font-medium text-ink-3 mb-1">
                     Description
                   </label>
                   <textarea
                     value={editDescription}
                     onChange={(e) => setEditDescription(e.target.value)}
-                    rows={6}
-                    className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                    rows={8}
+                    className="w-full px-3 py-2 bg-bg-elev border border-line-strong rounded-3 text-[13.5px] text-ink-1 focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand-soft"
                   />
                 </div>
+              ) : ticket.description ? (
+                <Card className="p-4">
+                  <SlackMarkdown text={ticket.description} />
+                </Card>
               ) : (
-                ticket.description && (
-                  <div className="bg-white p-4 rounded-lg border border-gray-200">
-                    <SlackMarkdown
-                      text={ticket.description}
-                      className="text-gray-700 whitespace-pre-wrap"
+                <div className="text-[12.5px] text-ink-4 italic">
+                  No description provided.
+                </div>
+              )}
+
+              {/* Activity */}
+              <div className="mt-7 flex items-center gap-2">
+                <h2 className="m-0 text-[14px] font-semibold text-ink-1">
+                  Activity
+                </h2>
+                <span className="text-[12px] text-ink-3">·</span>
+                <span className="text-[12px] text-ink-3">
+                  {commentsData?.comments?.length ?? 0} events
+                </span>
+              </div>
+
+              <div className="mt-3.5 relative pl-3.5">
+                <div className="absolute left-[11px] top-5 bottom-7 w-px bg-line" />
+                {commentsData?.comments?.length ? (
+                  commentsData.comments.map((c) => (
+                    <CommentRow
+                      key={c.id}
+                      workspaceId={workspaceId!}
+                      slackUserId={c.slackUserId}
+                      time={new Date(c.createdAt).toLocaleString()}
+                      body={c.body}
                     />
+                  ))
+                ) : (
+                  <div className="pl-7 py-2 text-[12.5px] text-ink-4">
+                    No comments yet.
                   </div>
-                )
-              )}
+                )}
+              </div>
 
-              {isEditing && (
-                <div className="flex gap-2">
-                  <button
-                    onClick={saveEdits}
-                    disabled={updateTicket.isPending}
-                    className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50"
-                  >
-                    {updateTicket.isPending ? "Saving..." : "Save"}
-                  </button>
-                  <button
-                    onClick={() => setIsEditing(false)}
-                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
-                  >
-                    Cancel
-                  </button>
-                  {updateTicket.isError && (
-                    <span className="text-sm text-red-600 self-center">
-                      Failed to save changes.
-                    </span>
-                  )}
+              {/* Slack reply hint */}
+              <div className="mt-4 p-3.5 bg-bg-elev border border-dashed border-line-strong rounded-4 flex items-center gap-3">
+                <div className="w-8 h-8 rounded-3 flex items-center justify-center bg-[#ECB22E22] text-[#A37B00]">
+                  <Icon name="slack" size={16} />
                 </div>
-              )}
-
-              <div>
-                <h3 className="text-sm font-medium text-gray-900 mb-3">
-                  Comments
-                </h3>
-                <div className="space-y-3">
-                  {commentsData?.comments?.map((comment) => (
-                    <div
-                      key={comment.id}
-                      className="bg-white p-4 rounded-lg border border-gray-200"
-                    >
-                      <div className="flex items-center gap-2 mb-2">
-                        <SlackUserName
-                          workspaceId={workspaceId!}
-                          userId={comment.slackUserId}
-                        />
-                        <span className="text-xs text-gray-500">
-                          {new Date(comment.createdAt).toLocaleString()}
-                        </span>
-                      </div>
-                      <SlackMarkdown
-                        text={comment.body}
-                        className="text-sm text-gray-700 whitespace-pre-wrap"
-                      />
-                    </div>
-                  ))}
-                  {commentsData?.comments?.length === 0 && (
-                    <p className="text-sm text-gray-500">No comments yet.</p>
-                  )}
+                <div className="flex-1">
+                  <div className="text-[13px] font-medium text-ink-1">
+                    Reply in Slack to add a comment
+                  </div>
+                  <div className="text-[12px] text-ink-3 mt-0.5">
+                    Comments are mirrored from the Slack thread; replies posted
+                    here can&apos;t be sent back.
+                  </div>
                 </div>
+                {threadUrl && (
+                  <a href={threadUrl} target="_blank" rel="noopener noreferrer">
+                    <Button variant="primary" size="sm" type="button">
+                      <Icon name="slack" size={12} /> Open thread{" "}
+                      <Icon name="arrow" size={11} />
+                    </Button>
+                  </a>
+                )}
               </div>
             </div>
 
-            {/* Right: Sidebar */}
-            <div className="space-y-4">
-              {/* Status */}
-              <div className="bg-white p-4 rounded-lg border border-gray-200">
-                <h3 className="text-sm font-medium text-gray-900 mb-3">
-                  Status
-                </h3>
-                <div className="relative" ref={statusRef}>
-                  <button
-                    onClick={() => setStatusDropdownOpen(!statusDropdownOpen)}
-                    className="w-full flex items-center justify-between px-3 py-2 rounded-md border border-gray-200 text-sm font-medium transition-colors hover:border-gray-300"
-                    style={
-                      currentStatus
-                        ? {
-                            backgroundColor: currentStatus.color + "15",
-                            color: currentStatus.color,
-                            borderColor: currentStatus.color + "40",
-                          }
-                        : undefined
-                    }
-                  >
-                    <div className="flex items-center gap-2">
-                      {currentStatus && (
-                        <span
-                          className="w-2.5 h-2.5 rounded-full"
-                          style={{ backgroundColor: currentStatus.color }}
-                        />
-                      )}
-                      <span>{currentStatus?.name ?? ticket.statusId}</span>
-                    </div>
-                    <svg
-                      className={`w-4 h-4 transition-transform ${statusDropdownOpen ? "rotate-180" : ""}`}
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M19 9l-7 7-7-7"
-                      />
-                    </svg>
-                  </button>
-
-                  {statusDropdownOpen && (
-                    <div className="absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded-md shadow-lg">
-                      {configData?.statuses?.map((status) => (
-                        <button
-                          key={status.id}
-                          onClick={() => {
-                            if (status.id !== ticket.statusId) {
-                              updateTicket.mutate({ statusId: status.id });
-                            }
-                            setStatusDropdownOpen(false);
-                          }}
-                          className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors hover:bg-gray-50 first:rounded-t-md last:rounded-b-md ${
-                            status.id === ticket.statusId
-                              ? "font-medium"
-                              : "text-gray-700"
-                          }`}
-                        >
-                          <span
-                            className="w-2.5 h-2.5 rounded-full shrink-0"
-                            style={{ backgroundColor: status.color }}
-                          />
-                          <span>{status.name}</span>
-                          {status.id === ticket.statusId && (
-                            <svg
-                              className="w-4 h-4 ml-auto text-gray-500"
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M5 13l4 4L19 7"
-                              />
-                            </svg>
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Fields */}
-              {configData?.fields && configData.fields.length > 0 && (
-                <div className="bg-white p-4 rounded-lg border border-gray-200">
-                  <h3 className="text-sm font-medium text-gray-900 mb-3">
-                    Fields
-                  </h3>
-                  <dl className="space-y-3">
-                    {configData.fields.map((fieldDef) => {
-                      const fieldValue = ticket.fields?.find(
-                        (f) => f.fieldId === fieldDef.id,
-                      );
-                      return (
-                        <div key={fieldDef.id}>
-                          <dt className="text-xs text-gray-500 mb-0.5">
-                            {fieldDef.name}
-                            {fieldDef.required && (
-                              <span className="text-red-400 ml-0.5">*</span>
-                            )}
-                          </dt>
-                          <dd>
-                            {isEditing
-                              ? renderFieldEditor(fieldDef.id)
-                              : renderFieldValue(
-                                  fieldDef.id,
-                                  fieldValue?.value,
-                                )}
-                          </dd>
-                        </div>
-                      );
-                    })}
-                  </dl>
-                </div>
-              )}
-
-              {/* Info */}
-              <div className="bg-white p-4 rounded-lg border border-gray-200">
-                <h3 className="text-sm font-medium text-gray-900 mb-2">
-                  Info
-                </h3>
-                <dl className="space-y-3 text-sm">
-                  <div>
-                    <dt className="text-gray-500 mb-0.5">Assignee</dt>
-                    <dd>
-                      {isEditing ? (
-                        <UserPicker
-                          users={slackUsersData?.users ?? []}
-                          value={editAssigneeId}
-                          onChange={setEditAssigneeId}
-                        />
-                      ) : ticket.assigneeId ? (
-                        <SlackUserName
-                          workspaceId={workspaceId!}
-                          userId={ticket.assigneeId}
-                        />
-                      ) : (
-                        <span className="text-gray-400">—</span>
-                      )}
-                    </dd>
-                  </div>
-                  {ticket.reporterSlackUserId && (
-                    <div>
-                      <dt className="text-gray-500 mb-0.5">Reporter</dt>
-                      <dd>
-                        <SlackUserName
-                          workspaceId={workspaceId!}
-                          userId={ticket.reporterSlackUserId}
-                        />
-                      </dd>
-                    </div>
-                  )}
-                  <div>
-                    <dt className="text-gray-500">Created</dt>
-                    <dd className="text-gray-900">
-                      {new Date(ticket.createdAt).toLocaleString()}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-gray-500">Updated</dt>
-                    <dd className="text-gray-900">
-                      {new Date(ticket.updatedAt).toLocaleString()}
-                    </dd>
-                  </div>
-                </dl>
-              </div>
-            </div>
+            {/* Unified sidebar */}
+            <UnifiedSidebar
+              ticket={ticket}
+              currentStatus={currentStatus}
+              statuses={configData?.statuses ?? []}
+              fields={configData?.fields ?? []}
+              onChangeStatus={(statusId) => updateTicket.mutate({ statusId })}
+              isEditing={isEditing}
+              editAssigneeId={editAssigneeId}
+              setEditAssigneeId={setEditAssigneeId}
+              renderFieldValue={renderFieldValue}
+              renderFieldEditor={renderFieldEditor}
+              workspaceId={workspaceId!}
+              slackUsers={slackUsersData?.users ?? []}
+            />
           </div>
         )}
-      </main>
+      </div>
+
+      {/* Sticky save bar */}
+      {isEditing && ticket && (
+        <div className="fixed bottom-0 left-0 right-0 z-20 bg-bg-elev border-t border-line shadow-pop">
+          <div className="max-w-[1240px] mx-auto px-8 py-3 flex items-center justify-end gap-2">
+            {updateTicket.isError && (
+              <span className="text-[12.5px] text-danger mr-auto">
+                Failed to save changes.
+              </span>
+            )}
+            <Button variant="ghost" onClick={() => setIsEditing(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              onClick={saveEdits}
+              disabled={updateTicket.isPending}
+            >
+              {updateTicket.isPending ? "Saving…" : "Save changes"}
+            </Button>
+          </div>
+        </div>
+      )}
+    </PageShell>
+  );
+}
+
+function CommentRow({
+  workspaceId,
+  slackUserId,
+  time,
+  body,
+}: {
+  workspaceId: string;
+  slackUserId: string;
+  time: string;
+  body: string;
+}) {
+  return (
+    <div className="relative mb-3.5 pl-7">
+      <div className="absolute -left-1 top-0">
+        <Avatar name={slackUserId} size="md" />
+      </div>
+      <Card className="px-3.5 py-2.5 shadow-none">
+        <div className="flex items-baseline gap-2 mb-1">
+          <SlackUserName
+            workspaceId={workspaceId}
+            userId={slackUserId}
+            showAvatar={false}
+          />
+          <span className="text-[12px] text-ink-3">{time}</span>
+        </div>
+        <SlackMarkdown text={body} />
+      </Card>
     </div>
   );
 }
+
+interface UnifiedSidebarProps {
+  ticket: {
+    id: string;
+    statusId: string;
+    assigneeId?: string;
+    reporterSlackUserId?: string;
+    slackChannelId?: string;
+    fields?: { fieldId: string; value: unknown }[];
+    createdAt: string;
+    updatedAt: string;
+  };
+  currentStatus: { id: string; name: string; color: string } | null | undefined;
+  statuses: { id: string; name: string; color: string }[];
+  fields: { id: string; name: string; type: string; required: boolean }[];
+  onChangeStatus: (id: string) => void;
+  isEditing: boolean;
+  editAssigneeId: string;
+  setEditAssigneeId: (v: string) => void;
+  renderFieldValue: (fieldId: string, value: unknown) => ReactNode;
+  renderFieldEditor: (fieldId: string) => ReactNode;
+  workspaceId: string;
+  slackUsers: { id: string; name: string; email?: string; imageUrl?: string }[];
+}
+
+function UnifiedSidebar({
+  ticket,
+  currentStatus,
+  statuses,
+  fields,
+  onChangeStatus,
+  isEditing,
+  editAssigneeId,
+  setEditAssigneeId,
+  renderFieldValue,
+  renderFieldEditor,
+  workspaceId,
+  slackUsers,
+}: UnifiedSidebarProps) {
+  return (
+    <Card className="self-start sticky top-4 p-0 overflow-hidden">
+      <div className="px-4 py-3.5 border-b border-line">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.05em] text-ink-3 mb-1.5">
+          Status
+        </div>
+        <Popover
+          trigger={(toggle) => (
+            <button
+              type="button"
+              onClick={toggle}
+              className="w-full flex items-center justify-between gap-1.5 px-2.5 py-2 rounded-3 cursor-pointer border"
+              style={
+                currentStatus
+                  ? {
+                      background: currentStatus.color + "15",
+                      borderColor: currentStatus.color + "40",
+                    }
+                  : { borderColor: "var(--line-strong)" }
+              }
+            >
+              {currentStatus ? (
+                <Badge color={currentStatus.color}>{currentStatus.name}</Badge>
+              ) : (
+                <span className="text-[13px] text-ink-3">{ticket.statusId}</span>
+              )}
+              <Icon name="chevron" size={13} className="text-ink-4" />
+            </button>
+          )}
+        >
+          {(close) => (
+            <>
+              {statuses.map((s) => (
+                <PopoverItem
+                  key={s.id}
+                  active={s.id === ticket.statusId}
+                  onClick={() => {
+                    if (s.id !== ticket.statusId) onChangeStatus(s.id);
+                    close();
+                  }}
+                >
+                  <span
+                    className="w-2.5 h-2.5 rounded-full flex-none"
+                    style={{ background: s.color }}
+                  />
+                  <span className="flex-1">{s.name}</span>
+                  {s.id === ticket.statusId && (
+                    <Icon name="check" size={12} className="text-brand" />
+                  )}
+                </PopoverItem>
+              ))}
+            </>
+          )}
+        </Popover>
+      </div>
+
+      <div className="px-4 py-3.5 flex flex-col gap-3">
+        {fields.map((f) => {
+          const fv = ticket.fields?.find((x) => x.fieldId === f.id);
+          return (
+            <FieldRow key={f.id} label={f.name} required={f.required}>
+              {isEditing
+                ? renderFieldEditor(f.id)
+                : renderFieldValue(f.id, fv?.value)}
+            </FieldRow>
+          );
+        })}
+
+        <div className="h-px bg-line my-1" />
+
+        <FieldRow label="Assignee">
+          {isEditing ? (
+            <UserPicker
+              users={slackUsers}
+              value={editAssigneeId}
+              onChange={setEditAssigneeId}
+            />
+          ) : ticket.assigneeId ? (
+            <SlackUserName workspaceId={workspaceId} userId={ticket.assigneeId} />
+          ) : (
+            <span className="text-ink-4 text-[12.5px] italic">Unassigned</span>
+          )}
+        </FieldRow>
+        {ticket.reporterSlackUserId && (
+          <FieldRow label="Reporter">
+            <SlackUserName
+              workspaceId={workspaceId}
+              userId={ticket.reporterSlackUserId}
+              mute
+            />
+          </FieldRow>
+        )}
+        <FieldRow label="Created">
+          <span className="font-mono text-[12.5px] text-ink-2">
+            {new Date(ticket.createdAt).toLocaleString()}
+          </span>
+        </FieldRow>
+        <FieldRow label="Updated">
+          <span className="font-mono text-[12.5px] text-ink-2">
+            {new Date(ticket.updatedAt).toLocaleString()}
+          </span>
+        </FieldRow>
+        {ticket.slackChannelId && (
+          <FieldRow label="Source">
+            <span className="inline-flex items-center gap-1 text-[12.5px] text-ink-2">
+              <Icon name="slack" size={11} /> #{ticket.slackChannelId}
+            </span>
+          </FieldRow>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+function FieldRow({
+  label,
+  required,
+  children,
+}: {
+  label: string;
+  required?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <div className="grid grid-cols-[95px_1fr] gap-2.5 items-center">
+      <div className="text-[11.5px] font-medium text-ink-3">
+        {label}
+        {required && <span className="text-brand ml-0.5">*</span>}
+      </div>
+      <div className="min-w-0">{children}</div>
+    </div>
+  );
+}
+
+// Suppress unused import warning if useEffect tree-shakes
+void useEffect;
