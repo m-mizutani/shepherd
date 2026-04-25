@@ -38,11 +38,18 @@ Never call `slog.Info()`, `slog.Error()`, `slog.Debug()`, `slog.Warn()` or other
 
 ## Git Commit Messages
 
+- **Write commit messages in English only. No exceptions, even when conversing in another language.**
 - Write concise, single-line commit messages following Semantic Commit format: `<type>: <subject>`
 - Types: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `ci`, `style`, `perf`
 - Up to 2-3 lines are acceptable when a single line cannot adequately convey the change
 - Examples: `feat: add Slack OAuth callback endpoint`, `fix: resolve nil pointer in ticket handler`
 - Do NOT include `Co-Authored-By` trailers
+
+## Pull Request Descriptions
+
+- **Write PR titles and bodies in English only. No exceptions, even when conversing in another language.**
+- Keep titles short (under 70 characters) and use the body for details
+- Include a Summary section and a Test plan section
 
 ## Firestore Storage (CRITICAL)
 
