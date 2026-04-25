@@ -27,20 +27,20 @@ test.describe("Ticket Status Change", () => {
     await page.goto(`/ws/support/tickets/${ticket.id}`);
     await expect(page.getByText("Status Change Test")).toBeVisible();
 
-    // The "Open" status button should be currently active (styled differently)
-    const openButton = page.getByRole("button", { name: "Open" });
-    await expect(openButton).toBeDisabled();
+    // Status dropdown trigger should display the current status "Open"
+    const statusTrigger = page.getByRole("button", { name: /Open/ });
+    await expect(statusTrigger).toBeVisible();
 
-    // Click "In Progress" status button
-    const inProgressButton = page.getByRole("button", {
-      name: "In Progress",
-    });
-    await inProgressButton.click();
+    // Open the status dropdown
+    await statusTrigger.click();
 
-    // Wait for the mutation to complete - "In Progress" should now be disabled (active)
-    await expect(inProgressButton).toBeDisabled();
-    // "Open" should now be enabled (clickable)
-    await expect(openButton).toBeEnabled();
+    // Click "In Progress" option in the dropdown
+    await page.getByRole("button", { name: /In Progress/ }).click();
+
+    // The dropdown trigger should now display "In Progress"
+    await expect(
+      page.getByRole("button", { name: /In Progress/ }),
+    ).toBeVisible();
 
     // Verify via API
     const getRes = await request.get(
