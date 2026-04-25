@@ -11,6 +11,7 @@ import (
 	"github.com/m-mizutani/goerr/v2"
 	"github.com/m-mizutani/shepherd/pkg/cli/config"
 	httpController "github.com/m-mizutani/shepherd/pkg/controller/http"
+	"github.com/m-mizutani/shepherd/pkg/utils/async"
 	"github.com/m-mizutani/shepherd/pkg/utils/errutil"
 	"github.com/m-mizutani/shepherd/pkg/utils/logging"
 	"github.com/urfave/cli/v3"
@@ -137,6 +138,7 @@ func cmdServe() *cli.Command {
 				return err
 			}
 
+			async.Wait()
 			logger.Info("Server stopped")
 			return nil
 		},
