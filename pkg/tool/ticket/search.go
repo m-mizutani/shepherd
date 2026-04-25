@@ -9,6 +9,7 @@ import (
 	"github.com/m-mizutani/gollem"
 	"github.com/m-mizutani/shepherd/pkg/domain/interfaces"
 	"github.com/m-mizutani/shepherd/pkg/domain/types"
+	argsutil "github.com/m-mizutani/shepherd/pkg/tool/internal/args"
 	"github.com/m-mizutani/shepherd/pkg/tool/internal/clamp"
 	"github.com/m-mizutani/shepherd/pkg/tool/internal/format"
 )
@@ -53,9 +54,9 @@ func (t *searchTool) Run(ctx context.Context, args map[string]any) (map[string]a
 	if err != nil {
 		return nil, err
 	}
-	query, _ := stringArg(args, "query", false)
-	statuses := stringSliceArg(args, "status_ids")
-	limit := clamp.Limit(intArg(args, "limit"), searchDefaultLimit, searchMaxLimit)
+	query, _ := argsutil.String(args, "query", false)
+	statuses := argsutil.StringSlice(args, "status_ids")
+	limit := clamp.Limit(argsutil.Int(args, "limit"), searchDefaultLimit, searchMaxLimit)
 
 	statusIDs := make([]types.StatusID, 0, len(statuses))
 	for _, s := range statuses {

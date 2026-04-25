@@ -5,6 +5,7 @@ import (
 
 	"github.com/m-mizutani/goerr/v2"
 	"github.com/m-mizutani/gollem"
+	argsutil "github.com/m-mizutani/shepherd/pkg/tool/internal/args"
 	"github.com/m-mizutani/shepherd/pkg/tool/internal/clamp"
 	"github.com/m-mizutani/shepherd/pkg/tool/internal/format"
 )
@@ -31,7 +32,7 @@ func (t *searchMessagesTool) Spec() gollem.ToolSpec {
 				Type:        gollem.TypeString,
 				Description: "Slack search query (supports Slack modifiers).",
 				Required:    true,
-				MinLength:   ptrInt(1),
+				MinLength:   argsutil.PtrInt(1),
 			},
 			"limit": {
 				Type:        gollem.TypeInteger,
@@ -47,12 +48,12 @@ func (t *searchMessagesTool) Spec() gollem.ToolSpec {
 }
 
 func (t *searchMessagesTool) Run(ctx context.Context, args map[string]any) (map[string]any, error) {
-	query, err := stringArg(args, "query", true)
+	query, err := argsutil.String(args, "query", true)
 	if err != nil {
 		return nil, err
 	}
-	limit := clamp.Limit(intArg(args, "limit"), searchDefaultLimit, searchMaxLimit)
-	sort, _ := stringArg(args, "sort", false)
+	limit := clamp.Limit(argsutil.Int(args, "limit"), searchDefaultLimit, searchMaxLimit)
+	sort, _ := argsutil.String(args, "sort", false)
 
 	matches, err := t.slack.SearchMessages(ctx, query, limit, sort)
 	if err != nil {

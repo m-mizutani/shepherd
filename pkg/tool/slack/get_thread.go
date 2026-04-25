@@ -5,6 +5,7 @@ import (
 
 	"github.com/m-mizutani/goerr/v2"
 	"github.com/m-mizutani/gollem"
+	argsutil "github.com/m-mizutani/shepherd/pkg/tool/internal/args"
 	"github.com/m-mizutani/shepherd/pkg/tool/internal/clamp"
 	"github.com/m-mizutani/shepherd/pkg/tool/internal/format"
 )
@@ -31,13 +32,13 @@ func (t *getThreadTool) Spec() gollem.ToolSpec {
 				Type:        gollem.TypeString,
 				Description: "Slack channel ID, e.g. 'C0123456'.",
 				Required:    true,
-				MinLength:   ptrInt(1),
+				MinLength:   argsutil.PtrInt(1),
 			},
 			"thread_ts": {
 				Type:        gollem.TypeString,
 				Description: "Timestamp of the thread's root message.",
 				Required:    true,
-				MinLength:   ptrInt(1),
+				MinLength:   argsutil.PtrInt(1),
 			},
 			"limit": {
 				Type:        gollem.TypeInteger,
@@ -48,15 +49,15 @@ func (t *getThreadTool) Spec() gollem.ToolSpec {
 }
 
 func (t *getThreadTool) Run(ctx context.Context, args map[string]any) (map[string]any, error) {
-	channelID, err := stringArg(args, "channel_id", true)
+	channelID, err := argsutil.String(args, "channel_id", true)
 	if err != nil {
 		return nil, err
 	}
-	threadTS, err := stringArg(args, "thread_ts", true)
+	threadTS, err := argsutil.String(args, "thread_ts", true)
 	if err != nil {
 		return nil, err
 	}
-	limit := clamp.Limit(intArg(args, "limit"), threadDefaultLimit, threadMaxLimit)
+	limit := clamp.Limit(argsutil.Int(args, "limit"), threadDefaultLimit, threadMaxLimit)
 
 	msgs, err := t.slack.GetThreadMessages(ctx, channelID, threadTS, limit)
 	if err != nil {

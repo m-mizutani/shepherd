@@ -3,6 +3,8 @@
 package format
 
 import (
+	"time"
+
 	"github.com/m-mizutani/shepherd/pkg/domain/model"
 	slackService "github.com/m-mizutani/shepherd/pkg/service/slack"
 )
@@ -29,8 +31,8 @@ func Ticket(t *model.Ticket, statusName string) map[string]any {
 		"slack_channel_id": string(t.SlackChannelID),
 		"slack_thread_ts":  string(t.SlackThreadTS),
 		"fields":           fields,
-		"created_at":       t.CreatedAt.Format(timeFmt),
-		"updated_at":       t.UpdatedAt.Format(timeFmt),
+		"created_at":       t.CreatedAt.Format(time.RFC3339),
+		"updated_at":       t.UpdatedAt.Format(time.RFC3339),
 	}
 }
 
@@ -45,7 +47,7 @@ func TicketSummary(t *model.Ticket, statusName string) map[string]any {
 		"title":       t.Title,
 		"status_id":   string(t.StatusID),
 		"status_name": statusName,
-		"updated_at":  t.UpdatedAt.Format(timeFmt),
+		"updated_at":  t.UpdatedAt.Format(time.RFC3339),
 	}
 }
 
@@ -61,7 +63,7 @@ func Comment(c *model.Comment, authorName string) map[string]any {
 		"is_bot":      c.IsBot,
 		"body":        c.Body,
 		"slack_ts":    string(c.SlackTS),
-		"created_at":  c.CreatedAt.Format(timeFmt),
+		"created_at":  c.CreatedAt.Format(time.RFC3339),
 	}
 }
 
@@ -76,7 +78,7 @@ func History(h *model.TicketHistory) map[string]any {
 		"old_status_id":  string(h.OldStatusID),
 		"new_status_id":  string(h.NewStatusID),
 		"changed_by":     string(h.ChangedBy),
-		"created_at":     h.CreatedAt.Format(timeFmt),
+		"created_at":     h.CreatedAt.Format(time.RFC3339),
 	}
 }
 
@@ -110,6 +112,3 @@ func SlackSearchMatch(m *slackService.SearchMatch) map[string]any {
 	}
 }
 
-// timeFmt is the canonical format used when serialising times for the LLM.
-// RFC3339 keeps it short and easy to parse.
-const timeFmt = "2006-01-02T15:04:05Z07:00"

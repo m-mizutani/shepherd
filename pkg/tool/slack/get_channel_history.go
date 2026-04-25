@@ -5,6 +5,7 @@ import (
 
 	"github.com/m-mizutani/goerr/v2"
 	"github.com/m-mizutani/gollem"
+	argsutil "github.com/m-mizutani/shepherd/pkg/tool/internal/args"
 	"github.com/m-mizutani/shepherd/pkg/tool/internal/clamp"
 	"github.com/m-mizutani/shepherd/pkg/tool/internal/format"
 )
@@ -31,7 +32,7 @@ func (t *getChannelHistoryTool) Spec() gollem.ToolSpec {
 				Type:        gollem.TypeString,
 				Description: "Slack channel ID, e.g. 'C0123456'.",
 				Required:    true,
-				MinLength:   ptrInt(1),
+				MinLength:   argsutil.PtrInt(1),
 			},
 			"oldest": {
 				Type:        gollem.TypeString,
@@ -50,13 +51,13 @@ func (t *getChannelHistoryTool) Spec() gollem.ToolSpec {
 }
 
 func (t *getChannelHistoryTool) Run(ctx context.Context, args map[string]any) (map[string]any, error) {
-	channelID, err := stringArg(args, "channel_id", true)
+	channelID, err := argsutil.String(args, "channel_id", true)
 	if err != nil {
 		return nil, err
 	}
-	oldest, _ := stringArg(args, "oldest", false)
-	latest, _ := stringArg(args, "latest", false)
-	limit := clamp.Limit(intArg(args, "limit"), historyDefaultLimit, historyMaxLimit)
+	oldest, _ := argsutil.String(args, "oldest", false)
+	latest, _ := argsutil.String(args, "latest", false)
+	limit := clamp.Limit(argsutil.Int(args, "limit"), historyDefaultLimit, historyMaxLimit)
 
 	msgs, err := t.slack.GetChannelHistory(ctx, channelID, oldest, latest, limit)
 	if err != nil {

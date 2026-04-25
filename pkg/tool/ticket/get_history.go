@@ -7,6 +7,7 @@ import (
 	"github.com/m-mizutani/gollem"
 	"github.com/m-mizutani/shepherd/pkg/domain/interfaces"
 	"github.com/m-mizutani/shepherd/pkg/domain/types"
+	argsutil "github.com/m-mizutani/shepherd/pkg/tool/internal/args"
 	"github.com/m-mizutani/shepherd/pkg/tool/internal/format"
 )
 
@@ -27,7 +28,7 @@ func (t *getHistoryTool) Spec() gollem.ToolSpec {
 				Type:        gollem.TypeString,
 				Description: "Ticket UUID.",
 				Required:    true,
-				MinLength:   ptrInt(1),
+				MinLength:   argsutil.PtrInt(1),
 			},
 		},
 	}
@@ -38,7 +39,7 @@ func (t *getHistoryTool) Run(ctx context.Context, args map[string]any) (map[stri
 	if err != nil {
 		return nil, err
 	}
-	ticketID, err := stringArg(args, "ticket_id", true)
+	ticketID, err := argsutil.String(args, "ticket_id", true)
 	if err != nil {
 		return nil, err
 	}

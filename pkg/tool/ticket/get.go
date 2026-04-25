@@ -6,6 +6,7 @@ import (
 	"github.com/m-mizutani/goerr/v2"
 	"github.com/m-mizutani/gollem"
 	"github.com/m-mizutani/shepherd/pkg/domain/interfaces"
+	argsutil "github.com/m-mizutani/shepherd/pkg/tool/internal/args"
 	"github.com/m-mizutani/shepherd/pkg/tool/internal/format"
 )
 
@@ -39,8 +40,8 @@ func (t *getTool) Run(ctx context.Context, args map[string]any) (map[string]any,
 	if err != nil {
 		return nil, err
 	}
-	ticketID, _ := stringArg(args, "ticket_id", false)
-	seqNum, hasSeq := int64Arg(args, "seq_num")
+	ticketID, _ := argsutil.String(args, "ticket_id", false)
+	seqNum, hasSeq := argsutil.Int64(args, "seq_num")
 
 	if ticketID == "" && !hasSeq {
 		return nil, goerr.New("provide either ticket_id or seq_num")

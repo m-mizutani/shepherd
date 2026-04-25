@@ -5,6 +5,7 @@ import (
 
 	"github.com/m-mizutani/goerr/v2"
 	"github.com/m-mizutani/gollem"
+	argsutil "github.com/m-mizutani/shepherd/pkg/tool/internal/args"
 )
 
 type getUserInfoTool struct {
@@ -24,14 +25,14 @@ func (t *getUserInfoTool) Spec() gollem.ToolSpec {
 				Type:        gollem.TypeString,
 				Description: "Slack user ID.",
 				Required:    true,
-				MinLength:   ptrInt(1),
+				MinLength:   argsutil.PtrInt(1),
 			},
 		},
 	}
 }
 
 func (t *getUserInfoTool) Run(ctx context.Context, args map[string]any) (map[string]any, error) {
-	userID, err := stringArg(args, "user_id", true)
+	userID, err := argsutil.String(args, "user_id", true)
 	if err != nil {
 		return nil, err
 	}

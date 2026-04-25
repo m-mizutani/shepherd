@@ -7,6 +7,7 @@ import (
 	"github.com/m-mizutani/gollem"
 	"github.com/m-mizutani/shepherd/pkg/domain/interfaces"
 	"github.com/m-mizutani/shepherd/pkg/domain/types"
+	argsutil "github.com/m-mizutani/shepherd/pkg/tool/internal/args"
 	"github.com/m-mizutani/shepherd/pkg/tool/internal/clamp"
 	"github.com/m-mizutani/shepherd/pkg/tool/internal/format"
 )
@@ -33,7 +34,7 @@ func (t *getCommentsTool) Spec() gollem.ToolSpec {
 				Type:        gollem.TypeString,
 				Description: "Ticket UUID.",
 				Required:    true,
-				MinLength:   ptrInt(1),
+				MinLength:   argsutil.PtrInt(1),
 			},
 			"limit": {
 				Type:        gollem.TypeInteger,
@@ -48,11 +49,11 @@ func (t *getCommentsTool) Run(ctx context.Context, args map[string]any) (map[str
 	if err != nil {
 		return nil, err
 	}
-	ticketID, err := stringArg(args, "ticket_id", true)
+	ticketID, err := argsutil.String(args, "ticket_id", true)
 	if err != nil {
 		return nil, err
 	}
-	limit := clamp.Limit(intArg(args, "limit"), commentsDefaultLimit, commentsMaxLimit)
+	limit := clamp.Limit(argsutil.Int(args, "limit"), commentsDefaultLimit, commentsMaxLimit)
 
 	comments, err := t.repo.Comment().List(ctx, wsID, types.TicketID(ticketID))
 	if err != nil {
