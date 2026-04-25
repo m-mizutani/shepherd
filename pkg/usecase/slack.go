@@ -12,6 +12,7 @@ import (
 	"github.com/m-mizutani/shepherd/pkg/domain/model"
 	"github.com/m-mizutani/shepherd/pkg/domain/types"
 	slackService "github.com/m-mizutani/shepherd/pkg/service/slack"
+	"github.com/m-mizutani/shepherd/pkg/utils/errutil"
 	"github.com/m-mizutani/shepherd/pkg/utils/logging"
 )
 
@@ -81,6 +82,17 @@ func (uc *SlackUseCase) HandleNewMessage(ctx context.Context, channelID, userID,
 	created, err := uc.repo.Ticket().Create(ctx, wsID, ticket)
 	if err != nil {
 		return goerr.Wrap(err, "failed to create ticket from slack message")
+	}
+
+	history := &model.TicketHistory{
+		ID:          uuid.Must(uuid.NewV7()).String(),
+		NewStatusID: created.StatusID,
+		ChangedBy:   types.SlackUserID(userID),
+		Action:      "created",
+		CreatedAt:   now,
+	}
+	if _, err := uc.repo.TicketHistory().Create(ctx, wsID, created.ID, history); err != nil {
+		errutil.Handle(ctx, goerr.Wrap(err, "failed to create ticket history"))
 	}
 
 	logger.Info("ticket created from slack message",
