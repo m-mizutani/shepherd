@@ -20,16 +20,25 @@ import (
 	"github.com/m-mizutani/shepherd/pkg/utils/logging"
 )
 
+// SlackClient captures the subset of the Slack service the usecase depends on.
+// Defined as an interface so tests can substitute a fake without hitting Slack.
+type SlackClient interface {
+	ReplyThread(ctx context.Context, channelID, threadTS, text string) error
+	ReplyTicketCreated(ctx context.Context, channelID, threadTS string, seqNum int64, ticketURL string) error
+	GetUserInfo(ctx context.Context, userID string) (*slackService.UserInfo, error)
+	ListUsers(ctx context.Context) ([]*slackService.UserInfo, error)
+}
+
 type SlackUseCase struct {
 	repo      interfaces.Repository
 	registry  *model.WorkspaceRegistry
-	slack     *slackService.Client
+	slack     SlackClient
 	baseURL   string
 	llm       gollem.LLMClient
 	userCache sync.Map
 }
 
-func NewSlackUseCase(repo interfaces.Repository, registry *model.WorkspaceRegistry, slack *slackService.Client, baseURL string, llm gollem.LLMClient) *SlackUseCase {
+func NewSlackUseCase(repo interfaces.Repository, registry *model.WorkspaceRegistry, slack SlackClient, baseURL string, llm gollem.LLMClient) *SlackUseCase {
 	return &SlackUseCase{
 		repo:     repo,
 		registry: registry,
