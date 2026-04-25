@@ -19,9 +19,21 @@ import (
 // Get must return (nil, nil) when the requested key does not exist; any other
 // failure must be returned as an error.
 type Backend interface {
-	Put(ctx context.Context, key string) (io.WriteCloser, error)
+	Put(ctx context.Context, key string) (Writer, error)
 	Get(ctx context.Context, key string) (io.ReadCloser, error)
 	Close() error
+}
+
+// Writer is the per-Put writer returned by Backend.Put. Callers that finish
+// writing a complete payload must call Close to commit. Callers that detect
+// a mid-stream failure (e.g., JSON encoding error) must call Abort so the
+// backend can discard the partial payload — for GCS this avoids finalising a
+// truncated upload, and for the filesystem it removes the half-written file.
+//
+// Calling Close after Abort, or Abort after Close, is a no-op.
+type Writer interface {
+	io.WriteCloser
+	Abort(cause error)
 }
 
 const (

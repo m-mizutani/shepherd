@@ -49,8 +49,12 @@ func (b *FileBackend) resolve(key string) (string, error) {
 }
 
 // Put returns a writer that creates (or replaces) the file at the resolved
-// path. The caller must Close the writer to flush the data.
-func (b *FileBackend) Put(_ context.Context, key string) (io.WriteCloser, error) {
+// path. The caller must Close the writer to commit, or Abort to delete the
+// half-written file on mid-stream failure.
+//
+// The file is created with 0o600 permissions: agent history may contain
+// internal ticket discussion that should not be world-readable.
+func (b *FileBackend) Put(_ context.Context, key string) (Writer, error) {
 	path, err := b.resolve(key)
 	if err != nil {
 		return nil, err
@@ -59,11 +63,38 @@ func (b *FileBackend) Put(_ context.Context, key string) (io.WriteCloser, error)
 		return nil, goerr.Wrap(err, "failed to create directory",
 			goerr.V("path", filepath.Dir(path)))
 	}
-	f, err := os.Create(path) // #nosec G304 -- path is validated by resolve().
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o600) // #nosec G304 -- path is validated by resolve().
 	if err != nil {
 		return nil, goerr.Wrap(err, "failed to create file", goerr.V("path", path))
 	}
-	return f, nil
+	return &fileWriter{f: f, path: path}, nil
+}
+
+// fileWriter wraps *os.File so that Abort closes the descriptor and removes
+// the partially written file. Close commits the file as written.
+type fileWriter struct {
+	f      *os.File
+	path   string
+	done   bool
+}
+
+func (w *fileWriter) Write(p []byte) (int, error) { return w.f.Write(p) }
+
+func (w *fileWriter) Close() error {
+	if w.done {
+		return nil
+	}
+	w.done = true
+	return w.f.Close()
+}
+
+func (w *fileWriter) Abort(_ error) {
+	if w.done {
+		return
+	}
+	w.done = true
+	_ = w.f.Close()
+	_ = os.Remove(w.path)
 }
 
 // Get opens the file at the resolved path. Returns (nil, nil) if the file

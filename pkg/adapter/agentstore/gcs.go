@@ -11,6 +11,8 @@ import (
 	"google.golang.org/api/option"
 )
 
+var _ Writer = (*gcsWriter)(nil)
+
 // GCSBackend persists agent data to a Google Cloud Storage bucket. All object
 // names are joined with the configured prefix (which may be empty).
 type GCSBackend struct {
@@ -49,14 +51,43 @@ func (b *GCSBackend) objectName(key string) string {
 	return b.prefix + strings.TrimLeft(key, "/")
 }
 
-// Put returns the GCS object writer. Callers must Close the returned writer
-// to finalize the upload; closing without writing yields an empty object, and
-// abandoning the writer without Close discards the upload (the property we
-// rely on for atomic JSON encoding — see history.go / trace.go).
-func (b *GCSBackend) Put(ctx context.Context, key string) (io.WriteCloser, error) {
-	w := b.client.Bucket(b.bucket).Object(b.objectName(key)).NewWriter(ctx)
+// Put returns the GCS object writer. Calling Close commits the upload;
+// calling Abort cancels the per-Put context so the in-flight upload is torn
+// down without finalising a truncated object.
+func (b *GCSBackend) Put(ctx context.Context, key string) (Writer, error) {
+	putCtx, cancel := context.WithCancel(ctx)
+	w := b.client.Bucket(b.bucket).Object(b.objectName(key)).NewWriter(putCtx)
 	w.ContentType = "application/json"
-	return w, nil
+	return &gcsWriter{w: w, cancel: cancel}, nil
+}
+
+type gcsWriter struct {
+	w      *storage.Writer
+	cancel context.CancelFunc
+	done   bool
+}
+
+func (g *gcsWriter) Write(p []byte) (int, error) { return g.w.Write(p) }
+
+func (g *gcsWriter) Close() error {
+	if g.done {
+		return nil
+	}
+	g.done = true
+	err := g.w.Close()
+	g.cancel()
+	return err
+}
+
+func (g *gcsWriter) Abort(_ error) {
+	if g.done {
+		return
+	}
+	g.done = true
+	// Cancel the per-Put context first so the SDK aborts the resumable
+	// upload, then drain the writer's Close to release any internal state.
+	g.cancel()
+	_ = g.w.Close()
 }
 
 // Get opens the GCS object for reading. Returns (nil, nil) when the object

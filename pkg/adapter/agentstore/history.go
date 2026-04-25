@@ -96,10 +96,10 @@ func (r *HistoryRepository) Save(ctx context.Context, sessionID string, history 
 	}
 
 	if err := json.NewEncoder(w).Encode(history); err != nil {
-		// Do NOT Close the writer on encode failure. For GCS this discards the
-		// partial upload; for the file backend the partially written file is
-		// still left behind, but at least we do not finalize a half-written
-		// blob.
+		// Tell the backend to discard the partial payload — for GCS this
+		// cancels the in-flight upload, for the filesystem it deletes the
+		// half-written file and closes the FD.
+		w.Abort(err)
 		errutil.Handle(ctx, goerr.Wrap(err, "failed to encode agent history",
 			goerr.V("session_id", sessionID)))
 		return nil

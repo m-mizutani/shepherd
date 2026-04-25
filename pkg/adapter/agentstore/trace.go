@@ -48,7 +48,9 @@ func (r *TraceRepository) Save(ctx context.Context, t *trace.Trace) error {
 	}
 
 	if err := json.NewEncoder(w).Encode(t); err != nil {
-		// Do NOT Close on encode failure (see history.go for rationale).
+		// Discard the partial payload via Abort (see Writer doc in
+		// backend.go) so neither GCS nor the local FS keeps a truncated blob.
+		w.Abort(err)
 		errutil.Handle(ctx, goerr.Wrap(err, "failed to encode trace",
 			goerr.V("trace_id", t.TraceID)))
 		return nil
