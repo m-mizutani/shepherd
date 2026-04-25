@@ -18,7 +18,7 @@ func TestTicketCreate(t *testing.T) {
 		now := time.Now().Truncate(time.Millisecond)
 
 		ticket := &model.Ticket{
-			ID:          uuid.Must(uuid.NewV7()).String(),
+			ID:          types.TicketID(uuid.Must(uuid.NewV7()).String()),
 			WorkspaceID: "test-ws",
 			Title:       "Test Ticket",
 			Description: "Test Description",
@@ -40,7 +40,7 @@ func TestTicketGet(t *testing.T) {
 	runTest(t, "Get", func(t *testing.T, repo interfaces.Repository) {
 		ctx := context.Background()
 		now := time.Now().Truncate(time.Millisecond)
-		id := uuid.Must(uuid.NewV7()).String()
+		id := types.TicketID(uuid.Must(uuid.NewV7()).String())
 
 		ticket := &model.Ticket{
 			ID:          id,
@@ -55,7 +55,7 @@ func TestTicketGet(t *testing.T) {
 
 		got := gt.R1(repo.Ticket().Get(ctx, "test-ws", id)).NoError(t)
 		gt.S(t, got.Title).Equal("Get Test")
-		gt.S(t, got.StatusID).Equal("open")
+		gt.S(t, string(got.StatusID)).Equal("open")
 	})
 }
 
@@ -63,11 +63,11 @@ func TestTicketList(t *testing.T) {
 	runTest(t, "List", func(t *testing.T, repo interfaces.Repository) {
 		ctx := context.Background()
 		now := time.Now().Truncate(time.Millisecond)
-		wsID := "test-list-" + uuid.Must(uuid.NewV7()).String()[:8]
+		wsID := types.WorkspaceID("test-list-" + uuid.Must(uuid.NewV7()).String()[:8])
 
 		for i, title := range []string{"Ticket A", "Ticket B", "Ticket C"} {
 			ticket := &model.Ticket{
-				ID:          uuid.Must(uuid.NewV7()).String(),
+				ID:          types.TicketID(uuid.Must(uuid.NewV7()).String()),
 				WorkspaceID: wsID,
 				Title:       title,
 				StatusID:    "open",
@@ -87,7 +87,7 @@ func TestTicketUpdate(t *testing.T) {
 	runTest(t, "Update", func(t *testing.T, repo interfaces.Repository) {
 		ctx := context.Background()
 		now := time.Now().Truncate(time.Millisecond)
-		id := uuid.Must(uuid.NewV7()).String()
+		id := types.TicketID(uuid.Must(uuid.NewV7()).String())
 
 		ticket := &model.Ticket{
 			ID:          id,
@@ -108,7 +108,7 @@ func TestTicketUpdate(t *testing.T) {
 		gt.S(t, updated.Title).Equal("After Update")
 
 		got := gt.R1(repo.Ticket().Get(ctx, "test-ws", id)).NoError(t)
-		gt.S(t, got.StatusID).Equal("in-progress")
+		gt.S(t, string(got.StatusID)).Equal("in-progress")
 	})
 }
 
@@ -116,7 +116,7 @@ func TestTicketDelete(t *testing.T) {
 	runTest(t, "Delete", func(t *testing.T, repo interfaces.Repository) {
 		ctx := context.Background()
 		now := time.Now().Truncate(time.Millisecond)
-		id := uuid.Must(uuid.NewV7()).String()
+		id := types.TicketID(uuid.Must(uuid.NewV7()).String())
 
 		ticket := &model.Ticket{
 			ID:          id,
@@ -139,12 +139,12 @@ func TestTicketSeqNumIncrement(t *testing.T) {
 	runTest(t, "SeqNumIncrement", func(t *testing.T, repo interfaces.Repository) {
 		ctx := context.Background()
 		now := time.Now().Truncate(time.Millisecond)
-		wsID := "test-seq-" + uuid.Must(uuid.NewV7()).String()[:8]
+		wsID := types.WorkspaceID("test-seq-" + uuid.Must(uuid.NewV7()).String()[:8])
 
 		var seqNums []int64
 		for i := 0; i < 3; i++ {
 			ticket := &model.Ticket{
-				ID:          uuid.Must(uuid.NewV7()).String(),
+				ID:          types.TicketID(uuid.Must(uuid.NewV7()).String()),
 				WorkspaceID: wsID,
 				Title:       "Seq Test",
 				StatusID:    "open",
@@ -166,10 +166,10 @@ func TestTicketGetBySlackThreadTS(t *testing.T) {
 	runTest(t, "GetBySlackThreadTS", func(t *testing.T, repo interfaces.Repository) {
 		ctx := context.Background()
 		now := time.Now().Truncate(time.Millisecond)
-		wsID := "test-slack-" + uuid.Must(uuid.NewV7()).String()[:8]
+		wsID := types.WorkspaceID("test-slack-" + uuid.Must(uuid.NewV7()).String()[:8])
 
 		ticket := &model.Ticket{
-			ID:             uuid.Must(uuid.NewV7()).String(),
+			ID:             types.TicketID(uuid.Must(uuid.NewV7()).String()),
 			WorkspaceID:    wsID,
 			Title:          "Slack Thread Test",
 			StatusID:       "open",

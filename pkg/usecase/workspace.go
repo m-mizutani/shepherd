@@ -4,6 +4,7 @@ import (
 	"github.com/m-mizutani/goerr/v2"
 	"github.com/m-mizutani/shepherd/pkg/domain/model"
 	"github.com/m-mizutani/shepherd/pkg/domain/model/config"
+	"github.com/m-mizutani/shepherd/pkg/domain/types"
 	"github.com/m-mizutani/shepherd/pkg/utils/errutil"
 )
 
@@ -21,7 +22,7 @@ func (uc *WorkspaceUseCase) List() []model.Workspace {
 	return uc.registry.Workspaces()
 }
 
-func (uc *WorkspaceUseCase) Get(workspaceID string) (*model.Workspace, error) {
+func (uc *WorkspaceUseCase) Get(workspaceID types.WorkspaceID) (*model.Workspace, error) {
 	entry, ok := uc.registry.Get(workspaceID)
 	if !ok {
 		return nil, goerr.New("workspace not found", goerr.V("workspace_id", workspaceID), goerr.Tag(errutil.TagNotFound))
@@ -29,7 +30,7 @@ func (uc *WorkspaceUseCase) Get(workspaceID string) (*model.Workspace, error) {
 	return &entry.Workspace, nil
 }
 
-func (uc *WorkspaceUseCase) GetConfig(workspaceID string) (*config.FieldSchema, error) {
+func (uc *WorkspaceUseCase) GetConfig(workspaceID types.WorkspaceID) (*config.FieldSchema, error) {
 	entry, ok := uc.registry.Get(workspaceID)
 	if !ok {
 		return nil, goerr.New("workspace not found", goerr.V("workspace_id", workspaceID), goerr.Tag(errutil.TagNotFound))

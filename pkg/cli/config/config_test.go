@@ -8,6 +8,7 @@ import (
 
 	"github.com/m-mizutani/gt"
 	"github.com/m-mizutani/shepherd/pkg/cli/config"
+	"github.com/m-mizutani/shepherd/pkg/domain/types"
 )
 
 func writeToml(t *testing.T, dir, filename, content string) string {
@@ -233,7 +234,7 @@ color = "#000"
 	path := writeToml(t, dir, "ws.toml", noDefault)
 
 	configs := gt.R1(config.LoadWorkspaceConfigs([]string{path})).NoError(t)
-	gt.S(t, configs[0].FieldSchema.TicketConfig.DefaultStatusID).Equal("new")
+	gt.S(t, string(configs[0].FieldSchema.TicketConfig.DefaultStatusID)).Equal("new")
 }
 
 func TestLoadWorkspaceConfigs_NameFallsBackToID(t *testing.T) {
@@ -262,8 +263,8 @@ func TestBuildRegistry(t *testing.T) {
 
 	ctx := context.Background()
 	registry := gt.R1(config.BuildRegistry(ctx, configs, nil)).NoError(t)
-	entry, ok := registry.Get("test-ws")
+	entry, ok := registry.Get(types.WorkspaceID("test-ws"))
 	gt.B(t, ok).True()
 	gt.S(t, entry.Workspace.Name).Equal("Test Workspace")
-	gt.S(t, entry.SlackChannelID).Equal("C0123456789")
+	gt.S(t, string(entry.SlackChannelID)).Equal("C0123456789")
 }

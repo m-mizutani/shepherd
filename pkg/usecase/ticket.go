@@ -33,7 +33,7 @@ func NewTicketUseCase(repo interfaces.Repository, registry *model.WorkspaceRegis
 	}
 }
 
-func (uc *TicketUseCase) Create(ctx context.Context, workspaceID string, title, description, statusID, assigneeID string, fields map[types.FieldID]model.FieldValue) (*model.Ticket, error) {
+func (uc *TicketUseCase) Create(ctx context.Context, workspaceID types.WorkspaceID, title, description string, statusID types.StatusID, assigneeID types.SlackUserID, fields map[types.FieldID]model.FieldValue) (*model.Ticket, error) {
 	entry, ok := uc.registry.Get(workspaceID)
 	if !ok {
 		return nil, goerr.New("workspace not found", goerr.V("workspace_id", workspaceID), goerr.Tag(errutil.TagNotFound))
@@ -45,7 +45,7 @@ func (uc *TicketUseCase) Create(ctx context.Context, workspaceID string, title, 
 
 	now := time.Now()
 	ticket := &model.Ticket{
-		ID:          uuid.Must(uuid.NewV7()).String(),
+		ID:          types.TicketID(uuid.Must(uuid.NewV7()).String()),
 		WorkspaceID: workspaceID,
 		Title:       title,
 		Description: description,
@@ -76,7 +76,7 @@ func (uc *TicketUseCase) Create(ctx context.Context, workspaceID string, title, 
 	return created, nil
 }
 
-func (uc *TicketUseCase) Get(ctx context.Context, workspaceID, ticketID string) (*model.Ticket, error) {
+func (uc *TicketUseCase) Get(ctx context.Context, workspaceID types.WorkspaceID, ticketID types.TicketID) (*model.Ticket, error) {
 	ticket, err := uc.repo.Ticket().Get(ctx, workspaceID, ticketID)
 	if err != nil {
 		return nil, goerr.Wrap(err, "failed to get ticket")
@@ -84,7 +84,7 @@ func (uc *TicketUseCase) Get(ctx context.Context, workspaceID, ticketID string) 
 	return ticket, nil
 }
 
-func (uc *TicketUseCase) List(ctx context.Context, workspaceID string, isClosed *bool, statusIDs []string) ([]*model.Ticket, error) {
+func (uc *TicketUseCase) List(ctx context.Context, workspaceID types.WorkspaceID, isClosed *bool, statusIDs []types.StatusID) ([]*model.Ticket, error) {
 	tickets, err := uc.repo.Ticket().List(ctx, workspaceID, statusIDs)
 	if err != nil {
 		return nil, goerr.Wrap(err, "failed to list tickets")
@@ -106,7 +106,7 @@ func (uc *TicketUseCase) List(ctx context.Context, workspaceID string, isClosed 
 	return tickets, nil
 }
 
-func (uc *TicketUseCase) Update(ctx context.Context, workspaceID, ticketID string, title, description, statusID, assigneeID *string, fields map[types.FieldID]model.FieldValue) (*model.Ticket, error) {
+func (uc *TicketUseCase) Update(ctx context.Context, workspaceID types.WorkspaceID, ticketID types.TicketID, title, description *string, statusID *types.StatusID, assigneeID *types.SlackUserID, fields map[types.FieldID]model.FieldValue) (*model.Ticket, error) {
 	existing, err := uc.repo.Ticket().Get(ctx, workspaceID, ticketID)
 	if err != nil {
 		return nil, goerr.Wrap(err, "failed to get ticket for update")
@@ -161,7 +161,7 @@ func (uc *TicketUseCase) Update(ctx context.Context, workspaceID, ticketID strin
 	return updated, nil
 }
 
-func (uc *TicketUseCase) notifyStatusChange(ctx context.Context, workspaceID string, ticket *model.Ticket, oldStatusID string) {
+func (uc *TicketUseCase) notifyStatusChange(ctx context.Context, workspaceID types.WorkspaceID, ticket *model.Ticket, oldStatusID types.StatusID) {
 	if uc.notifier == nil || ticket.SlackChannelID == "" || ticket.SlackThreadTS == "" {
 		return
 	}
@@ -175,31 +175,31 @@ func (uc *TicketUseCase) notifyStatusChange(ctx context.Context, workspaceID str
 	newName := statusName(entry, ticket.StatusID)
 
 	logger := logging.From(ctx)
-	if err := uc.notifier.ReplyStatusChange(ctx, ticket.SlackChannelID, ticket.SlackThreadTS, oldName, newName); err != nil {
+	if err := uc.notifier.ReplyStatusChange(ctx, string(ticket.SlackChannelID), string(ticket.SlackThreadTS), oldName, newName); err != nil {
 		logger.Warn("failed to notify status change to slack",
-			slog.String("ticket_id", ticket.ID),
+			slog.String("ticket_id", string(ticket.ID)),
 			slog.Any("error", err),
 		)
 	}
 }
 
-func statusName(entry *model.WorkspaceEntry, statusID string) string {
+func statusName(entry *model.WorkspaceEntry, statusID types.StatusID) string {
 	for _, s := range entry.FieldSchema.Statuses {
 		if s.ID == statusID {
 			return s.Name
 		}
 	}
-	return statusID
+	return string(statusID)
 }
 
-func (uc *TicketUseCase) Delete(ctx context.Context, workspaceID, ticketID string) error {
+func (uc *TicketUseCase) Delete(ctx context.Context, workspaceID types.WorkspaceID, ticketID types.TicketID) error {
 	if err := uc.repo.Ticket().Delete(ctx, workspaceID, ticketID); err != nil {
 		return goerr.Wrap(err, "failed to delete ticket")
 	}
 	return nil
 }
 
-func (uc *TicketUseCase) ListComments(ctx context.Context, workspaceID, ticketID string) ([]*model.Comment, error) {
+func (uc *TicketUseCase) ListComments(ctx context.Context, workspaceID types.WorkspaceID, ticketID types.TicketID) ([]*model.Comment, error) {
 	comments, err := uc.repo.Comment().List(ctx, workspaceID, ticketID)
 	if err != nil {
 		return nil, goerr.Wrap(err, "failed to list comments")
@@ -207,7 +207,7 @@ func (uc *TicketUseCase) ListComments(ctx context.Context, workspaceID, ticketID
 	return comments, nil
 }
 
-func (uc *TicketUseCase) ListHistory(ctx context.Context, workspaceID, ticketID string) ([]*model.TicketHistory, error) {
+func (uc *TicketUseCase) ListHistory(ctx context.Context, workspaceID types.WorkspaceID, ticketID types.TicketID) ([]*model.TicketHistory, error) {
 	histories, err := uc.repo.TicketHistory().List(ctx, workspaceID, ticketID)
 	if err != nil {
 		return nil, goerr.Wrap(err, "failed to list ticket history")
@@ -215,10 +215,10 @@ func (uc *TicketUseCase) ListHistory(ctx context.Context, workspaceID, ticketID 
 	return histories, nil
 }
 
-func changedByFromContext(ctx context.Context) string {
+func changedByFromContext(ctx context.Context) types.SlackUserID {
 	token, err := auth.TokenFromContext(ctx)
 	if err != nil || token == nil {
 		return "system"
 	}
-	return token.Sub
+	return types.SlackUserID(token.Sub)
 }

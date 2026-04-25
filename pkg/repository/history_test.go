@@ -12,11 +12,11 @@ import (
 	"github.com/m-mizutani/shepherd/pkg/domain/types"
 )
 
-func createTestTicket(t *testing.T, repo interfaces.Repository, wsID string) *model.Ticket {
+func createTestTicket(t *testing.T, repo interfaces.Repository, wsID types.WorkspaceID) *model.Ticket {
 	t.Helper()
 	now := time.Now().Truncate(time.Millisecond)
 	ticket := &model.Ticket{
-		ID:          uuid.Must(uuid.NewV7()).String(),
+		ID:          types.TicketID(uuid.Must(uuid.NewV7()).String()),
 		WorkspaceID: wsID,
 		Title:       "History Test Ticket",
 		StatusID:    "open",
@@ -34,36 +34,36 @@ func ctx(t *testing.T) context.Context {
 
 func TestTicketHistoryCreate(t *testing.T) {
 	runTest(t, "TicketHistoryCreate", func(t *testing.T, repo interfaces.Repository) {
-		wsID := "test-hist-" + uuid.Must(uuid.NewV7()).String()[:8]
+		wsID := types.WorkspaceID("test-hist-" + uuid.Must(uuid.NewV7()).String()[:8])
 		ticket := createTestTicket(t, repo, wsID)
 
 		history := &model.TicketHistory{
-			ID:        uuid.Must(uuid.NewV7()).String(),
-			NewStatusID:  "open",
-			ChangedBy: "U123",
-			Action:    "created",
-			CreatedAt: time.Now().Truncate(time.Millisecond),
+			ID:          uuid.Must(uuid.NewV7()).String(),
+			NewStatusID: "open",
+			ChangedBy:   "U123",
+			Action:      "created",
+			CreatedAt:   time.Now().Truncate(time.Millisecond),
 		}
 		created := gt.R1(repo.TicketHistory().Create(ctx(t), wsID, ticket.ID, history)).NoError(t)
 		gt.S(t, created.Action).Equal("created")
-		gt.S(t, created.NewStatusID).Equal("open")
-		gt.S(t, created.ChangedBy).Equal("U123")
+		gt.S(t, string(created.NewStatusID)).Equal("open")
+		gt.S(t, string(created.ChangedBy)).Equal("U123")
 	})
 }
 
 func TestTicketHistoryList(t *testing.T) {
 	runTest(t, "TicketHistoryList", func(t *testing.T, repo interfaces.Repository) {
-		wsID := "test-hlist-" + uuid.Must(uuid.NewV7()).String()[:8]
+		wsID := types.WorkspaceID("test-hlist-" + uuid.Must(uuid.NewV7()).String()[:8])
 		ticket := createTestTicket(t, repo, wsID)
 		now := time.Now().Truncate(time.Millisecond)
 
 		for i, action := range []string{"created", "changed", "changed"} {
 			h := &model.TicketHistory{
-				ID:        uuid.Must(uuid.NewV7()).String(),
-				NewStatusID:  "status-" + action,
-				ChangedBy: "U123",
-				Action:    action,
-				CreatedAt: now.Add(time.Duration(i) * time.Second),
+				ID:          uuid.Must(uuid.NewV7()).String(),
+				NewStatusID: types.StatusID("status-" + action),
+				ChangedBy:   "U123",
+				Action:      action,
+				CreatedAt:   now.Add(time.Duration(i) * time.Second),
 			}
 			if action == "changed" {
 				h.OldStatusID = "open"
@@ -86,7 +86,7 @@ func TestTicketHistoryList(t *testing.T) {
 
 func TestTicketHistoryList_Empty(t *testing.T) {
 	runTest(t, "TicketHistoryListEmpty", func(t *testing.T, repo interfaces.Repository) {
-		wsID := "test-hempty-" + uuid.Must(uuid.NewV7()).String()[:8]
+		wsID := types.WorkspaceID("test-hempty-" + uuid.Must(uuid.NewV7()).String()[:8])
 		ticket := createTestTicket(t, repo, wsID)
 
 		histories := gt.R1(repo.TicketHistory().List(ctx(t), wsID, ticket.ID)).NoError(t)
@@ -96,11 +96,11 @@ func TestTicketHistoryList_Empty(t *testing.T) {
 
 func TestTicketInitialMessage(t *testing.T) {
 	runTest(t, "TicketInitialMessage", func(t *testing.T, repo interfaces.Repository) {
-		wsID := "test-initmsg-" + uuid.Must(uuid.NewV7()).String()[:8]
+		wsID := types.WorkspaceID("test-initmsg-" + uuid.Must(uuid.NewV7()).String()[:8])
 		now := time.Now().Truncate(time.Millisecond)
 
 		ticket := &model.Ticket{
-			ID:             uuid.Must(uuid.NewV7()).String(),
+			ID:             types.TicketID(uuid.Must(uuid.NewV7()).String()),
 			WorkspaceID:    wsID,
 			Title:          "Initial Message Test",
 			InitialMessage: "original message text",
@@ -124,11 +124,11 @@ func TestTicketInitialMessage(t *testing.T) {
 
 func TestCommentIsBot(t *testing.T) {
 	runTest(t, "CommentIsBot", func(t *testing.T, repo interfaces.Repository) {
-		wsID := "test-cbot-" + uuid.Must(uuid.NewV7()).String()[:8]
+		wsID := types.WorkspaceID("test-cbot-" + uuid.Must(uuid.NewV7()).String()[:8])
 		ticket := createTestTicket(t, repo, wsID)
 
 		humanComment := &model.Comment{
-			ID:          uuid.Must(uuid.NewV7()).String(),
+			ID:          types.CommentID(uuid.Must(uuid.NewV7()).String()),
 			TicketID:    ticket.ID,
 			SlackUserID: "U123",
 			IsBot:       false,
@@ -139,7 +139,7 @@ func TestCommentIsBot(t *testing.T) {
 		gt.R1(repo.Comment().Create(ctx(t), wsID, ticket.ID, humanComment)).NoError(t)
 
 		botComment := &model.Comment{
-			ID:          uuid.Must(uuid.NewV7()).String(),
+			ID:          types.CommentID(uuid.Must(uuid.NewV7()).String()),
 			TicketID:    ticket.ID,
 			SlackUserID: "B456",
 			IsBot:       true,

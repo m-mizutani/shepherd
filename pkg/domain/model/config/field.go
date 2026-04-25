@@ -27,15 +27,15 @@ var (
 )
 
 type StatusDef struct {
-	ID    string
+	ID    types.StatusID
 	Name  string
 	Color string
 	Order int
 }
 
 type TicketConfig struct {
-	DefaultStatusID string
-	ClosedStatusIDs []string
+	DefaultStatusID types.StatusID
+	ClosedStatusIDs []types.StatusID
 }
 
 type FieldDefinition struct {
@@ -72,9 +72,9 @@ func (s *FieldSchema) Validate() error {
 		return goerr.Wrap(ErrMissingStatuses, "at least one status is required")
 	}
 
-	statusIDs := make(map[string]bool, len(s.Statuses))
+	statusIDs := make(map[types.StatusID]bool, len(s.Statuses))
 	for _, st := range s.Statuses {
-		if !idPattern.MatchString(st.ID) {
+		if !idPattern.MatchString(string(st.ID)) {
 			return goerr.Wrap(ErrInvalidStatusID, "status ID must match ^[a-z0-9]+(-[a-z0-9]+)*$",
 				goerr.V("status_id", st.ID))
 		}
@@ -158,7 +158,7 @@ func validateFieldDefinition(f *FieldDefinition) error {
 	return nil
 }
 
-func (s *FieldSchema) IsClosedStatus(statusID string) bool {
+func (s *FieldSchema) IsClosedStatus(statusID types.StatusID) bool {
 	for _, id := range s.TicketConfig.ClosedStatusIDs {
 		if id == statusID {
 			return true

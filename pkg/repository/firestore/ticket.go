@@ -6,6 +6,7 @@ import (
 	"cloud.google.com/go/firestore"
 	"github.com/m-mizutani/goerr/v2"
 	"github.com/m-mizutani/shepherd/pkg/domain/model"
+	"github.com/m-mizutani/shepherd/pkg/domain/types"
 	"google.golang.org/api/iterator"
 )
 
@@ -13,15 +14,15 @@ type ticketRepository struct {
 	client *firestore.Client
 }
 
-func (r *ticketRepository) ticketsCollection(workspaceID string) *firestore.CollectionRef {
-	return r.client.Collection("workspaces").Doc(workspaceID).Collection("tickets")
+func (r *ticketRepository) ticketsCollection(workspaceID types.WorkspaceID) *firestore.CollectionRef {
+	return r.client.Collection("workspaces").Doc(string(workspaceID)).Collection("tickets")
 }
 
-func (r *ticketRepository) counterRef(workspaceID string) *firestore.DocumentRef {
-	return r.client.Collection("workspaces").Doc(workspaceID).Collection("counters").Doc("ticket")
+func (r *ticketRepository) counterRef(workspaceID types.WorkspaceID) *firestore.DocumentRef {
+	return r.client.Collection("workspaces").Doc(string(workspaceID)).Collection("counters").Doc("ticket")
 }
 
-func (r *ticketRepository) getNextSeqNum(ctx context.Context, workspaceID string) (int64, error) {
+func (r *ticketRepository) getNextSeqNum(ctx context.Context, workspaceID types.WorkspaceID) (int64, error) {
 	var seqNum int64
 	err := r.client.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
 		ref := r.counterRef(workspaceID)
@@ -43,22 +44,22 @@ func (r *ticketRepository) getNextSeqNum(ctx context.Context, workspaceID string
 	return seqNum, nil
 }
 
-func (r *ticketRepository) Create(ctx context.Context, workspaceID string, t *model.Ticket) (*model.Ticket, error) {
+func (r *ticketRepository) Create(ctx context.Context, workspaceID types.WorkspaceID, t *model.Ticket) (*model.Ticket, error) {
 	seqNum, err := r.getNextSeqNum(ctx, workspaceID)
 	if err != nil {
 		return nil, err
 	}
 	t.SeqNum = seqNum
 
-	ref := r.ticketsCollection(workspaceID).Doc(t.ID)
+	ref := r.ticketsCollection(workspaceID).Doc(string(t.ID))
 	if _, err := ref.Set(ctx, t); err != nil {
 		return nil, goerr.Wrap(err, "failed to create ticket")
 	}
 	return t, nil
 }
 
-func (r *ticketRepository) Get(ctx context.Context, workspaceID string, id string) (*model.Ticket, error) {
-	doc, err := r.ticketsCollection(workspaceID).Doc(id).Get(ctx)
+func (r *ticketRepository) Get(ctx context.Context, workspaceID types.WorkspaceID, id types.TicketID) (*model.Ticket, error) {
+	doc, err := r.ticketsCollection(workspaceID).Doc(string(id)).Get(ctx)
 	if err != nil {
 		if isNotFound(err) {
 			return nil, goerr.New("ticket not found", goerr.V("ticket_id", id))
@@ -69,16 +70,21 @@ func (r *ticketRepository) Get(ctx context.Context, workspaceID string, id strin
 	if err := doc.DataTo(&t); err != nil {
 		return nil, goerr.Wrap(err, "failed to decode ticket")
 	}
-	t.ID = id
+	t.ID = types.TicketID(doc.Ref.ID)
 	t.WorkspaceID = workspaceID
 	return &t, nil
 }
 
-func (r *ticketRepository) List(ctx context.Context, workspaceID string, statusIDs []string) ([]*model.Ticket, error) {
+func (r *ticketRepository) List(ctx context.Context, workspaceID types.WorkspaceID, statusIDs []types.StatusID) ([]*model.Ticket, error) {
 	query := r.ticketsCollection(workspaceID).OrderBy("CreatedAt", firestore.Desc)
 
 	if len(statusIDs) > 0 {
-		query = r.ticketsCollection(workspaceID).Where("StatusID", "in", statusIDs).OrderBy("CreatedAt", firestore.Desc)
+		// Convert to []any for Firestore "in" query
+		ids := make([]any, len(statusIDs))
+		for i, id := range statusIDs {
+			ids[i] = id
+		}
+		query = r.ticketsCollection(workspaceID).Where("StatusID", "in", ids).OrderBy("CreatedAt", firestore.Desc)
 	}
 
 	iter := query.Documents(ctx)
@@ -97,33 +103,33 @@ func (r *ticketRepository) List(ctx context.Context, workspaceID string, statusI
 		if err := doc.DataTo(&t); err != nil {
 			return nil, goerr.Wrap(err, "failed to decode ticket")
 		}
-		t.ID = doc.Ref.ID
+		t.ID = types.TicketID(doc.Ref.ID)
 		t.WorkspaceID = workspaceID
 		tickets = append(tickets, &t)
 	}
 	return tickets, nil
 }
 
-func (r *ticketRepository) Update(ctx context.Context, workspaceID string, t *model.Ticket) (*model.Ticket, error) {
-	ref := r.ticketsCollection(workspaceID).Doc(t.ID)
+func (r *ticketRepository) Update(ctx context.Context, workspaceID types.WorkspaceID, t *model.Ticket) (*model.Ticket, error) {
+	ref := r.ticketsCollection(workspaceID).Doc(string(t.ID))
 	if _, err := ref.Set(ctx, t); err != nil {
 		return nil, goerr.Wrap(err, "failed to update ticket")
 	}
 	return t, nil
 }
 
-func (r *ticketRepository) Delete(ctx context.Context, workspaceID string, id string) error {
-	ref := r.ticketsCollection(workspaceID).Doc(id)
+func (r *ticketRepository) Delete(ctx context.Context, workspaceID types.WorkspaceID, id types.TicketID) error {
+	ref := r.ticketsCollection(workspaceID).Doc(string(id))
 	if _, err := ref.Delete(ctx); err != nil {
 		return goerr.Wrap(err, "failed to delete ticket")
 	}
 	return nil
 }
 
-func (r *ticketRepository) GetBySlackThreadTS(ctx context.Context, workspaceID string, channelID, threadTS string) (*model.Ticket, error) {
+func (r *ticketRepository) GetBySlackThreadTS(ctx context.Context, workspaceID types.WorkspaceID, channelID types.SlackChannelID, threadTS types.SlackThreadTS) (*model.Ticket, error) {
 	iter := r.ticketsCollection(workspaceID).
-		Where("SlackChannelID", "==", channelID).
-		Where("SlackThreadTS", "==", threadTS).
+		Where("SlackChannelID", "==", string(channelID)).
+		Where("SlackThreadTS", "==", string(threadTS)).
 		Limit(1).
 		Documents(ctx)
 	defer iter.Stop()
@@ -139,7 +145,7 @@ func (r *ticketRepository) GetBySlackThreadTS(ctx context.Context, workspaceID s
 	if err := doc.DataTo(&t); err != nil {
 		return nil, goerr.Wrap(err, "failed to decode ticket")
 	}
-	t.ID = doc.Ref.ID
+	t.ID = types.TicketID(doc.Ref.ID)
 	t.WorkspaceID = workspaceID
 	return &t, nil
 }

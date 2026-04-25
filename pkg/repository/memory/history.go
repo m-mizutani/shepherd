@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/m-mizutani/shepherd/pkg/domain/interfaces"
 	"github.com/m-mizutani/shepherd/pkg/domain/model"
+	"github.com/m-mizutani/shepherd/pkg/domain/types"
 )
 
 type TicketHistoryRepo struct {
@@ -24,12 +25,15 @@ func newTicketHistoryRepo() *TicketHistoryRepo {
 
 var _ interfaces.TicketHistoryRepository = (*TicketHistoryRepo)(nil)
 
-func (r *TicketHistoryRepo) Create(ctx context.Context, workspaceID, ticketID string, h *model.TicketHistory) (*model.TicketHistory, error) {
+func (r *TicketHistoryRepo) Create(ctx context.Context, workspaceID types.WorkspaceID, ticketID types.TicketID, h *model.TicketHistory) (*model.TicketHistory, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if r.histories[workspaceID] == nil {
-		r.histories[workspaceID] = make(map[string][]*model.TicketHistory)
+	wsKey := string(workspaceID)
+	tkKey := string(ticketID)
+
+	if r.histories[wsKey] == nil {
+		r.histories[wsKey] = make(map[string][]*model.TicketHistory)
 	}
 
 	h.ID = uuid.Must(uuid.NewV7()).String()
@@ -38,19 +42,19 @@ func (r *TicketHistoryRepo) Create(ctx context.Context, workspaceID, ticketID st
 	}
 
 	copied := *h
-	r.histories[workspaceID][ticketID] = append(r.histories[workspaceID][ticketID], &copied)
+	r.histories[wsKey][tkKey] = append(r.histories[wsKey][tkKey], &copied)
 	return h, nil
 }
 
-func (r *TicketHistoryRepo) List(ctx context.Context, workspaceID, ticketID string) ([]*model.TicketHistory, error) {
+func (r *TicketHistoryRepo) List(ctx context.Context, workspaceID types.WorkspaceID, ticketID types.TicketID) ([]*model.TicketHistory, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	ws := r.histories[workspaceID]
+	ws := r.histories[string(workspaceID)]
 	if ws == nil {
 		return nil, nil
 	}
-	histories := ws[ticketID]
+	histories := ws[string(ticketID)]
 	result := make([]*model.TicketHistory, len(histories))
 	for i, h := range histories {
 		copied := *h

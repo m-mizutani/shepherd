@@ -17,8 +17,8 @@ func TestCommentCreate(t *testing.T) {
 	runTest(t, "CommentCreate", func(t *testing.T, repo interfaces.Repository) {
 		ctx := context.Background()
 		now := time.Now().Truncate(time.Millisecond)
-		wsID := "test-comment-" + uuid.Must(uuid.NewV7()).String()[:8]
-		ticketID := uuid.Must(uuid.NewV7()).String()
+		wsID := types.WorkspaceID("test-comment-" + uuid.Must(uuid.NewV7()).String()[:8])
+		ticketID := types.TicketID(uuid.Must(uuid.NewV7()).String())
 
 		ticket := &model.Ticket{
 			ID:          ticketID,
@@ -32,7 +32,7 @@ func TestCommentCreate(t *testing.T) {
 		gt.R1(repo.Ticket().Create(ctx, wsID, ticket)).NoError(t)
 
 		comment := &model.Comment{
-			ID:          uuid.Must(uuid.NewV7()).String(),
+			ID:          types.CommentID(uuid.Must(uuid.NewV7()).String()),
 			TicketID:    ticketID,
 			SlackUserID: "U123",
 			Body:        "Hello world",
@@ -48,8 +48,8 @@ func TestCommentList(t *testing.T) {
 	runTest(t, "CommentList", func(t *testing.T, repo interfaces.Repository) {
 		ctx := context.Background()
 		now := time.Now().Truncate(time.Millisecond)
-		wsID := "test-clist-" + uuid.Must(uuid.NewV7()).String()[:8]
-		ticketID := uuid.Must(uuid.NewV7()).String()
+		wsID := types.WorkspaceID("test-clist-" + uuid.Must(uuid.NewV7()).String()[:8])
+		ticketID := types.TicketID(uuid.Must(uuid.NewV7()).String())
 
 		ticket := &model.Ticket{
 			ID:          ticketID,
@@ -64,11 +64,11 @@ func TestCommentList(t *testing.T) {
 
 		for i, body := range []string{"First", "Second", "Third"} {
 			comment := &model.Comment{
-				ID:          uuid.Must(uuid.NewV7()).String(),
+				ID:          types.CommentID(uuid.Must(uuid.NewV7()).String()),
 				TicketID:    ticketID,
 				SlackUserID: "U123",
 				Body:        body,
-				SlackTS:     "1111111111.11111" + string(rune('0'+i)),
+				SlackTS:     types.SlackThreadTS("1111111111.11111" + string(rune('0'+i))),
 				CreatedAt:   now.Add(time.Duration(i) * time.Second),
 			}
 			gt.R1(repo.Comment().Create(ctx, wsID, ticketID, comment)).NoError(t)
@@ -83,8 +83,8 @@ func TestCommentGetBySlackTS(t *testing.T) {
 	runTest(t, "CommentGetBySlackTS", func(t *testing.T, repo interfaces.Repository) {
 		ctx := context.Background()
 		now := time.Now().Truncate(time.Millisecond)
-		wsID := "test-cslack-" + uuid.Must(uuid.NewV7()).String()[:8]
-		ticketID := uuid.Must(uuid.NewV7()).String()
+		wsID := types.WorkspaceID("test-cslack-" + uuid.Must(uuid.NewV7()).String()[:8])
+		ticketID := types.TicketID(uuid.Must(uuid.NewV7()).String())
 
 		ticket := &model.Ticket{
 			ID:          ticketID,
@@ -97,9 +97,9 @@ func TestCommentGetBySlackTS(t *testing.T) {
 		}
 		gt.R1(repo.Ticket().Create(ctx, wsID, ticket)).NoError(t)
 
-		slackTS := "2222222222.222222"
+		slackTS := types.SlackThreadTS("2222222222.222222")
 		comment := &model.Comment{
-			ID:          uuid.Must(uuid.NewV7()).String(),
+			ID:          types.CommentID(uuid.Must(uuid.NewV7()).String()),
 			TicketID:    ticketID,
 			SlackUserID: "U456",
 			Body:        "Slack TS test comment",
