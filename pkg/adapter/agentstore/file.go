@@ -31,21 +31,35 @@ func NewFileBackend(dir string) (*FileBackend, error) {
 	return &FileBackend{base: abs}, nil
 }
 
-func (b *FileBackend) resolve(key string) string {
+func (b *FileBackend) resolve(key string) (string, error) {
+	if key == "" {
+		return "", goerr.New("storage key must not be empty")
+	}
 	parts := strings.Split(key, "/")
+	for _, p := range parts {
+		// Reject anything that could escape the base directory. Callers
+		// already use safe segments (UUIDs, workspace/ticket IDs) so this is
+		// a defence-in-depth check that also satisfies gosec G304.
+		if p == "" || p == "." || p == ".." || strings.ContainsRune(p, os.PathSeparator) {
+			return "", goerr.New("invalid path segment in storage key", goerr.V("key", key))
+		}
+	}
 	all := append([]string{b.base}, parts...)
-	return filepath.Join(all...)
+	return filepath.Join(all...), nil
 }
 
 // Put returns a writer that creates (or replaces) the file at the resolved
 // path. The caller must Close the writer to flush the data.
 func (b *FileBackend) Put(_ context.Context, key string) (io.WriteCloser, error) {
-	path := b.resolve(key)
+	path, err := b.resolve(key)
+	if err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return nil, goerr.Wrap(err, "failed to create directory",
 			goerr.V("path", filepath.Dir(path)))
 	}
-	f, err := os.Create(path)
+	f, err := os.Create(path) // #nosec G304 -- path is validated by resolve().
 	if err != nil {
 		return nil, goerr.Wrap(err, "failed to create file", goerr.V("path", path))
 	}
@@ -55,8 +69,11 @@ func (b *FileBackend) Put(_ context.Context, key string) (io.WriteCloser, error)
 // Get opens the file at the resolved path. Returns (nil, nil) if the file
 // does not exist.
 func (b *FileBackend) Get(_ context.Context, key string) (io.ReadCloser, error) {
-	path := b.resolve(key)
-	f, err := os.Open(path)
+	path, err := b.resolve(key)
+	if err != nil {
+		return nil, err
+	}
+	f, err := os.Open(path) // #nosec G304 -- path is validated by resolve().
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
