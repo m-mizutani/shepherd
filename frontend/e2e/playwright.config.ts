@@ -20,7 +20,7 @@ export default defineConfig({
   ],
   webServer: {
     command:
-      "cd ../.. && go run . serve --no-authn U_E2E --repository-backend memory --config examples/config.toml --addr :18923",
+      "cd ../.. && go run . serve --no-authn U_E2E --repository-backend memory --config examples/config.toml --addr :18923 --llm-provider openai --llm-openai-api-key sk-e2e-dummy",
     url: "http://localhost:18923/api/v1/health",
     reuseExistingServer: false,
     timeout: 60000,
