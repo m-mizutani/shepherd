@@ -1,3 +1,8 @@
+---
+paths:
+  - "**/*_test.go"
+---
+
 # Testing
 
 - Repository tests use the `runTest` helper in `pkg/repository/repository_test.go` which runs each test against both Memory and Firestore backends.
