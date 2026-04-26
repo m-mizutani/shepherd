@@ -5,6 +5,16 @@ paths:
 
 # Testing
 
+## Test file naming
+
+- Each `xxx_test.go` MUST pair with a `xxx.go` in the same directory. Functional / topical names like `lifecycle_test.go`, `e2e_test.go`, `integration_test.go` are not allowed — pick the source file whose public API the test exercises and name accordingly. If a test spans several source files, name it after the orchestrating type's file (e.g. tests for `usecase.go`'s end-to-end flow live in `usecase_test.go`, not in a separate `lifecycle_test.go`).
+- Exceptions:
+  - `export_test.go` — Go stdlib convention for exposing internals to the same-package test build.
+  - `pkg/repository/*_test.go` — the `runTest` parity pattern tests an interface method against multiple backends from a single file; the file is named after the method/feature, not a single source file.
+- Why: keeping the 1:1 mapping makes it trivial to find the test for a given source file (and vice versa) and prevents "kitchen-sink" test files that quietly accumulate.
+
+## General
+
 - Repository tests use the `runTest` helper in `pkg/repository/repository_test.go` which runs each test against both Memory and Firestore backends.
 - Firestore tests are activated by setting `TEST_FIRESTORE_PROJECT_ID` (and optionally `TEST_FIRESTORE_DATABASE_ID`). When these env vars are absent, Firestore tests are skipped.
 - Memory and Firestore must run the exact same test cases — no backend-specific test logic. The `runTest` pattern ensures feature parity between implementations.
