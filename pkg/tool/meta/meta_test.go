@@ -13,10 +13,12 @@ import (
 	"github.com/m-mizutani/shepherd/pkg/tool/meta"
 )
 
-func toolMap(t *testing.T, deps meta.Deps) map[string]gollem.Tool {
+func toolMap(t *testing.T, registry *model.WorkspaceRegistry, now func() time.Time) map[string]gollem.Tool {
 	t.Helper()
+	f := meta.New(registry, now)
+	gt.NoError(t, f.Init(context.Background()))
 	out := map[string]gollem.Tool{}
-	for _, tool := range meta.Tools(deps) {
+	for _, tool := range f.Tools() {
 		out[tool.Spec().Name] = tool
 	}
 	return out
@@ -24,7 +26,7 @@ func toolMap(t *testing.T, deps meta.Deps) map[string]gollem.Tool {
 
 func TestCurrentTime(t *testing.T) {
 	fixed := time.Date(2026, 4, 25, 9, 0, 0, 0, time.UTC)
-	tools := toolMap(t, meta.Deps{Now: func() time.Time { return fixed }})
+	tools := toolMap(t, nil, func() time.Time { return fixed })
 	out, err := tools["current_time"].Run(context.Background(), nil)
 	gt.NoError(t, err)
 	gt.Equal(t, out["rfc3339"], "2026-04-25T09:00:00Z")
@@ -50,7 +52,7 @@ func TestWorkspaceDescribe(t *testing.T) {
 		},
 		SlackChannelID: "C-1",
 	})
-	tools := toolMap(t, meta.Deps{Registry: registry})
+	tools := toolMap(t, registry, nil)
 
 	t.Run("happy path", func(t *testing.T) {
 		ctx := types.ContextWithWorkspace(context.Background(), "ws-1")

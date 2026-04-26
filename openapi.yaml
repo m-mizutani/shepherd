@@ -201,6 +201,129 @@ paths:
         "404":
           description: Not Found
 
+  /api/v1/ws/{workspaceId}/sources:
+    get:
+      operationId: listSources
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sources:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Source"
+                required: [sources]
+    post:
+      operationId: createSource
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSourceRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Source"
+        "400":
+          description: Bad Request
+        "409":
+          description: Conflict
+
+  /api/v1/ws/{workspaceId}/sources/{sourceId}:
+    patch:
+      operationId: updateSource
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - name: sourceId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateSourceRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Source"
+        "404":
+          description: Not Found
+    delete:
+      operationId: deleteSource
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - name: sourceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: Not Found
+
+  /api/v1/ws/{workspaceId}/tools:
+    get:
+      operationId: listToolSettings
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tools:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ToolState"
+                required: [tools]
+
+  /api/v1/ws/{workspaceId}/tools/{providerId}:
+    put:
+      operationId: setToolEnabled
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - name: providerId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+              required: [enabled]
+      responses:
+        "204":
+          description: No Content
+
   /api/v1/ws/{workspaceId}/tickets/{ticketId}/comments:
     get:
       operationId: listComments
@@ -443,3 +566,73 @@ components:
           type: string
           format: date-time
       required: [id, slackUserId, body, createdAt]
+
+    NotionSource:
+      type: object
+      properties:
+        objectType:
+          type: string
+          enum: [page, database]
+        objectId:
+          type: string
+        url:
+          type: string
+        title:
+          type: string
+      required: [objectType, objectId, url]
+
+    Source:
+      type: object
+      properties:
+        id:
+          type: string
+        workspaceId:
+          type: string
+        provider:
+          type: string
+          enum: [notion]
+        description:
+          type: string
+        notion:
+          $ref: "#/components/schemas/NotionSource"
+        createdAt:
+          type: string
+          format: date-time
+        createdBy:
+          type: string
+      required: [id, workspaceId, provider, createdAt]
+
+    CreateSourceRequest:
+      type: object
+      properties:
+        provider:
+          type: string
+          enum: [notion]
+        url:
+          type: string
+        description:
+          type: string
+      required: [provider, url]
+
+    UpdateSourceRequest:
+      type: object
+      properties:
+        description:
+          type: string
+      required: [description]
+
+    ToolState:
+      type: object
+      properties:
+        providerId:
+          type: string
+        available:
+          type: boolean
+        defaultEnabled:
+          type: boolean
+        enabled:
+          type: boolean
+        reason:
+          type: string
+          enum: [provider_unavailable, workspace_disabled, gate_blocked]
+      required: [providerId, available, defaultEnabled, enabled]

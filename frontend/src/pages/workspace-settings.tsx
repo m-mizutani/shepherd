@@ -1,11 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
-import { useParams } from "react-router-dom";
-import { useState } from "react";
+import { Link, useParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { PageShell } from "../components/ui/page-shell";
 import { Card } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
-import { Button } from "../components/ui/button";
 import { Icon, type IconName } from "../components/ui/icon";
 import { Skeleton } from "../components/ui/skeleton";
 import { ErrorBox } from "../components/ui/error-box";
@@ -13,6 +11,8 @@ import { EmptyState } from "../components/ui/empty-state";
 import { cn } from "../lib/utils";
 import { useTranslation } from "../i18n";
 import type { MsgKey } from "../i18n/keys";
+import { SourcesSection } from "./settings/sources-section";
+import { ToolsSection } from "./settings/tools-section";
 
 type NavGroup = "workspace" | "integration";
 
@@ -27,15 +27,20 @@ const NAV_ITEMS: {
   { id: "fields", labelKey: "settingsNavFields", icon: "filter", group: "workspace" },
   { id: "ticket-config", labelKey: "settingsNavTicketConfig", icon: "inbox", group: "workspace" },
   { id: "labels", labelKey: "settingsNavLabels", icon: "book", group: "workspace" },
-  { id: "slack", labelKey: "settingsNavSlack", icon: "slack", group: "integration" },
-  { id: "members", labelKey: "settingsNavMembers", icon: "user", group: "integration" },
+  { id: "sources", labelKey: "settingsNavSources", icon: "link", group: "integration" },
+  { id: "tools", labelKey: "settingsNavTools", icon: "settings", group: "integration" },
 ];
 
+const DEFAULT_SECTION = "statuses";
+
 export default function WorkspaceSettingsPage() {
-  const { workspaceId } = useParams<{ workspaceId: string }>();
+  const { workspaceId, section } = useParams<{
+    workspaceId: string;
+    section?: string;
+  }>();
   const { t } = useTranslation();
-  const [active, setActive] = useState<string>("statuses");
-  const [editMode, setEditMode] = useState(false);
+  const validIds = new Set(NAV_ITEMS.map((i) => i.id));
+  const active = section && validIds.has(section) ? section : DEFAULT_SECTION;
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["workspace-config", workspaceId],
@@ -71,12 +76,11 @@ export default function WorkspaceSettingsPage() {
                 {groupLabel(g)}
               </div>
               {NAV_ITEMS.filter((i) => i.group === g).map((it) => (
-                <button
+                <Link
                   key={it.id}
-                  type="button"
-                  onClick={() => setActive(it.id)}
+                  to={`/ws/${workspaceId}/settings/${it.id}`}
                   className={cn(
-                    "w-full flex items-center gap-2 px-2.5 py-1.5 rounded-2 text-[13px] cursor-pointer text-left",
+                    "w-full flex items-center gap-2 px-2.5 py-1.5 rounded-2 text-[13px] cursor-pointer text-left no-underline",
                     it.id === active
                       ? "bg-brand-soft text-ink-1 font-semibold"
                       : "text-ink-3 font-medium hover:bg-bg-sunken hover:text-ink-1",
@@ -90,30 +94,13 @@ export default function WorkspaceSettingsPage() {
                     }
                   />
                   {t(it.labelKey)}
-                </button>
+                </Link>
               ))}
             </div>
           ))}
         </nav>
 
         <main>
-          {/* Read-only banner */}
-          <div className="px-3.5 py-2.5 mb-5 bg-info-soft border border-[#bfdbfe] rounded-3 flex items-center gap-2.5">
-            <Icon name="eye" size={14} className="text-info" />
-            <div className="flex-1 text-[12.5px] text-[#1e3a8a]">
-              {editMode
-                ? t("settingsBannerEditMode")
-                : t("settingsBannerReadOnly")}
-            </div>
-            <Button
-              size="sm"
-              onClick={() => setEditMode((m) => !m)}
-            >
-              <Icon name="edit" size={11} />{" "}
-              {editMode ? t("settingsBannerDone") : t("settingsBannerEdit")}
-            </Button>
-          </div>
-
           {isLoading && (
             <div className="space-y-3">
               <Skeleton width="40%" height={18} />
@@ -130,6 +117,14 @@ export default function WorkspaceSettingsPage() {
               title={t("settingsLoadFailed")}
               onRetry={() => refetch()}
             />
+          )}
+
+          {active === "sources" && workspaceId && (
+            <SourcesSection workspaceId={workspaceId} />
+          )}
+
+          {active === "tools" && workspaceId && (
+            <ToolsSection workspaceId={workspaceId} />
           )}
 
           {data && active === "general" && (
@@ -154,11 +149,6 @@ export default function WorkspaceSettingsPage() {
             <Section
               title={t("settingsTitleStatuses")}
               subtitle={t("settingsSubtitleStatuses")}
-              action={
-                <Button size="sm" disabled={!editMode}>
-                  <Icon name="plus" size={11} /> {t("settingsBtnAdd")}
-                </Button>
-              }
             >
               <Card className="p-0 overflow-hidden">
                 <table className="w-full border-separate border-spacing-0">
@@ -215,11 +205,6 @@ export default function WorkspaceSettingsPage() {
             <Section
               title={t("settingsTitleFields")}
               subtitle={t("settingsSubtitleFields")}
-              action={
-                <Button size="sm" disabled={!editMode}>
-                  <Icon name="plus" size={11} /> {t("settingsBtnAdd")}
-                </Button>
-              }
             >
               <Card className="p-0 overflow-hidden">
                 <table className="w-full border-separate border-spacing-0">

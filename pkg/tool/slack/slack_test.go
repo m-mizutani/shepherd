@@ -56,9 +56,13 @@ func (f *fakeSlack) GetUserInfo(_ context.Context, id string) (*slackService.Use
 	return f.user, f.err
 }
 
-func toolByName(t *testing.T, name string, deps tslack.Deps) func(map[string]any) (map[string]any, error) {
+func toolByName(t *testing.T, name string, svc tslack.SlackTooler) func(map[string]any) (map[string]any, error) {
 	t.Helper()
-	for _, tool := range tslack.Tools(deps) {
+	f := tslack.New(svc)
+	if err := f.Init(context.Background()); err != nil {
+		t.Fatalf("factory init: %v", err)
+	}
+	for _, tool := range f.Tools() {
 		if tool.Spec().Name == name {
 			return func(args map[string]any) (map[string]any, error) {
 				return tool.Run(context.Background(), args)
@@ -76,7 +80,7 @@ func TestSearchMessages(t *testing.T) {
 				{ChannelID: "C1", ChannelName: "alerts", User: "U1", Text: "boom", Timestamp: "1.0", Permalink: "https://x"},
 			},
 		}
-		run := toolByName(t, "slack_search_messages", tslack.Deps{Slack: f})
+		run := toolByName(t, "slack_search_messages", f)
 		out, err := run(map[string]any{"query": "boom", "limit": 5, "sort": "timestamp"})
 		gt.NoError(t, err)
 		gt.Equal(t, len(f.searchCalls), 1)
@@ -90,7 +94,7 @@ func TestSearchMessages(t *testing.T) {
 
 	t.Run("missing query errors without calling slack", func(t *testing.T) {
 		f := &fakeSlack{}
-		run := toolByName(t, "slack_search_messages", tslack.Deps{Slack: f})
+		run := toolByName(t, "slack_search_messages", f)
 		_, err := run(map[string]any{})
 		gt.Error(t, err)
 		gt.Equal(t, len(f.searchCalls), 0)
@@ -98,7 +102,7 @@ func TestSearchMessages(t *testing.T) {
 
 	t.Run("limit clamps to max", func(t *testing.T) {
 		f := &fakeSlack{}
-		run := toolByName(t, "slack_search_messages", tslack.Deps{Slack: f})
+		run := toolByName(t, "slack_search_messages", f)
 		_, err := run(map[string]any{"query": "x", "limit": 9999})
 		gt.NoError(t, err)
 		gt.Equal(t, f.searchCalls[0].count, 50)
@@ -113,7 +117,7 @@ func TestGetThread(t *testing.T) {
 				{User: "U2", Text: "yo", Timestamp: "1.1"},
 			},
 		}
-		run := toolByName(t, "slack_get_thread", tslack.Deps{Slack: f})
+		run := toolByName(t, "slack_get_thread", f)
 		out, err := run(map[string]any{"channel_id": "C1", "thread_ts": "1.0"})
 		gt.NoError(t, err)
 		gt.Equal(t, len(f.threadCalls), 1)
@@ -125,7 +129,7 @@ func TestGetThread(t *testing.T) {
 
 	t.Run("missing thread_ts errors", func(t *testing.T) {
 		f := &fakeSlack{}
-		run := toolByName(t, "slack_get_thread", tslack.Deps{Slack: f})
+		run := toolByName(t, "slack_get_thread", f)
 		_, err := run(map[string]any{"channel_id": "C1"})
 		gt.Error(t, err)
 		gt.Equal(t, len(f.threadCalls), 0)
@@ -134,7 +138,7 @@ func TestGetThread(t *testing.T) {
 
 func TestGetChannelHistory(t *testing.T) {
 	f := &fakeSlack{messages: []*slackService.Message{{User: "U1", Text: "hi", Timestamp: "1.0"}}}
-	run := toolByName(t, "slack_get_channel_history", tslack.Deps{Slack: f})
+	run := toolByName(t, "slack_get_channel_history", f)
 	out, err := run(map[string]any{"channel_id": "C1", "oldest": "0", "latest": "9", "limit": 10})
 	gt.NoError(t, err)
 	gt.Equal(t, len(f.historyCalls), 1)
@@ -147,7 +151,7 @@ func TestGetChannelHistory(t *testing.T) {
 func TestGetUserInfo(t *testing.T) {
 	t.Run("found", func(t *testing.T) {
 		f := &fakeSlack{user: &slackService.UserInfo{ID: "U1", Name: "alice", Email: "a@x"}}
-		run := toolByName(t, "slack_get_user_info", tslack.Deps{Slack: f})
+		run := toolByName(t, "slack_get_user_info", f)
 		out, err := run(map[string]any{"user_id": "U1"})
 		gt.NoError(t, err)
 		gt.Equal(t, out["found"].(bool), true)
@@ -157,7 +161,7 @@ func TestGetUserInfo(t *testing.T) {
 
 	t.Run("not found", func(t *testing.T) {
 		f := &fakeSlack{user: nil}
-		run := toolByName(t, "slack_get_user_info", tslack.Deps{Slack: f})
+		run := toolByName(t, "slack_get_user_info", f)
 		out, err := run(map[string]any{"user_id": "U1"})
 		gt.NoError(t, err)
 		gt.Equal(t, out["found"].(bool), false)
@@ -165,7 +169,7 @@ func TestGetUserInfo(t *testing.T) {
 
 	t.Run("missing user_id errors", func(t *testing.T) {
 		f := &fakeSlack{}
-		run := toolByName(t, "slack_get_user_info", tslack.Deps{Slack: f})
+		run := toolByName(t, "slack_get_user_info", f)
 		_, err := run(map[string]any{})
 		gt.Error(t, err)
 		gt.Equal(t, len(f.userInfoCalls), 0)

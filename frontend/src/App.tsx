@@ -64,6 +64,14 @@ export default function App() {
             </ProtectedRoute>
           }
         />
+        <Route
+          path="/ws/:workspaceId/settings/:section"
+          element={
+            <ProtectedRoute>
+              <WorkspaceSettingsPage />
+            </ProtectedRoute>
+          }
+        />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <CommandPalette />

@@ -19,7 +19,9 @@ func setup(t *testing.T) (context.Context, *memory.Repository, map[string]gollem
 	t.Helper()
 	repo := memory.New()
 	t.Cleanup(func() { _ = repo.Close() })
-	tools := tticket.Tools(tticket.Deps{Repo: repo})
+	f := tticket.New(repo)
+	gt.NoError(t, f.Init(context.Background()))
+	tools := f.Tools()
 	byName := make(map[string]gollem.Tool, len(tools))
 	for _, tool := range tools {
 		byName[tool.Spec().Name] = tool
