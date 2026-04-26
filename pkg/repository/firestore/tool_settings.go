@@ -8,54 +8,69 @@ import (
 	"github.com/m-mizutani/goerr/v2"
 	"github.com/m-mizutani/shepherd/pkg/domain/model"
 	"github.com/m-mizutani/shepherd/pkg/domain/types"
+	"google.golang.org/api/iterator"
 )
 
+// Layout:
+//
+//	workspaces/{wsID}/settings/tools/providers/{providerID}
+//	    Enabled    bool
+//	    UpdatedAt  time.Time
+//
+// One document per provider keeps writes naturally atomic (no read-modify-
+// write, no field-path Merge) and lets future settings sections live as
+// sibling documents under workspaces/{ws}/settings/<section>.
 type toolSettingsRepository struct {
 	client *firestore.Client
 }
 
-func (r *toolSettingsRepository) ref(ws types.WorkspaceID) *firestore.DocumentRef {
-	return r.client.Collection("workspaces").Doc(string(ws)).Collection("tool_settings").Doc("current")
+type providerDoc struct {
+	Enabled   bool
+	UpdatedAt time.Time
+}
+
+func (r *toolSettingsRepository) providersCollection(ws types.WorkspaceID) *firestore.CollectionRef {
+	return r.client.Collection("workspaces").Doc(string(ws)).
+		Collection("settings").Doc("tools").
+		Collection("providers")
 }
 
 func (r *toolSettingsRepository) Get(ctx context.Context, ws types.WorkspaceID) (*model.ToolSettings, error) {
-	doc, err := r.ref(ws).Get(ctx)
-	if err != nil {
-		if isNotFound(err) {
-			return &model.ToolSettings{
-				WorkspaceID: ws,
-				Enabled:     map[string]bool{},
-			}, nil
+	out := &model.ToolSettings{
+		WorkspaceID: ws,
+		Enabled:     map[string]bool{},
+	}
+	iter := r.providersCollection(ws).Documents(ctx)
+	defer iter.Stop()
+	for {
+		doc, err := iter.Next()
+		if err == iterator.Done {
+			break
 		}
-		return nil, goerr.Wrap(err, "failed to get tool_settings")
+		if err != nil {
+			return nil, goerr.Wrap(err, "failed to iterate tool_settings providers",
+				goerr.V("workspace_id", string(ws)))
+		}
+		var pd providerDoc
+		if err := doc.DataTo(&pd); err != nil {
+			return nil, goerr.Wrap(err, "failed to decode tool_settings provider",
+				goerr.V("workspace_id", string(ws)),
+				goerr.V("provider_id", doc.Ref.ID))
+		}
+		out.Enabled[doc.Ref.ID] = pd.Enabled
+		if pd.UpdatedAt.After(out.UpdatedAt) {
+			out.UpdatedAt = pd.UpdatedAt
+		}
 	}
-	var s model.ToolSettings
-	if err := doc.DataTo(&s); err != nil {
-		return nil, goerr.Wrap(err, "failed to decode tool_settings")
-	}
-	s.WorkspaceID = ws
-	if s.Enabled == nil {
-		s.Enabled = map[string]bool{}
-	}
-	return &s, nil
+	return out, nil
 }
 
 func (r *toolSettingsRepository) Set(ctx context.Context, ws types.WorkspaceID, providerID string, enabled bool) error {
-	// Update only the toggled key + UpdatedAt via field-path merge so two
-	// concurrent toggles for different providers do not clobber each other.
-	// Set with firestore.Merge handles both create-if-absent and atomic
-	// per-field write — RunTransaction would also work but adds round-trips.
-	payload := map[string]any{
-		"WorkspaceID": string(ws),
-		"Enabled":     map[string]bool{providerID: enabled},
-		"UpdatedAt":   time.Now(),
-	}
-	if _, err := r.ref(ws).Set(ctx, payload, firestore.Merge(
-		[]string{"WorkspaceID"},
-		[]string{"Enabled", providerID},
-		[]string{"UpdatedAt"},
-	)); err != nil {
-		return goerr.Wrap(err, "failed to set tool_settings")
+	ref := r.providersCollection(ws).Doc(providerID)
+	if _, err := ref.Set(ctx, providerDoc{Enabled: enabled, UpdatedAt: time.Now()}); err != nil {
+		return goerr.Wrap(err, "failed to set tool_settings",
+			goerr.V("workspace_id", string(ws)),
+			goerr.V("provider_id", providerID))
 	}
 	return nil
 }
