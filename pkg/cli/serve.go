@@ -182,6 +182,9 @@ func cmdServe() *cli.Command {
 					return goerr.Wrap(err, "tool factory init failed", goerr.V("provider", string(f.ID())))
 				}
 			}
+			if notionFactory.Available() {
+				logger.Info("Notion integration enabled")
+			}
 
 			catalog := tool.NewCatalog(factories, repo.ToolSettings()).
 				WithGate(tool.ProviderNotion, func(ctx context.Context, ws types.WorkspaceID) (bool, error) {
