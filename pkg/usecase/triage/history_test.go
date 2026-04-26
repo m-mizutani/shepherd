@@ -57,12 +57,12 @@ func mustUserTextMessage(t *testing.T, text string) gollem.Message {
 func investigateArgs() map[string]any {
 	return map[string]any{
 		"message": "調査します",
-		"subtasks": []map[string]any{
-			{
+		"subtasks": []any{
+			map[string]any{
 				"id":                  "st1",
 				"request":             "Collect related Slack posts",
-				"acceptance_criteria": []string{"return at least 3 messages or explicit none"},
-				"allowed_tools":       []string{"slack_search_messages"},
+				"acceptance_criteria": []any{"return at least 3 messages or explicit none"},
+				"allowed_tools":       []any{"slack_search_messages"},
 			},
 		},
 	}
@@ -72,13 +72,13 @@ func askArgs() map[string]any {
 	return map[string]any{
 		"message": "確認させてください",
 		"title":   "詳細",
-		"questions": []map[string]any{
-			{
+		"questions": []any{
+			map[string]any{
 				"id":    "q1",
 				"label": "影響範囲は？",
-				"choices": []map[string]any{
-					{"id": "c1", "label": "本番"},
-					{"id": "c2", "label": "ステージング"},
+				"choices": []any{
+					map[string]any{"id": "c1", "label": "本番"},
+					map[string]any{"id": "c2", "label": "ステージング"},
 				},
 			},
 		},

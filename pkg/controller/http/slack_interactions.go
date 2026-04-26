@@ -36,6 +36,10 @@ func slackInteractionsHandler(uc TriageInteractionsUC) http.HandlerFunc {
 		ctx := r.Context()
 		logger := logging.From(ctx)
 
+		// Slack interaction payloads are well under 1 MiB; cap the body to
+		// avoid unbounded ParseForm allocations (gosec G120).
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+
 		if err := r.ParseForm(); err != nil {
 			errutil.HandleHTTP(ctx, w, goerr.Wrap(err, "parse interaction form"), http.StatusBadRequest)
 			return
