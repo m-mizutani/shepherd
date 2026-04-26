@@ -18,6 +18,7 @@ var en = map[MsgKey]string{
 	MsgTriageAskInvalidated:     "This form is no longer valid.",
 	MsgTriageAskValidationError: "Please choose at least one option or fill in the free-form field.",
 	MsgTriageAskHistoryMissing:  "Form context is missing; cannot accept this submission.",
+	MsgTriageAskAnswerNone:      "(no answer)",
 
 	MsgTriageCompleteHeaderAssigned:   "Triage completed",
 	MsgTriageCompleteHeaderUnassigned: "Triage completed (no assignee)",
@@ -30,4 +31,9 @@ var en = map[MsgKey]string{
 	MsgTriageCompleteUnassignedReason: "Reason: {reason}",
 	MsgTriageAbortedHeader:            "Triage could not be completed",
 	MsgTriageAbortedReason:            "Reason: {reason}",
+
+	MsgTriageFailedHeader:      "Triage failed unexpectedly",
+	MsgTriageFailedError:       "Error: `{error}`",
+	MsgTriageFailedRetryButton: "Retry triage",
+	MsgTriageRetryQueued:       "Retrying triage…",
 }

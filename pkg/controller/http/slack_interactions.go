@@ -7,10 +7,10 @@ import (
 	"net/http"
 
 	"github.com/m-mizutani/goerr/v2"
-	"github.com/m-mizutani/shepherd/pkg/domain/model"
 	"github.com/m-mizutani/shepherd/pkg/domain/types"
 	slackService "github.com/m-mizutani/shepherd/pkg/service/slack"
 	"github.com/m-mizutani/shepherd/pkg/usecase/triage"
+	"github.com/m-mizutani/shepherd/pkg/utils/async"
 	"github.com/m-mizutani/shepherd/pkg/utils/errutil"
 	"github.com/m-mizutani/shepherd/pkg/utils/logging"
 	slackgo "github.com/slack-go/slack"
@@ -18,12 +18,12 @@ import (
 
 // TriageInteractionsUC is the slim surface the interactions endpoint needs
 // from the triage usecase. Defined as an interface so tests can substitute
-// a fake without instantiating the full executor.
+// a fake without instantiating the full executor. The handler stays free of
+// workspace / ticket resolution — those live behind HandleSubmit /
+// HandleRetry, which take only the raw Slack payload fields.
 type TriageInteractionsUC interface {
 	HandleSubmit(ctx context.Context, sub triage.Submission) error
-	SubmitInvalid(ctx context.Context, channelID, messageTS string)
-	WorkspaceForChannel(ctx context.Context, channelID string) (types.WorkspaceID, bool)
-	TicketByID(ctx context.Context, workspaceID types.WorkspaceID, ticketID types.TicketID) (*model.Ticket, error)
+	HandleRetry(ctx context.Context, ticketID types.TicketID, channelID, messageTS string) error
 }
 
 // slackInteractionsHandler handles Slack Block Kit interactivity callbacks
@@ -69,13 +69,14 @@ func slackInteractionsHandler(uc TriageInteractionsUC) http.HandlerFunc {
 
 		var triageAction *slackgo.BlockAction
 		for i := range cb.ActionCallback.BlockActions {
-			if cb.ActionCallback.BlockActions[i].ActionID == slackService.TriageSubmitActionID {
+			id := cb.ActionCallback.BlockActions[i].ActionID
+			if id == slackService.TriageSubmitActionID || id == slackService.TriageRetryActionID {
 				triageAction = cb.ActionCallback.BlockActions[i]
 				break
 			}
 		}
 		if triageAction == nil {
-			logger.Debug("slack interaction ignored: no triage submit action")
+			logger.Debug("slack interaction ignored: no triage action")
 			w.WriteHeader(http.StatusOK)
 			return
 		}
@@ -83,39 +84,32 @@ func slackInteractionsHandler(uc TriageInteractionsUC) http.HandlerFunc {
 		ticketID := types.TicketID(triageAction.Value)
 		channelID := cb.Channel.ID
 		messageTS := cb.Message.Timestamp
+		actionID := triageAction.ActionID
+		state := cb.BlockActionState
 
-		// Acknowledge Slack as early as possible. The actual work runs
-		// synchronously below since it's bounded (LLM is not invoked here)
-		// and we want the response to fully reflect the new state.
+		// Acknowledge Slack immediately. Slack enforces a 3-second deadline
+		// on the interaction response, so the only work we do synchronously
+		// is parsing the payload (which has to happen before we can return —
+		// the body is buffered in the request). Workspace resolution, ticket
+		// loading, history checks, Slack API mutations, and the planner
+		// re-dispatch all live behind HandleSubmit / HandleRetry; we hand
+		// them off to async.Dispatch which provides a detached context,
+		// panic recovery, and Sentry routing.
 		w.WriteHeader(http.StatusOK)
 
-		wsID, ok := uc.WorkspaceForChannel(ctx, channelID)
-		if !ok {
-			logger.Debug("triage submit ignored: channel not mapped",
-				slog.String("channel", channelID),
-			)
-			uc.SubmitInvalid(ctx, channelID, messageTS)
-			return
-		}
-
-		ticket, err := uc.TicketByID(ctx, wsID, ticketID)
-		if err != nil || ticket == nil {
-			logger.Debug("triage submit invalidated: ticket not found",
-				slog.String("ticket_id", string(ticketID)),
-			)
-			uc.SubmitInvalid(ctx, channelID, messageTS)
-			return
-		}
-
-		sub := triage.Submission{
-			WorkspaceID: wsID,
-			TicketID:    ticketID,
-			ChannelID:   channelID,
-			MessageTS:   messageTS,
-			State:       cb.BlockActionState,
-		}
-		if err := uc.HandleSubmit(ctx, sub); err != nil {
-			errutil.Handle(ctx, goerr.Wrap(err, "handle triage submit"))
-		}
+		async.Dispatch(ctx, func(ctx context.Context) error {
+			switch actionID {
+			case slackService.TriageSubmitActionID:
+				return uc.HandleSubmit(ctx, triage.Submission{
+					TicketID:  ticketID,
+					ChannelID: channelID,
+					MessageTS: messageTS,
+					State:     state,
+				})
+			case slackService.TriageRetryActionID:
+				return uc.HandleRetry(ctx, ticketID, channelID, messageTS)
+			}
+			return nil
+		})
 	}
 }

@@ -5,7 +5,7 @@
 //   - ticket.Triaged on the Firestore ticket: the only persistent flag triage
 //     adds to the ticket itself.
 //   - gollem agent history at session "{workspace}/{ticket}/plan": the canonical
-//     record of every LLM turn (tool calls, responses, user-side updates).
+//     record of every LLM turn (assistant JSON plans, user-side updates).
 //
 // This file holds the helpers that read and write that history without
 // involving the gollem agent driver itself: helpers for appending user
@@ -24,18 +24,6 @@ import (
 	"github.com/m-mizutani/gollem"
 	"github.com/m-mizutani/shepherd/pkg/domain/model"
 	"github.com/m-mizutani/shepherd/pkg/domain/types"
-)
-
-const (
-	// proposeInvestigateToolName is the gollem tool name the LLM calls to
-	// schedule a parallel investigation.
-	proposeInvestigateToolName = "propose_investigate"
-	// proposeAskToolName is the gollem tool name the LLM calls to ask the
-	// reporter follow-up questions.
-	proposeAskToolName = "propose_ask"
-	// proposeCompleteToolName is the gollem tool name the LLM calls to finish
-	// triage with a hand-off summary.
-	proposeCompleteToolName = "propose_complete"
 )
 
 // planSessionID returns the gollem history session identifier for a ticket's
@@ -79,9 +67,9 @@ func appendUserMessage(ctx context.Context, repo gollem.HistoryRepository, works
 }
 
 // loadLatestTriagePlan walks the plan-level history backwards looking for the
-// most recent propose_* tool call and decodes it into a TriagePlan. Returns
-// (nil, nil) when there is no plan history yet or the trailing message is not
-// a propose_* tool call.
+// most recent assistant message and decodes its text payload as a structured
+// TriagePlan (the LLM produces it under triagePlanSchema). Returns (nil, nil)
+// when there is no plan history yet.
 func loadLatestTriagePlan(ctx context.Context, repo gollem.HistoryRepository, workspaceID types.WorkspaceID, ticketID types.TicketID) (*model.TriagePlan, error) {
 	h, err := repo.Load(ctx, planSessionID(workspaceID, ticketID))
 	if err != nil {
@@ -90,15 +78,19 @@ func loadLatestTriagePlan(ctx context.Context, repo gollem.HistoryRepository, wo
 	if h == nil {
 		return nil, nil
 	}
-	tc := findLatestProposeToolCall(h)
-	if tc == nil {
+	raw := latestAssistantText(h)
+	if raw == "" {
 		return nil, nil
 	}
-	return decodeTriagePlanFromToolCall(tc)
+	plan, err := decodePlanFromJSON(raw)
+	if err != nil {
+		return nil, goerr.Wrap(err, "decode latest plan")
+	}
+	return plan, nil
 }
 
-// isWaitingUserSubmit reports true when the latest propose_* tool call is a
-// propose_ask AND no user-role message has been appended after it. That
+// isWaitingUserSubmit reports true when the latest assistant plan is a
+// kind=ask AND no user-role message has been appended after it. That
 // combination is exactly the condition for "the reporter has been shown a
 // question form and we're waiting on their submit".
 func isWaitingUserSubmit(ctx context.Context, repo gollem.HistoryRepository, workspaceID types.WorkspaceID, ticketID types.TicketID) (bool, error) {
@@ -110,35 +102,34 @@ func isWaitingUserSubmit(ctx context.Context, repo gollem.HistoryRepository, wor
 		return false, nil
 	}
 
-	// Walk forward; remember the last propose_* tool call name and whether
-	// any user-role message appeared after it.
-	var lastProposeName string
-	userAfterPropose := false
+	// Walk forward; remember the last assistant plan kind and whether any
+	// user-role message has appeared after it.
+	var lastKind types.PlanKind
+	seenAssistant := false
+	userAfterAssistant := false
 	for _, msg := range h.Messages {
-		if msg.Role == gollem.RoleUser && lastProposeName != "" {
-			userAfterPropose = true
-		}
-		for _, c := range msg.Contents {
-			if c.Type != gollem.MessageContentTypeToolCall {
-				continue
+		switch msg.Role {
+		case gollem.RoleAssistant:
+			if text := joinAssistantText(msg); text != "" {
+				if plan, err := decodePlanFromJSON(text); err == nil {
+					lastKind = plan.Kind
+					seenAssistant = true
+					userAfterAssistant = false
+				}
 			}
-			tc, err := c.GetToolCallContent()
-			if err != nil {
-				continue
-			}
-			if isProposeToolName(tc.Name) {
-				lastProposeName = tc.Name
-				userAfterPropose = false
+		case gollem.RoleUser:
+			if seenAssistant {
+				userAfterAssistant = true
 			}
 		}
 	}
-	return lastProposeName == proposeAskToolName && !userAfterPropose, nil
+	return seenAssistant && lastKind == types.PlanAsk && !userAfterAssistant, nil
 }
 
-// countToolCalls returns the number of propose_* tool calls already recorded
-// in the plan history. The plan executor uses this to enforce its iteration
-// cap without persisting a separate counter.
-func countToolCalls(ctx context.Context, repo gollem.HistoryRepository, workspaceID types.WorkspaceID, ticketID types.TicketID) (int, error) {
+// countPlannerTurns returns how many assistant plan messages the planner has
+// already produced for this ticket. The plan executor uses this to enforce
+// its iteration cap without persisting a separate counter.
+func countPlannerTurns(ctx context.Context, repo gollem.HistoryRepository, workspaceID types.WorkspaceID, ticketID types.TicketID) (int, error) {
 	h, err := repo.Load(ctx, planSessionID(workspaceID, ticketID))
 	if err != nil {
 		return 0, goerr.Wrap(err, "load plan history")
@@ -148,15 +139,11 @@ func countToolCalls(ctx context.Context, repo gollem.HistoryRepository, workspac
 	}
 	count := 0
 	for _, msg := range h.Messages {
-		for _, c := range msg.Contents {
-			if c.Type != gollem.MessageContentTypeToolCall {
-				continue
-			}
-			tc, err := c.GetToolCallContent()
-			if err != nil {
-				continue
-			}
-			if isProposeToolName(tc.Name) {
+		if msg.Role != gollem.RoleAssistant {
+			continue
+		}
+		if text := joinAssistantText(msg); text != "" {
+			if _, err := decodePlanFromJSON(text); err == nil {
 				count++
 			}
 		}
@@ -174,95 +161,35 @@ func hasPlanHistory(ctx context.Context, repo gollem.HistoryRepository, workspac
 	return h != nil && len(h.Messages) > 0, nil
 }
 
-func isProposeToolName(name string) bool {
-	switch name {
-	case proposeInvestigateToolName, proposeAskToolName, proposeCompleteToolName:
-		return true
-	default:
-		return false
-	}
-}
-
-func findLatestProposeToolCall(h *gollem.History) *gollem.ToolCallContent {
+func latestAssistantText(h *gollem.History) string {
 	for i := len(h.Messages) - 1; i >= 0; i-- {
-		msg := h.Messages[i]
-		for j := len(msg.Contents) - 1; j >= 0; j-- {
-			c := msg.Contents[j]
-			if c.Type != gollem.MessageContentTypeToolCall {
-				continue
-			}
-			tc, err := c.GetToolCallContent()
-			if err != nil {
-				continue
-			}
-			if isProposeToolName(tc.Name) {
-				return tc
-			}
+		if h.Messages[i].Role != gollem.RoleAssistant {
+			continue
+		}
+		if text := joinAssistantText(h.Messages[i]); text != "" {
+			return text
 		}
 	}
-	return nil
+	return ""
 }
 
-// decodeTriagePlanFromToolCall converts a captured propose_* tool call (as
-// stored in the session history) into a TriagePlan.
-func decodeTriagePlanFromToolCall(tc *gollem.ToolCallContent) (*model.TriagePlan, error) {
-	if tc == nil {
-		return nil, goerr.New("nil tool call")
-	}
-	return decodePlan(tc.Name, tc.Arguments)
-}
-
-// decodePlanFromFunctionCall converts a fresh function call returned by
-// Session.Generate into a TriagePlan. Same shape as decodeTriagePlanFromToolCall
-// but reads the FunctionCall variant of the same payload.
-func decodePlanFromFunctionCall(fc *gollem.FunctionCall) (*model.TriagePlan, error) {
-	if fc == nil {
-		return nil, goerr.New("nil function call")
-	}
-	return decodePlan(fc.Name, fc.Arguments)
-}
-
-func decodePlan(name string, args map[string]any) (*model.TriagePlan, error) {
-	plan := &model.TriagePlan{}
-	if msg, ok := args["message"].(string); ok {
-		plan.Message = msg
-	}
-
-	switch name {
-	case proposeInvestigateToolName:
-		plan.Kind = types.PlanInvestigate
-		var inv model.Investigate
-		if err := remarshal(args, &inv); err != nil {
-			return nil, goerr.Wrap(err, "decode propose_investigate args")
+func joinAssistantText(msg gollem.Message) string {
+	var b strings.Builder
+	for _, c := range msg.Contents {
+		if c.Type != gollem.MessageContentTypeText {
+			continue
 		}
-		plan.Investigate = &inv
-	case proposeAskToolName:
-		plan.Kind = types.PlanAsk
-		var ask model.Ask
-		if err := remarshal(args, &ask); err != nil {
-			return nil, goerr.Wrap(err, "decode propose_ask args")
+		tc, err := c.GetTextContent()
+		if err != nil || tc == nil {
+			continue
 		}
-		plan.Ask = &ask
-	case proposeCompleteToolName:
-		plan.Kind = types.PlanComplete
-		var comp model.Complete
-		if err := remarshal(args, &comp); err != nil {
-			return nil, goerr.Wrap(err, "decode propose_complete args")
-		}
-		plan.Complete = &comp
-	default:
-		return nil, goerr.New("unknown propose tool", goerr.V("name", name))
+		b.WriteString(tc.Text)
 	}
-	if err := plan.Validate(); err != nil {
-		return nil, goerr.Wrap(err, "invalid plan from tool call")
-	}
-	return plan, nil
+	return b.String()
 }
 
 // remarshal copies fields between a free-form map and a typed struct using
-// JSON as the wire format. The propose_* tool argument names are chosen to
-// match the JSON-friendly form of the model structs (see field tags below
-// when introduced), so this round-trip yields a clean conversion.
+// JSON as the wire format.
 func remarshal(src map[string]any, dst any) error {
 	data, err := json.Marshal(src)
 	if err != nil {
@@ -271,3 +198,5 @@ func remarshal(src map[string]any, dst any) error {
 	dec := json.NewDecoder(strings.NewReader(string(data)))
 	return dec.Decode(dst)
 }
+
+var _ = remarshal // kept for prompt-side helpers that may format dynamic JSON.

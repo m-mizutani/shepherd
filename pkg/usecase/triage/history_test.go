@@ -36,9 +36,13 @@ func (r *fakeHistoryRepo) Save(ctx context.Context, sessionID string, h *gollem.
 	return nil
 }
 
-func mustToolCallMessage(t *testing.T, name string, args map[string]any) gollem.Message {
+// mustAssistantPlanMessage builds an assistant message carrying the given
+// raw JSON payload — exactly the shape agent.Execute persists when the
+// session runs under WithContentType(JSON) + WithResponseSchema. Used to
+// pre-seed the planner's history in tests.
+func mustAssistantPlanMessage(t *testing.T, planJSON string) gollem.Message {
 	t.Helper()
-	c := gt.R1(gollem.NewToolCallContent("call-id", name, args)).NoError(t)
+	c := gt.R1(gollem.NewTextContent(planJSON)).NoError(t)
 	return gollem.Message{
 		Role:     gollem.RoleAssistant,
 		Contents: []gollem.MessageContent{c},
@@ -54,48 +58,52 @@ func mustUserTextMessage(t *testing.T, text string) gollem.Message {
 	}
 }
 
-func investigateArgs() map[string]any {
-	return map[string]any{
-		"message": "調査します",
-		"subtasks": []any{
-			map[string]any{
-				"id":                  "st1",
-				"request":             "Collect related Slack posts",
-				"acceptance_criteria": []any{"return at least 3 messages or explicit none"},
-				"allowed_tools":       []any{"slack_search_messages"},
-			},
-		},
-	}
-}
+const investigatePlanJSON = `{
+  "kind": "investigate",
+  "message": "Investigating now",
+  "investigate": {
+    "subtasks": [
+      {
+        "id": "st1",
+        "request": "Collect related Slack posts",
+        "acceptance_criteria": ["return at least 3 messages or explicit none"],
+        "allowed_tools": ["slack_search_messages"]
+      }
+    ]
+  }
+}`
 
-func askArgs() map[string]any {
-	return map[string]any{
-		"message": "確認させてください",
-		"title":   "詳細",
-		"questions": []any{
-			map[string]any{
-				"id":    "q1",
-				"label": "影響範囲は？",
-				"choices": []any{
-					map[string]any{"id": "c1", "label": "本番"},
-					map[string]any{"id": "c2", "label": "ステージング"},
-				},
-			},
-		},
-	}
-}
+const askPlanJSON = `{
+  "kind": "ask",
+  "message": "Need clarification",
+  "ask": {
+    "title": "Details",
+    "questions": [
+      {
+        "id": "q1",
+        "label": "What is the scope of impact?",
+        "choices": [
+          {"id": "c1", "label": "Production"},
+          {"id": "c2", "label": "Staging"}
+        ]
+      }
+    ]
+  }
+}`
 
-func completeArgs() map[string]any {
-	return map[string]any{
-		"message": "完了しました",
-		"summary": "Investigation done",
-		"assignee": map[string]any{
-			"kind":      "assigned",
-			"user_id":   "U123",
-			"reasoning": "owner of the affected service",
-		},
-	}
-}
+const completePlanJSON = `{
+  "kind": "complete",
+  "message": "Done",
+  "summary": "Investigation done",
+  "complete": {
+    "summary": "Investigation done",
+    "assignee": {
+      "kind": "assigned",
+      "user_id": "U123",
+      "reasoning": "owner of the affected service"
+    }
+  }
+}`
 
 func TestPlanSessionID(t *testing.T) {
 	got := triage.PlanSessionIDForTest(types.WorkspaceID("ws1"), types.TicketID("t1"))
@@ -141,7 +149,7 @@ func TestLoadLatestTriagePlan_Investigate(t *testing.T) {
 	repo := newFakeHistory()
 	ctx := context.Background()
 	h := &gollem.History{Version: gollem.HistoryVersion}
-	h.Messages = append(h.Messages, mustToolCallMessage(t, triage.ProposeInvestigateToolNameForTest, investigateArgs()))
+	h.Messages = append(h.Messages, mustAssistantPlanMessage(t, investigatePlanJSON))
 	gt.NoError(t, repo.Save(ctx, "ws/tk/plan", h))
 
 	plan := gt.R1(triage.LoadLatestTriagePlanForTest(ctx, repo, "ws", "tk")).NoError(t)
@@ -150,14 +158,14 @@ func TestLoadLatestTriagePlan_Investigate(t *testing.T) {
 	gt.NotNil(t, plan.Investigate)
 	gt.N(t, len(plan.Investigate.Subtasks)).Equal(1)
 	gt.S(t, plan.Investigate.Subtasks[0].Request).Equal("Collect related Slack posts")
-	gt.S(t, plan.Message).Equal("調査します")
+	gt.S(t, plan.Message).Equal("Investigating now")
 }
 
 func TestLoadLatestTriagePlan_Ask(t *testing.T) {
 	repo := newFakeHistory()
 	ctx := context.Background()
 	h := &gollem.History{Version: gollem.HistoryVersion}
-	h.Messages = append(h.Messages, mustToolCallMessage(t, triage.ProposeAskToolNameForTest, askArgs()))
+	h.Messages = append(h.Messages, mustAssistantPlanMessage(t, askPlanJSON))
 	gt.NoError(t, repo.Save(ctx, "ws/tk/plan", h))
 
 	plan := gt.R1(triage.LoadLatestTriagePlanForTest(ctx, repo, "ws", "tk")).NoError(t)
@@ -172,9 +180,9 @@ func TestLoadLatestTriagePlan_PicksLatest(t *testing.T) {
 	ctx := context.Background()
 	h := &gollem.History{Version: gollem.HistoryVersion}
 	h.Messages = append(h.Messages,
-		mustToolCallMessage(t, triage.ProposeInvestigateToolNameForTest, investigateArgs()),
-		mustUserTextMessage(t, "Investigate結果: ..."),
-		mustToolCallMessage(t, triage.ProposeAskToolNameForTest, askArgs()),
+		mustAssistantPlanMessage(t, investigatePlanJSON),
+		mustUserTextMessage(t, "Investigate result: ..."),
+		mustAssistantPlanMessage(t, askPlanJSON),
 	)
 	gt.NoError(t, repo.Save(ctx, "ws/tk/plan", h))
 
@@ -193,7 +201,7 @@ func TestIsWaitingUserSubmit(t *testing.T) {
 
 	t.Run("ask without user response", func(t *testing.T) {
 		h := &gollem.History{Version: gollem.HistoryVersion}
-		h.Messages = append(h.Messages, mustToolCallMessage(t, triage.ProposeAskToolNameForTest, askArgs()))
+		h.Messages = append(h.Messages, mustAssistantPlanMessage(t, askPlanJSON))
 		gt.NoError(t, repo.Save(ctx, "ws/tk-ask/plan", h))
 		ok := gt.R1(triage.IsWaitingUserSubmitForTest(ctx, repo, "ws", "tk-ask")).NoError(t)
 		gt.True(t, ok)
@@ -202,7 +210,7 @@ func TestIsWaitingUserSubmit(t *testing.T) {
 	t.Run("ask followed by user response", func(t *testing.T) {
 		h := &gollem.History{Version: gollem.HistoryVersion}
 		h.Messages = append(h.Messages,
-			mustToolCallMessage(t, triage.ProposeAskToolNameForTest, askArgs()),
+			mustAssistantPlanMessage(t, askPlanJSON),
 			mustUserTextMessage(t, "Q1=A1"),
 		)
 		gt.NoError(t, repo.Save(ctx, "ws/tk-answered/plan", h))
@@ -212,41 +220,45 @@ func TestIsWaitingUserSubmit(t *testing.T) {
 
 	t.Run("investigate trailing", func(t *testing.T) {
 		h := &gollem.History{Version: gollem.HistoryVersion}
-		h.Messages = append(h.Messages, mustToolCallMessage(t, triage.ProposeInvestigateToolNameForTest, investigateArgs()))
+		h.Messages = append(h.Messages, mustAssistantPlanMessage(t, investigatePlanJSON))
 		gt.NoError(t, repo.Save(ctx, "ws/tk-inv/plan", h))
 		ok := gt.R1(triage.IsWaitingUserSubmitForTest(ctx, repo, "ws", "tk-inv")).NoError(t)
 		gt.False(t, ok)
 	})
 }
 
-func TestCountToolCalls(t *testing.T) {
+func TestCountPlannerTurns(t *testing.T) {
 	repo := newFakeHistory()
 	ctx := context.Background()
 
 	t.Run("empty", func(t *testing.T) {
-		n := gt.R1(triage.CountToolCallsForTest(ctx, repo, "ws", "tk-empty")).NoError(t)
+		n := gt.R1(triage.CountPlannerTurnsForTest(ctx, repo, "ws", "tk-empty")).NoError(t)
 		gt.N(t, n).Equal(0)
 	})
 
-	t.Run("multiple proposes", func(t *testing.T) {
+	t.Run("multiple plans", func(t *testing.T) {
 		h := &gollem.History{Version: gollem.HistoryVersion}
 		h.Messages = append(h.Messages,
-			mustToolCallMessage(t, triage.ProposeInvestigateToolNameForTest, investigateArgs()),
-			mustUserTextMessage(t, "Investigate結果"),
-			mustToolCallMessage(t, triage.ProposeAskToolNameForTest, askArgs()),
+			mustAssistantPlanMessage(t, investigatePlanJSON),
+			mustUserTextMessage(t, "Investigate result"),
+			mustAssistantPlanMessage(t, askPlanJSON),
 			mustUserTextMessage(t, "Q1=A1"),
-			mustToolCallMessage(t, triage.ProposeCompleteToolNameForTest, completeArgs()),
+			mustAssistantPlanMessage(t, completePlanJSON),
 		)
 		gt.NoError(t, repo.Save(ctx, "ws/tk-multi/plan", h))
-		n := gt.R1(triage.CountToolCallsForTest(ctx, repo, "ws", "tk-multi")).NoError(t)
+		n := gt.R1(triage.CountPlannerTurnsForTest(ctx, repo, "ws", "tk-multi")).NoError(t)
 		gt.N(t, n).Equal(3)
 	})
 
-	t.Run("ignores non-propose tools", func(t *testing.T) {
+	t.Run("ignores assistant text that is not a plan", func(t *testing.T) {
 		h := &gollem.History{Version: gollem.HistoryVersion}
-		h.Messages = append(h.Messages, mustToolCallMessage(t, "slack_search_messages", map[string]any{"query": "x"}))
+		c := gt.R1(gollem.NewTextContent("hello, just chatting")).NoError(t)
+		h.Messages = append(h.Messages, gollem.Message{
+			Role:     gollem.RoleAssistant,
+			Contents: []gollem.MessageContent{c},
+		})
 		gt.NoError(t, repo.Save(ctx, "ws/tk-other/plan", h))
-		n := gt.R1(triage.CountToolCallsForTest(ctx, repo, "ws", "tk-other")).NoError(t)
+		n := gt.R1(triage.CountPlannerTurnsForTest(ctx, repo, "ws", "tk-other")).NoError(t)
 		gt.N(t, n).Equal(0)
 	})
 }

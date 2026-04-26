@@ -22,6 +22,11 @@ paths:
 - Do NOT add capitalised names with comments like `// exported for testing` directly in production files. Move them into `export_test.go` instead — the compiler then enforces that the seam never reaches the production binary.
 - Helper / setup files that exist only to support tests must end in `_test.go` so they never compile into the production binary.
 
+## String literals
+
+- **Every string literal in Go source MUST be English.** Log messages, `goerr.New` / `goerr.Wrap` messages, prompt templates, system prompts, error messages — no Japanese or other non-English text. The single exception is the i18n layer (`pkg/utils/i18n/keys.go` + the per-language `en.go` / `ja.go` files); user-facing copy reaches Japanese only through `i18n.From(ctx).T(...)`. Test files are covered by the same rule with extra emphasis in `.claude/rules/testing.md`.
+- When you spot Japanese inside a Go literal while editing nearby code, convert it. If it is end-user copy, route it through the i18n layer; otherwise just rewrite the literal in English.
+
 ## Other Go house-keeping
 
 - Use `goerr/v2` (`github.com/m-mizutani/goerr/v2`) for wrapping errors with context: `goerr.Wrap(err, "load ticket", goerr.V("ticket_id", id))`. Do not use `fmt.Errorf("%w", ...)` for new error sites — the codebase has standardised on goerr.

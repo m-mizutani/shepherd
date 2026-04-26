@@ -18,6 +18,7 @@ var ja = map[MsgKey]string{
 	MsgTriageAskInvalidated:     "このフォームは無効になりました。",
 	MsgTriageAskValidationError: "選択肢を1つ以上選ぶか、自由入力欄に内容を記入してください。",
 	MsgTriageAskHistoryMissing:  "フォームの情報が見つからないため、この回答を受け付けられません。",
+	MsgTriageAskAnswerNone:      "（未回答）",
 
 	MsgTriageCompleteHeaderAssigned:   "triageが完了しました",
 	MsgTriageCompleteHeaderUnassigned: "triageが完了しました（担当者未定）",
@@ -30,4 +31,9 @@ var ja = map[MsgKey]string{
 	MsgTriageCompleteUnassignedReason: "理由: {reason}",
 	MsgTriageAbortedHeader:            "triageを完了できませんでした",
 	MsgTriageAbortedReason:            "理由: {reason}",
+
+	MsgTriageFailedHeader:      "triageが異常終了しました",
+	MsgTriageFailedError:       "エラー: `{error}`",
+	MsgTriageFailedRetryButton: "再実行",
+	MsgTriageRetryQueued:       "再実行を受け付けました…",
 }

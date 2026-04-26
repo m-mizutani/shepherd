@@ -23,6 +23,7 @@ const (
 	MsgTriageAskInvalidated     MsgKey = "triage_ask_invalidated"
 	MsgTriageAskValidationError MsgKey = "triage_ask_validation_error"
 	MsgTriageAskHistoryMissing  MsgKey = "triage_ask_history_missing"
+	MsgTriageAskAnswerNone      MsgKey = "triage_ask_answer_none"
 
 	// Triage completion / abort report.
 	MsgTriageCompleteHeaderAssigned     MsgKey = "triage_complete_header_assigned"
@@ -36,4 +37,12 @@ const (
 	MsgTriageCompleteUnassignedReason   MsgKey = "triage_complete_unassigned_reason"
 	MsgTriageAbortedHeader              MsgKey = "triage_aborted_header"
 	MsgTriageAbortedReason              MsgKey = "triage_aborted_reason"
+
+	// Triage failure (deferred recovery report) — posted to the ticket thread
+	// when run() returns an error or panics. Carries the error summary plus a
+	// retry button that re-dispatches the planner.
+	MsgTriageFailedHeader      MsgKey = "triage_failed_header"
+	MsgTriageFailedError       MsgKey = "triage_failed_error"
+	MsgTriageFailedRetryButton MsgKey = "triage_failed_retry_button"
+	MsgTriageRetryQueued       MsgKey = "triage_retry_queued"
 )

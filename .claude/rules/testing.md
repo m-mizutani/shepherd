@@ -13,6 +13,13 @@ paths:
   - `pkg/repository/*_test.go` — the `runTest` parity pattern tests an interface method against multiple backends from a single file; the file is named after the method/feature, not a single source file.
 - Why: keeping the 1:1 mapping makes it trivial to find the test for a given source file (and vice versa) and prevents "kitchen-sink" test files that quietly accumulate.
 
+## String literals in tests
+
+- **Every string literal in `_test.go` MUST be English.** Test fixtures (JSON payloads, struct field values, prompts), `t.Fatalf` / `t.Errorf` messages, expected values in `gt.S(...).Equal(...)`, table-test names — all of it. No Japanese or other non-English text in test code.
+- This applies even when the production code under test produces Japanese user-facing copy. The contract you assert against is the i18n key path or the structural shape, not the rendered Japanese sentence — the latter changes whenever a translator tweaks a word and silently breaks tests.
+- Why: tests are the executable spec. When fixtures mix languages, grep stops finding callers, diffs become unreadable for non-Japanese contributors, and "why does this test pass / fail" investigations get slowed down by unnecessary translation overhead. Also, fixture text bleeding into production is a recurring bug class.
+- If you genuinely need to verify Japanese output (e.g. an i18n smoke test that the `ja` translation file resolves), pull the expected string from the same translation source the production code reads, do not hardcode it inline.
+
 ## General
 
 - Repository tests use the `runTest` helper in `pkg/repository/repository_test.go` which runs each test against both Memory and Firestore backends.
@@ -48,4 +55,4 @@ Concretely, a lifecycle test should:
 
 A useful rule of thumb: if you can imagine a refactor that changes which internal helper does which step but preserves external behavior, the lifecycle test should still pass. If your tests would all break, they're locked too tightly to the current call shape.
 
-Place lifecycle tests next to the orchestrating usecase (e.g. `pkg/usecase/triage/lifecycle_test.go`) rather than in the per-method files, so they are easy to find and clearly distinct from unit tests.
+Place lifecycle tests in the test file paired with the orchestrating source file (e.g. tests for `pkg/usecase/triage/usecase.go`'s end-to-end flow live in `usecase_test.go`). The "Test file naming" rule above forbids carved-out files like `lifecycle_test.go` — keep the lifecycle test alongside the per-method tests of the same orchestrating type, prefixed with `TestLifecycle_...` so it is still trivially greppable.

@@ -12,7 +12,7 @@ The triage state is intentionally minimal: only `Ticket.Triaged` (`bool`) is add
 
 - Triggered automatically right after a ticket is created from a Slack parent thread message (`HandleNewMessage` in `pkg/usecase/slack.go`).
 - Skipped when `Ticket.Triaged == true` (already finished, including aborted runs).
-- Resumed when the reporter clicks Submit on a triage question form (`/hooks/slack/interactions`).
+- Resumed when the reporter clicks Submit on a triage question form (`/hooks/slack/interaction`).
 
 ## What triage produces in Slack
 
@@ -41,7 +41,7 @@ The planner picks per-subtask `allowed_tools` from the workspace's enabled tool 
 
 ## Slack configuration
 
-Triage requires the Interactivity endpoint at `{SHEPHERD_BASE_URL}/hooks/slack/interactions` to be configured in the Slack app. See `docs/slack.md` section 4a.
+Triage requires the Interactivity endpoint at `{SHEPHERD_BASE_URL}/hooks/slack/interaction` to be configured in the Slack app. See `docs/slack.md` section 4a.
 
 ## Out of scope (planned for follow-up issues)
 

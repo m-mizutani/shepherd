@@ -2,6 +2,7 @@ package triage
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 
 	"github.com/m-mizutani/goerr/v2"
@@ -9,6 +10,7 @@ import (
 	"github.com/m-mizutani/shepherd/pkg/domain/interfaces"
 	"github.com/m-mizutani/shepherd/pkg/domain/model"
 	"github.com/m-mizutani/shepherd/pkg/domain/types"
+	slackService "github.com/m-mizutani/shepherd/pkg/service/slack"
 	"github.com/m-mizutani/shepherd/pkg/tool"
 	"github.com/m-mizutani/shepherd/pkg/utils/logging"
 )
@@ -67,7 +69,7 @@ func NewPlanExecutor(repo interfaces.Repository, historyRepo gollem.HistoryRepos
 // async.Dispatch from both the new-ticket trigger (Entry-1) and the submit
 // resume (Entry-2). The function returns nil on natural pauses
 // (waiting_user_submit, done, aborted).
-func (e *PlanExecutor) run(ctx context.Context, workspaceID types.WorkspaceID, ticketID types.TicketID) error {
+func (e *PlanExecutor) run(ctx context.Context, workspaceID types.WorkspaceID, ticketID types.TicketID) (retErr error) {
 	logger := logging.From(ctx).With(
 		slog.String("workspace_id", string(workspaceID)),
 		slog.String("ticket_id", string(ticketID)),
@@ -83,6 +85,21 @@ func (e *PlanExecutor) run(ctx context.Context, workspaceID types.WorkspaceID, t
 		return nil
 	}
 
+	// Recovery: any abnormal exit (returned error or panic) posts a failure
+	// notice with a retry button to the ticket thread, so the reporter is not
+	// left waiting silently. The deferred handler runs *after* the planner
+	// loop has decided what to do, so legitimate completions (Complete /
+	// Ask-pause / Abort) are unaffected — they return nil and skip the body.
+	defer func() {
+		if r := recover(); r != nil {
+			retErr = goerr.New(fmt.Sprintf("panic in triage run: %v", r))
+		}
+		if retErr == nil {
+			return
+		}
+		e.reportFailure(ctx, ticket, retErr)
+	}()
+
 	// Waiting for user submit? The submit handler will resume the loop.
 	waiting, err := isWaitingUserSubmit(ctx, e.historyRepo, workspaceID, ticketID)
 	if err != nil {
@@ -94,7 +111,7 @@ func (e *PlanExecutor) run(ctx context.Context, workspaceID types.WorkspaceID, t
 	}
 
 	for {
-		count, err := countToolCalls(ctx, e.historyRepo, workspaceID, ticketID)
+		count, err := countPlannerTurns(ctx, e.historyRepo, workspaceID, ticketID)
 		if err != nil {
 			return goerr.Wrap(err, "count plan turns")
 		}
@@ -140,6 +157,23 @@ func (e *PlanExecutor) run(ctx context.Context, workspaceID types.WorkspaceID, t
 		default:
 			return goerr.New("unknown plan kind", goerr.V("kind", plan.Kind))
 		}
+	}
+}
+
+// reportFailure posts the failure-recovery message (error summary + retry
+// button) to the ticket thread. Invoked from run()'s deferred handler when
+// the planner exits abnormally; it must never propagate further errors —
+// they are logged so the deferred path stays robust.
+func (e *PlanExecutor) reportFailure(ctx context.Context, ticket *model.Ticket, runErr error) {
+	logger := logging.From(ctx)
+	logger.Error("triage run failed; posting recovery message",
+		slog.String("error", runErr.Error()),
+	)
+	blocks := slackService.BuildFailedBlocks(ctx, ticket.ID, runErr.Error())
+	if _, err := e.slack.PostThreadBlocks(ctx, string(ticket.SlackChannelID), string(ticket.SlackThreadTS), blocks); err != nil {
+		logger.Error("failed to post triage failure recovery message",
+			slog.String("error", err.Error()),
+		)
 	}
 }
 

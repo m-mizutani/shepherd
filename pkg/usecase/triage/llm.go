@@ -2,24 +2,24 @@ package triage
 
 import (
 	"context"
+	"encoding/json"
+	"log/slog"
+	"strings"
 
 	"github.com/m-mizutani/goerr/v2"
 	"github.com/m-mizutani/gollem"
 	"github.com/m-mizutani/shepherd/pkg/domain/model"
 	"github.com/m-mizutani/shepherd/pkg/usecase/prompt"
+	"github.com/m-mizutani/shepherd/pkg/utils/logging"
 )
 
 // llmPlan executes one planning turn against the LLM and returns the proposed
 // TriagePlan.
 //
-// The implementation is deliberately a single Session.Generate call rather
-// than a full agent.Execute loop: the planner needs exactly one propose_*
-// tool call from the model, and Session.Generate already returns the model's
-// FunctionCalls in its Response. Running an agent loop would (a) execute the
-// propose_* tools (we don't want that — they're spec-only), and (b) require
-// a sentinel error / side-channel state to short-circuit the loop. Decoding
-// the FunctionCall directly from the response is straightforward and
-// honest about what the planner is doing.
+// We let the agent shape its answer through WithResponseSchema (JSON output
+// constrained to triagePlanSchema) and read the rendered JSON straight off
+// agent.Execute's *ExecuteResponse. No tools, no agent-loop side-channels,
+// no sentinel errors — the planner's output IS the agent's return value.
 func (e *PlanExecutor) llmPlan(ctx context.Context, ticket *model.Ticket) (*model.TriagePlan, error) {
 	systemPrompt, err := prompt.RenderTriagePlan(prompt.TriagePlanInput{
 		Title:          ticket.Title,
@@ -31,56 +31,50 @@ func (e *PlanExecutor) llmPlan(ctx context.Context, ticket *model.Ticket) (*mode
 		return nil, goerr.Wrap(err, "render triage_plan prompt")
 	}
 
-	sid := planSessionID(ticket.WorkspaceID, ticket.ID)
-	history, err := e.historyRepo.Load(ctx, sid)
-	if err != nil {
-		return nil, goerr.Wrap(err, "load plan history",
-			goerr.V("session_id", sid))
-	}
-
-	opts := []gollem.SessionOption{
-		gollem.WithSessionSystemPrompt(systemPrompt),
-		gollem.WithSessionTools(proposeTools()...),
-	}
-	if history != nil {
-		opts = append(opts, gollem.WithSessionHistory(history))
-	}
-	session, err := e.llm.NewSession(ctx, opts...)
-	if err != nil {
-		return nil, goerr.Wrap(err, "new llm session")
-	}
+	agent := gollem.New(e.llm,
+		gollem.WithSystemPrompt(systemPrompt),
+		gollem.WithContentType(gollem.ContentTypeJSON),
+		gollem.WithResponseSchema(triagePlanSchema()),
+		gollem.WithHistoryRepository(e.historyRepo, planSessionID(ticket.WorkspaceID, ticket.ID)),
+	)
 
 	// Non-empty kickoff text: Gemini's GenerateContent rejects empty parts.
-	resp, err := session.Generate(ctx, []gollem.Input{
-		gollem.Text("Decide and call exactly one of propose_investigate, propose_ask, or propose_complete based on the ticket and any prior context above."),
-	})
+	resp, err := agent.Execute(ctx, gollem.Text("Decide and return a TriagePlan choosing exactly one of investigate / ask / complete based on the ticket and any prior context above."))
 	if err != nil {
-		return nil, goerr.Wrap(err, "generate triage plan",
+		return nil, goerr.Wrap(err, "agent execute",
 			goerr.V("ticket_id", ticket.ID))
 	}
-	if len(resp.FunctionCalls) == 0 {
-		return nil, goerr.New("LLM did not call a propose_* tool",
+	if resp == nil || len(resp.Texts) == 0 {
+		return nil, goerr.New("LLM returned no plan body",
+			goerr.V("ticket_id", ticket.ID))
+	}
+
+	raw := strings.Join(resp.Texts, "")
+	plan, err := decodePlanFromJSON(raw)
+	if err != nil {
+		return nil, goerr.Wrap(err, "decode triage plan from agent response",
 			goerr.V("ticket_id", ticket.ID),
-			goerr.V("texts", resp.Texts))
+			goerr.V("raw", resp.Texts))
 	}
+	logging.From(ctx).Debug("triage plan generated",
+		slog.String("ticket_id", string(ticket.ID)),
+		slog.String("kind", string(plan.Kind)),
+		slog.String("message", plan.Message),
+		slog.String("raw", raw),
+	)
+	return plan, nil
+}
 
-	plan, err := decodePlanFromFunctionCall(resp.FunctionCalls[0])
-	if err != nil {
-		return nil, goerr.Wrap(err, "decode plan",
-			goerr.V("ticket_id", ticket.ID))
+// decodePlanFromJSON parses the structured JSON the LLM produced under
+// triagePlanSchema. Validation rejects the half-populated unions the schema
+// alone cannot enforce (e.g. kind=ask without an ask payload).
+func decodePlanFromJSON(raw string) (*model.TriagePlan, error) {
+	plan := &model.TriagePlan{}
+	if err := json.NewDecoder(strings.NewReader(raw)).Decode(plan); err != nil {
+		return nil, goerr.Wrap(err, "json decode")
 	}
-
-	// Persist the session's updated history (now including the LLM's
-	// assistant tool-call message) so the next planning turn picks up
-	// where this one left off.
-	updated, err := session.History()
-	if err != nil {
-		return nil, goerr.Wrap(err, "read session history")
+	if err := plan.Validate(); err != nil {
+		return nil, goerr.Wrap(err, "invalid plan")
 	}
-	if err := e.historyRepo.Save(ctx, sid, updated); err != nil {
-		return nil, goerr.Wrap(err, "save plan history",
-			goerr.V("session_id", sid))
-	}
-
 	return plan, nil
 }

@@ -87,7 +87,7 @@ func New(registry *model.WorkspaceRegistry, repo interfaces.Repository, authUC u
 			r.Use(slackSignatureMiddleware(s.slackCfg.SigningSecret))
 			r.Post("/event", slackEventHandler(s.slackCfg.SlackUC))
 			if s.slackCfg.TriageUC != nil {
-				r.Post("/interactions", slackInteractionsHandler(s.slackCfg.TriageUC))
+				r.Post("/interaction", slackInteractionsHandler(s.slackCfg.TriageUC))
 			}
 		})
 	}

@@ -132,7 +132,7 @@ func mustCreateTicket(t *testing.T, repo *memory.Repository, triaged bool) *mode
 func seedAskHistory(t *testing.T, hist *fakeHistoryRepo, ticketID types.TicketID) {
 	t.Helper()
 	h := &gollem.History{Version: gollem.HistoryVersion}
-	h.Messages = append(h.Messages, mustToolCallMessage(t, triage.ProposeAskToolNameForTest, askArgs()))
+	h.Messages = append(h.Messages, mustAssistantPlanMessage(t, askPlanJSON))
 	gt.NoError(t, hist.Save(context.Background(), triage.PlanSessionIDForTest(tWS, ticketID), h))
 }
 
@@ -159,7 +159,7 @@ func TestHandleSubmit_TicketAlreadyTriaged_Invalidates(t *testing.T) {
 	ticket := mustCreateTicket(t, repo, true)
 
 	gt.NoError(t, uc.HandleSubmit(context.Background(), triage.Submission{
-		WorkspaceID: tWS, TicketID: ticket.ID,
+		TicketID:  ticket.ID,
 		ChannelID: tChannel, MessageTS: "msg-1",
 		State: stateFor("c1", ""),
 	}))
@@ -174,7 +174,7 @@ func TestHandleSubmit_NoPlanHistory_Invalidates(t *testing.T) {
 	ticket := mustCreateTicket(t, repo, false)
 
 	gt.NoError(t, uc.HandleSubmit(context.Background(), triage.Submission{
-		WorkspaceID: tWS, TicketID: ticket.ID,
+		TicketID:  ticket.ID,
 		ChannelID: tChannel, MessageTS: "msg-2",
 		State: stateFor("c1", ""),
 	}))
@@ -189,11 +189,11 @@ func TestHandleSubmit_LatestPlanNotAsk_Invalidates(t *testing.T) {
 
 	// Seed plan history with a propose_investigate (not an Ask).
 	h := &gollem.History{Version: gollem.HistoryVersion}
-	h.Messages = append(h.Messages, mustToolCallMessage(t, triage.ProposeInvestigateToolNameForTest, investigateArgs()))
+	h.Messages = append(h.Messages, mustAssistantPlanMessage(t, investigatePlanJSON))
 	gt.NoError(t, hist.Save(context.Background(), triage.PlanSessionIDForTest(tWS, ticket.ID), h))
 
 	gt.NoError(t, uc.HandleSubmit(context.Background(), triage.Submission{
-		WorkspaceID: tWS, TicketID: ticket.ID,
+		TicketID:  ticket.ID,
 		ChannelID: tChannel, MessageTS: "msg-3",
 		State: stateFor("c1", ""),
 	}))
@@ -209,13 +209,13 @@ func TestHandleSubmit_NotWaiting_Invalidates(t *testing.T) {
 	// is the "answers already submitted" condition — the form is stale.
 	h := &gollem.History{Version: gollem.HistoryVersion}
 	h.Messages = append(h.Messages,
-		mustToolCallMessage(t, triage.ProposeAskToolNameForTest, askArgs()),
+		mustAssistantPlanMessage(t, askPlanJSON),
 		mustUserTextMessage(t, "previous answer"),
 	)
 	gt.NoError(t, hist.Save(context.Background(), triage.PlanSessionIDForTest(tWS, ticket.ID), h))
 
 	gt.NoError(t, uc.HandleSubmit(context.Background(), triage.Submission{
-		WorkspaceID: tWS, TicketID: ticket.ID,
+		TicketID:  ticket.ID,
 		ChannelID: tChannel, MessageTS: "msg-4",
 		State: stateFor("c1", ""),
 	}))
@@ -230,7 +230,7 @@ func TestHandleSubmit_ValidationError_RerendersForm(t *testing.T) {
 
 	// Empty selection AND empty other text → invalid answer.
 	gt.NoError(t, uc.HandleSubmit(context.Background(), triage.Submission{
-		WorkspaceID: tWS, TicketID: ticket.ID,
+		TicketID:  ticket.ID,
 		ChannelID: tChannel, MessageTS: "msg-5",
 		State: stateFor("", ""),
 	}))
@@ -260,7 +260,7 @@ func TestHandleSubmit_HappyPath_AppendsAnswerAndAcksMessage(t *testing.T) {
 	seedAskHistory(t, hist, ticket.ID)
 
 	gt.NoError(t, uc.HandleSubmit(context.Background(), triage.Submission{
-		WorkspaceID: tWS, TicketID: ticket.ID,
+		TicketID:  ticket.ID,
 		ChannelID: tChannel, MessageTS: "msg-6",
 		State: stateFor("c1", ""),
 	}))
@@ -295,25 +295,38 @@ func TestHandleSubmit_HappyPath_AppendsAnswerAndAcksMessage(t *testing.T) {
 		}
 	}
 	gt.A(t, userMessages).Length(1)
-	gt.True(t, strings.Contains(userMessages[0], "影響範囲は？"))
-	gt.True(t, strings.Contains(userMessages[0], "本番"))
+	gt.True(t, strings.Contains(userMessages[0], "What is the scope of impact?"))
+	gt.True(t, strings.Contains(userMessages[0], "Production"))
 }
 
-func TestWorkspaceForChannel(t *testing.T) {
-	uc, _, _, _, _ := newRig(t, nil)
-	ws, ok := uc.WorkspaceForChannel(context.Background(), tChannel)
-	gt.True(t, ok)
-	gt.Equal(t, ws, tWS)
+func TestHandleSubmit_UnknownChannel_Invalidates(t *testing.T) {
+	uc, _, repo, _, slack := newRig(t, nil)
+	ticket := mustCreateTicket(t, repo, false)
 
-	_, ok = uc.WorkspaceForChannel(context.Background(), "C-unknown")
-	gt.False(t, ok)
+	// ChannelID does not match the resolver's mapping → workspace lookup
+	// fails → form invalidated, no DB or planner activity.
+	gt.NoError(t, uc.HandleSubmit(context.Background(), triage.Submission{
+		TicketID:  ticket.ID,
+		ChannelID: "C-unknown", MessageTS: "msg-x",
+		State: stateFor("c1", ""),
+	}))
+
+	gt.A(t, slack.updates).Length(1)
+	gt.S(t, slack.updates[0].messageTS).Equal("msg-x")
+	gt.A(t, slack.posts).Length(0)
 }
 
-func TestTicketByID_NotFound_ReturnsNil(t *testing.T) {
-	uc, _, _, _, _ := newRig(t, nil)
-	tk, err := uc.TicketByID(context.Background(), tWS, types.TicketID("missing"))
-	gt.NoError(t, err)
-	gt.Nil(t, tk)
+func TestHandleSubmit_UnknownTicket_Invalidates(t *testing.T) {
+	uc, _, _, _, slack := newRig(t, nil)
+
+	gt.NoError(t, uc.HandleSubmit(context.Background(), triage.Submission{
+		TicketID:  types.TicketID("missing"),
+		ChannelID: tChannel, MessageTS: "msg-y",
+		State: stateFor("c1", ""),
+	}))
+
+	gt.A(t, slack.updates).Length(1)
+	gt.A(t, slack.posts).Length(0)
 }
 // fakeUserSlack records the calls SlackUseCase makes through the SlackClient
 // surface. Distinct from fakeTriageSlack because the two interfaces share no
@@ -386,34 +399,25 @@ func TestLifecycle_TicketCreate_Ask_Submit_Complete(t *testing.T) {
 	// --- LLM mock sequenced by call count ---------------------------------
 	//
 	// The mock simulates a real LLM session by accumulating an internal
-	// *gollem.History per session: each Generate that returns FunctionCalls
-	// also appends a corresponding assistant ToolCall message, and each
-	// AppendHistory call merges the input message into internal. HistoryFunc
+	// *gollem.History per session. AppendHistory merges agent-driven writes
+	// (user inputs, assistant text responses) into internal, and HistoryFunc
 	// returns the running internal history so the agent's saveHistoryToRepo
-	// pass writes the propose_* tool call into the configured history repo.
-	// Without this, the second planner turn would not see the first turn's
-	// tool call and the executor's propose_ask state machine would break.
-	askPayload := askArgs()
-	completePayload := completeArgs()
+	// pass persists every turn's plan JSON into the configured repo. Without
+	// this, the second planner turn would not see the first turn's plan
+	// message and the executor's ask -> submit -> resume state machine would
+	// break.
 	var llmCalls int32
-	// llmPlan now calls Session.Generate exactly once per planner turn
-	// (no agent loop), so the lifecycle traverses two turns total: turn 1
-	// posts the ask, turn 2 (resumed by Submit) completes triage.
+	// llmPlan calls Session.Generate exactly once per planner turn (the
+	// schema-constrained JSON output is the entire response — no tool loop),
+	// so the lifecycle traverses two turns total: turn 1 posts the ask, turn
+	// 2 (resumed by Submit) completes triage.
 	makeResp := func(t *testing.T, n int32) *gollem.Response {
 		t.Helper()
 		switch n {
 		case 1:
-			return &gollem.Response{
-				FunctionCalls: []*gollem.FunctionCall{
-					{ID: "fc-ask", Name: triage.ProposeAskToolNameForTest, Arguments: askPayload},
-				},
-			}
+			return &gollem.Response{Texts: []string{askPlanJSON}}
 		case 2:
-			return &gollem.Response{
-				FunctionCalls: []*gollem.FunctionCall{
-					{ID: "fc-comp", Name: triage.ProposeCompleteToolNameForTest, Arguments: completePayload},
-				},
-			}
+			return &gollem.Response{Texts: []string{completePlanJSON}}
 		default:
 			t.Fatalf("LLM should not be called more than 2 times, got %d", n)
 			return nil
@@ -430,22 +434,7 @@ func TestLifecycle_TicketCreate_Ask_Submit_Complete(t *testing.T) {
 			return &mock.SessionMock{
 				GenerateFunc: func(_ context.Context, _ []gollem.Input, _ ...gollem.GenerateOption) (*gollem.Response, error) {
 					n := atomic.AddInt32(&llmCalls, 1)
-					resp := makeResp(t, n)
-					if resp != nil && len(resp.FunctionCalls) > 0 {
-						contents := make([]gollem.MessageContent, 0, len(resp.FunctionCalls))
-						for _, fc := range resp.FunctionCalls {
-							c, err := gollem.NewToolCallContent(fc.ID, fc.Name, fc.Arguments)
-							if err != nil {
-								return nil, err
-							}
-							contents = append(contents, c)
-						}
-						internal.Messages = append(internal.Messages, gollem.Message{
-							Role:     gollem.RoleAssistant,
-							Contents: contents,
-						})
-					}
-					return resp, nil
+					return makeResp(t, n), nil
 				},
 				HistoryFunc: func() (*gollem.History, error) {
 					return internal.Clone(), nil
@@ -504,7 +493,7 @@ func TestLifecycle_TicketCreate_Ask_Submit_Complete(t *testing.T) {
 
 	// === Step 2: reporter submits answers =================================
 	gt.NoError(t, triageUC.HandleSubmit(ctx, triage.Submission{
-		WorkspaceID: wsID, TicketID: ticket.ID,
+		TicketID:  ticket.ID,
 		ChannelID: channel, MessageTS: askMessageTS,
 		State: stateFor("c1", ""),
 	}))
@@ -537,8 +526,8 @@ func TestLifecycle_TicketCreate_Ask_Submit_Complete(t *testing.T) {
 	}
 	gt.True(t, len(userTexts) >= 1)
 	joined := strings.Join(userTexts, "\n")
-	gt.True(t, strings.Contains(joined, "影響範囲は？"))
-	gt.True(t, strings.Contains(joined, "本番"))
+	gt.True(t, strings.Contains(joined, "What is the scope of impact?"))
+	gt.True(t, strings.Contains(joined, "Production"))
 
 	// === Step 3: planner resumed and completed triage =====================
 	got := gt.R1(repo.Ticket().Get(ctx, wsID, ticket.ID)).NoError(t)
@@ -565,7 +554,7 @@ func TestLifecycle_TicketCreate_Ask_Submit_Complete(t *testing.T) {
 	// invalidated), proving the Triaged guard holds across re-deliveries.
 	prevUpdates := len(triageSlack.updates)
 	gt.NoError(t, triageUC.HandleSubmit(ctx, triage.Submission{
-		WorkspaceID: wsID, TicketID: ticket.ID,
+		TicketID:  ticket.ID,
 		ChannelID: channel, MessageTS: askMessageTS,
 		State: stateFor("c1", ""),
 	}))

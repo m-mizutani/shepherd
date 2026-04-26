@@ -29,6 +29,11 @@ const TriageOtherTextActionID = "triage_other_text"
 // free-text response with its parent question.
 const TriageOtherSuffix = ":other"
 
+// TriageRetryActionID is the action_id of the retry button posted by the
+// failure-recovery message when triage exits abnormally. The button's value
+// carries the ticket id.
+const TriageRetryActionID = "triage_retry"
+
 // SubtaskState is the lifecycle phase of a single subtask in the progress
 // message. The triage usecase mutates these states via UpdateBlocks.
 type SubtaskState int
@@ -147,9 +152,11 @@ func BuildAskBlocks(ctx context.Context, ticketID types.TicketID, ask *model.Ask
 		choiceInput.Optional = true // required-vs-optional is enforced server-side per Answer.IsValid.
 		blocks = append(blocks, choiceInput)
 
-		// Free-text fallback ("other") input
+		// Free-text fallback ("other") input. Placeholder is intentionally
+		// nil — Slack rejects plain_text objects with empty `text` (and an
+		// empty placeholder is the canonical "invalid_blocks" trigger here).
 		other := slackgo.NewPlainTextInputBlockElement(
-			slackgo.NewTextBlockObject(slackgo.PlainTextType, "", false, false),
+			nil,
 			TriageOtherTextActionID,
 		)
 		other.Multiline = true
@@ -180,18 +187,84 @@ func BuildAskBlocks(ctx context.Context, ticketID types.TicketID, ask *model.Ask
 	return blocks
 }
 
-// BuildAskReceivedBlocks replaces the question form with a single section
-// announcing that the answers were accepted. Used after a successful submit
-// CAS to remove the input fields and prevent re-submission.
-func BuildAskReceivedBlocks(ctx context.Context) []slackgo.Block {
-	return []slackgo.Block{
+// BuildAskAnsweredBlocks rebuilds the form-equivalent message after a
+// successful submit: the header, each question label paired with the
+// reporter's answer, and a "received" footer. The interactive controls
+// (radios / checkboxes / free-text input / submit button) are intentionally
+// omitted — once answered, the form is read-only — but the questions and
+// answers stay visible so the thread retains the full Q&A trail rather than
+// collapsing to a single "thanks" line.
+func BuildAskAnsweredBlocks(ctx context.Context, ask *model.Ask, answers []model.Answer, headerMessage string) []slackgo.Block {
+	loc := i18n.From(ctx)
+	blocks := []slackgo.Block{
 		slackgo.NewSectionBlock(
 			slackgo.NewTextBlockObject(slackgo.MarkdownType,
-				i18n.From(ctx).T(i18n.MsgTriageAskReceived),
-				false, false),
+				loc.T(i18n.MsgTriageAskHeader, "message", headerMessage),
+				false, false,
+			),
 			nil, nil,
 		),
+		slackgo.NewDividerBlock(),
 	}
+
+	choiceLabels := make(map[types.QuestionID]map[types.ChoiceID]string, len(ask.Questions))
+	for _, q := range ask.Questions {
+		m := make(map[types.ChoiceID]string, len(q.Choices))
+		for _, c := range q.Choices {
+			m[c.ID] = c.Label
+		}
+		choiceLabels[q.ID] = m
+	}
+	answerByQ := make(map[types.QuestionID]model.Answer, len(answers))
+	for _, a := range answers {
+		answerByQ[a.QuestionID] = a
+	}
+
+	for _, q := range ask.Questions {
+		labelText := "*" + escapeMrkdwn(q.Label) + "*"
+		if q.Help != "" {
+			labelText += "\n" + escapeMrkdwn(q.Help)
+		}
+		blocks = append(blocks, slackgo.NewSectionBlock(
+			slackgo.NewTextBlockObject(slackgo.MarkdownType, labelText, false, false),
+			nil, nil,
+		))
+
+		ans := answerByQ[q.ID]
+		body := renderAnswerBody(loc, ans, choiceLabels[q.ID])
+		blocks = append(blocks, slackgo.NewSectionBlock(
+			slackgo.NewTextBlockObject(slackgo.MarkdownType, body, false, false),
+			nil, nil,
+		))
+		blocks = append(blocks, slackgo.NewDividerBlock())
+	}
+
+	blocks = append(blocks,
+		slackgo.NewContextBlock("triage_received",
+			slackgo.NewTextBlockObject(slackgo.MarkdownType,
+				"✅ "+loc.T(i18n.MsgTriageAskReceived),
+				false, false),
+		),
+	)
+	return blocks
+}
+
+func renderAnswerBody(loc i18n.Translator, ans model.Answer, choiceLabels map[types.ChoiceID]string) string {
+	var parts []string
+	for _, sid := range ans.SelectedIDs {
+		if lbl, ok := choiceLabels[sid]; ok {
+			parts = append(parts, "• "+escapeMrkdwn(lbl))
+		} else {
+			parts = append(parts, "• "+escapeMrkdwn(string(sid)))
+		}
+	}
+	if other := strings.TrimSpace(ans.OtherText); other != "" {
+		parts = append(parts, "• _"+escapeMrkdwn(other)+"_")
+	}
+	if len(parts) == 0 {
+		return "_" + loc.T(i18n.MsgTriageAskAnswerNone) + "_"
+	}
+	return strings.Join(parts, "\n")
 }
 
 // BuildAskInvalidatedBlocks replaces the question form when the submission
@@ -297,6 +370,48 @@ func BuildCompleteBlocks(ctx context.Context, comp *model.Complete) []slackgo.Bl
 		)
 	}
 	return blocks
+}
+
+// BuildFailedBlocks renders the recovery message posted when the triage
+// planner exits abnormally (run() returned an error or panicked). The
+// message includes the error summary and a retry button keyed to the ticket
+// id; the HTTP interactions handler dispatches that button to
+// UseCase.HandleRetry.
+func BuildFailedBlocks(ctx context.Context, ticketID types.TicketID, errMessage string) []slackgo.Block {
+	loc := i18n.From(ctx)
+	blocks := []slackgo.Block{
+		slackgo.NewHeaderBlock(slackgo.NewTextBlockObject(
+			slackgo.PlainTextType, loc.T(i18n.MsgTriageFailedHeader), false, false,
+		)),
+		slackgo.NewSectionBlock(
+			slackgo.NewTextBlockObject(slackgo.MarkdownType,
+				loc.T(i18n.MsgTriageFailedError, "error", escapeMrkdwn(errMessage)),
+				false, false),
+			nil, nil,
+		),
+	}
+	btn := slackgo.NewButtonBlockElement(
+		TriageRetryActionID,
+		string(ticketID),
+		slackgo.NewTextBlockObject(slackgo.PlainTextType,
+			loc.T(i18n.MsgTriageFailedRetryButton),
+			false, false),
+	).WithStyle(slackgo.StylePrimary)
+	blocks = append(blocks, slackgo.NewActionBlock("triage_retry_actions", btn))
+	return blocks
+}
+
+// BuildRetryQueuedBlocks replaces the failure message after the retry button
+// is clicked, so subsequent clicks do not re-queue the planner.
+func BuildRetryQueuedBlocks(ctx context.Context) []slackgo.Block {
+	return []slackgo.Block{
+		slackgo.NewSectionBlock(
+			slackgo.NewTextBlockObject(slackgo.MarkdownType,
+				i18n.From(ctx).T(i18n.MsgTriageRetryQueued),
+				false, false),
+			nil, nil,
+		),
+	}
 }
 
 // BuildAbortedBlocks renders the message posted when triage is aborted

@@ -56,25 +56,37 @@ func NewUseCase(executor *PlanExecutor, registry ChannelResolver) *UseCase {
 	return &UseCase{executor: executor, registry: registry}
 }
 
-// WorkspaceForChannel implements TriageInteractionsUC.
-func (u *UseCase) WorkspaceForChannel(ctx context.Context, channelID string) (types.WorkspaceID, bool) {
+// resolveTicket maps a Slack channel id + ticket id to a loaded ticket. It
+// returns (nil, nil) when the channel is not mapped to a workspace or the
+// ticket is missing — both are "form invalidated" conditions, not server
+// errors. Real failures (DB outage etc.) propagate as errors.
+func (u *UseCase) resolveTicket(ctx context.Context, channelID string, ticketID types.TicketID) (types.WorkspaceID, *model.Ticket, error) {
 	if u.registry == nil {
-		return "", false
+		return "", nil, nil
 	}
-	return u.registry.ResolveWorkspace(channelID)
-}
-
-// TicketByID implements TriageInteractionsUC. Returns (nil, nil) when the
-// ticket does not exist; the caller treats nil as "form invalidated".
-func (u *UseCase) TicketByID(ctx context.Context, workspaceID types.WorkspaceID, ticketID types.TicketID) (*model.Ticket, error) {
-	t, err := u.executor.repo.Ticket().Get(ctx, workspaceID, ticketID)
+	wsID, ok := u.registry.ResolveWorkspace(channelID)
+	if !ok {
+		return "", nil, nil
+	}
+	t, err := u.executor.repo.Ticket().Get(ctx, wsID, ticketID)
 	if err != nil {
 		// memory and firestore both return error for "not found"; treat
 		// any error here as missing ticket so the form is gracefully
 		// invalidated rather than 500'ing.
-		return nil, nil
+		return wsID, nil, nil
 	}
-	return t, nil
+	return wsID, t, nil
+}
+
+// invalidateForm replaces the question/recovery message with the
+// "no longer valid" notice. Used when the interaction targets a ticket that
+// has gone away or whose channel mapping was removed.
+func (u *UseCase) invalidateForm(ctx context.Context, channelID, messageTS string) {
+	if err := u.executor.slack.UpdateMessage(ctx, channelID, messageTS,
+		slackService.BuildAskInvalidatedBlocks(ctx)); err != nil {
+		logging.From(ctx).Warn("failed to invalidate form message",
+			slog.String("error", err.Error()))
+	}
 }
 
 // OnTicketCreated is Entry-1: invoked by SlackUseCase.HandleNewMessage right
@@ -104,33 +116,30 @@ func (u *UseCase) HandleSubmit(ctx context.Context, sub Submission) error {
 	)
 	ctx = logging.With(ctx, logger)
 
-	ticket, err := u.executor.repo.Ticket().Get(ctx, sub.WorkspaceID, sub.TicketID)
+	wsID, ticket, err := u.resolveTicket(ctx, sub.ChannelID, sub.TicketID)
 	if err != nil {
-		return goerr.Wrap(err, "load ticket")
+		return goerr.Wrap(err, "resolve ticket")
 	}
-	if ticket.Triaged {
-		_ = u.executor.slack.UpdateMessage(ctx, sub.ChannelID, sub.MessageTS,
-			slackService.BuildAskInvalidatedBlocks(ctx))
+	if ticket == nil || ticket.Triaged {
+		u.invalidateForm(ctx, sub.ChannelID, sub.MessageTS)
 		return nil
 	}
 
-	plan, err := loadLatestTriagePlan(ctx, u.executor.historyRepo, sub.WorkspaceID, sub.TicketID)
+	plan, err := loadLatestTriagePlan(ctx, u.executor.historyRepo, wsID, sub.TicketID)
 	if err != nil {
 		return goerr.Wrap(err, "load latest plan")
 	}
 	if plan == nil || plan.Kind != types.PlanAsk || plan.Ask == nil {
-		_ = u.executor.slack.UpdateMessage(ctx, sub.ChannelID, sub.MessageTS,
-			slackService.BuildAskInvalidatedBlocks(ctx))
+		u.invalidateForm(ctx, sub.ChannelID, sub.MessageTS)
 		return nil
 	}
 
-	waiting, err := isWaitingUserSubmit(ctx, u.executor.historyRepo, sub.WorkspaceID, sub.TicketID)
+	waiting, err := isWaitingUserSubmit(ctx, u.executor.historyRepo, wsID, sub.TicketID)
 	if err != nil {
 		return goerr.Wrap(err, "check waiting state")
 	}
 	if !waiting {
-		_ = u.executor.slack.UpdateMessage(ctx, sub.ChannelID, sub.MessageTS,
-			slackService.BuildAskInvalidatedBlocks(ctx))
+		u.invalidateForm(ctx, sub.ChannelID, sub.MessageTS)
 		return nil
 	}
 
@@ -150,17 +159,16 @@ func (u *UseCase) HandleSubmit(ctx context.Context, sub Submission) error {
 	}
 
 	answerSummary := formatAnswers(plan.Ask, answers)
-	if err := appendUserMessage(ctx, u.executor.historyRepo, sub.WorkspaceID, sub.TicketID, answerSummary); err != nil {
+	if err := appendUserMessage(ctx, u.executor.historyRepo, wsID, sub.TicketID, answerSummary); err != nil {
 		return goerr.Wrap(err, "append answers to plan history")
 	}
 
 	if err := u.executor.slack.UpdateMessage(ctx, sub.ChannelID, sub.MessageTS,
-		slackService.BuildAskReceivedBlocks(ctx)); err != nil {
+		slackService.BuildAskAnsweredBlocks(ctx, plan.Ask, answers, plan.Message)); err != nil {
 		// non-fatal; continue to resume the loop
 		logger.Warn("failed to update ask message", slog.String("error", err.Error()))
 	}
 
-	wsID := sub.WorkspaceID
 	tkID := sub.TicketID
 	async.Dispatch(ctx, func(ctx context.Context) error {
 		return u.executor.run(ctx, wsID, tkID)
@@ -169,13 +177,14 @@ func (u *UseCase) HandleSubmit(ctx context.Context, sub Submission) error {
 }
 
 // Submission is the decoded payload that the HTTP interactions handler
-// passes to HandleSubmit.
+// passes to HandleSubmit. The handler does not pre-resolve the workspace —
+// HandleSubmit looks it up internally from ChannelID via the registry, so
+// the controller stays free of usecase-layer concerns.
 type Submission struct {
-	WorkspaceID types.WorkspaceID
-	TicketID    types.TicketID
-	ChannelID   string // raw Slack channel id from the interaction payload
-	MessageTS   string // ts of the question message to update
-	State       *slackgo.BlockActionStates
+	TicketID  types.TicketID
+	ChannelID string // raw Slack channel id from the interaction payload
+	MessageTS string // ts of the question message to update
+	State     *slackgo.BlockActionStates
 }
 
 // matchAnswers walks the submission state and pairs each input value with
@@ -267,13 +276,35 @@ func formatAnswers(ask *model.Ask, answers []model.Answer) string {
 	return b.String()
 }
 
-// SubmitInvalid replaces the question message with the invalidated notice
-// without touching the plan history. Used by the HTTP handler when the
-// payload references an unknown ticket / workspace and the regular flow
-// cannot run.
-func (u *UseCase) SubmitInvalid(ctx context.Context, channelID, messageTS string) {
-	if err := u.executor.slack.UpdateMessage(ctx, channelID, messageTS,
-		slackService.BuildAskInvalidatedBlocks(ctx)); err != nil {
-		logging.From(ctx).Warn("failed to invalidate ask message", slog.String("error", err.Error()))
+// HandleRetry is invoked by the HTTP interactions handler when the reporter
+// clicks the retry button on a failure-recovery message. It swaps the
+// recovery message for a "queued" notice and re-dispatches the planner loop.
+// Idempotency is preserved by ticket.Triaged + isWaitingUserSubmit checks
+// inside run(), so repeated clicks at worst start one extra short-circuited
+// run.
+func (u *UseCase) HandleRetry(ctx context.Context, ticketID types.TicketID, channelID, messageTS string) error {
+	logger := logging.From(ctx).With(slog.String("ticket_id", string(ticketID)))
+	ctx = logging.With(ctx, logger)
+
+	wsID, ticket, err := u.resolveTicket(ctx, channelID, ticketID)
+	if err != nil {
+		return goerr.Wrap(err, "resolve ticket for retry")
 	}
+	if ticket == nil || ticket.Triaged {
+		// Already-finished or unknown tickets just have the button cleared.
+		u.invalidateForm(ctx, channelID, messageTS)
+		return nil
+	}
+
+	if err := u.executor.slack.UpdateMessage(ctx, channelID, messageTS,
+		slackService.BuildRetryQueuedBlocks(ctx)); err != nil {
+		logger.Warn("failed to update retry message", slog.String("error", err.Error()))
+	}
+
+	tkID := ticketID
+	async.Dispatch(ctx, func(ctx context.Context) error {
+		return u.executor.run(ctx, wsID, tkID)
+	})
+	return nil
 }
+

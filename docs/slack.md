@@ -82,14 +82,15 @@ The triage agent uses Slack Block Kit input blocks plus a Submit button to ask t
 
 1. Navigate to **Interactivity & Shortcuts** in the sidebar
 2. Toggle **Interactivity** to On
-3. Set **Request URL** to: `{SHEPHERD_BASE_URL}/hooks/slack/interactions`
-   - Example: `https://shepherd.example.com/hooks/slack/interactions`
+3. Set **Request URL** to: `{SHEPHERD_BASE_URL}/hooks/slack/interaction`
+   - Example: `https://shepherd.example.com/hooks/slack/interaction`
 
 This endpoint is signed with the same signing secret as `/hooks/slack/event` and only handles `block_actions` payloads with the following `action_id`s:
 
 | action_id | Purpose |
 |-----------|---------|
 | `triage_submit_answers` | Reporter clicked Submit on the triage question form. Bot reads `state.values` (keyed by `block_id == question.id`), records the answers in agent history, and resumes the planner loop. |
+| `triage_retry` | Reporter clicked the retry button on a failure-recovery message. Bot re-dispatches the planner loop for the ticket. |
 
 `view_submission` callbacks are not handled — triage uses inline message inputs rather than modals, so no Slack View configuration is required.
 

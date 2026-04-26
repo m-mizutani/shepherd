@@ -12,16 +12,15 @@ import (
 	"github.com/m-mizutani/shepherd/pkg/domain/types"
 )
 
-const (
-	ProposeInvestigateToolNameForTest = proposeInvestigateToolName
-	ProposeAskToolNameForTest         = proposeAskToolName
-	ProposeCompleteToolNameForTest    = proposeCompleteToolName
-)
+// TriagePlanSchemaForTest exposes the structured-output schema fed to the
+// LLM via WithResponseSchema, so tests can assert it is valid.
+func TriagePlanSchemaForTest() *gollem.Parameter { return triagePlanSchema() }
 
-var ProposeToolsForTest = proposeTools
-
-func DecodePlanFromFunctionCallForTest(fc *gollem.FunctionCall) (*model.TriagePlan, error) {
-	return decodePlanFromFunctionCall(fc)
+// DecodePlanFromJSONForTest exposes the JSON-to-TriagePlan decoder used on
+// agent responses; tests use it to verify the round-trip from raw model
+// output to a validated TriagePlan.
+func DecodePlanFromJSONForTest(raw string) (*model.TriagePlan, error) {
+	return decodePlanFromJSON(raw)
 }
 
 func PlanSessionIDForTest(ws types.WorkspaceID, id types.TicketID) string {
@@ -44,8 +43,8 @@ func IsWaitingUserSubmitForTest(ctx context.Context, repo gollem.HistoryReposito
 	return isWaitingUserSubmit(ctx, repo, ws, id)
 }
 
-func CountToolCallsForTest(ctx context.Context, repo gollem.HistoryRepository, ws types.WorkspaceID, id types.TicketID) (int, error) {
-	return countToolCalls(ctx, repo, ws, id)
+func CountPlannerTurnsForTest(ctx context.Context, repo gollem.HistoryRepository, ws types.WorkspaceID, id types.TicketID) (int, error) {
+	return countPlannerTurns(ctx, repo, ws, id)
 }
 
 func HasPlanHistoryForTest(ctx context.Context, repo gollem.HistoryRepository, ws types.WorkspaceID, id types.TicketID) (bool, error) {
