@@ -16,7 +16,6 @@ package triage
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -188,15 +187,3 @@ func joinAssistantText(msg gollem.Message) string {
 	return b.String()
 }
 
-// remarshal copies fields between a free-form map and a typed struct using
-// JSON as the wire format.
-func remarshal(src map[string]any, dst any) error {
-	data, err := json.Marshal(src)
-	if err != nil {
-		return err
-	}
-	dec := json.NewDecoder(strings.NewReader(string(data)))
-	return dec.Decode(dst)
-}
-
-var _ = remarshal // kept for prompt-side helpers that may format dynamic JSON.

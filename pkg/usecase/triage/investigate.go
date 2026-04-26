@@ -12,6 +12,7 @@ import (
 	"github.com/m-mizutani/shepherd/pkg/tool"
 	"github.com/m-mizutani/shepherd/pkg/usecase/prompt"
 	"github.com/m-mizutani/shepherd/pkg/utils/async"
+	"github.com/m-mizutani/shepherd/pkg/utils/errutil"
 	"github.com/m-mizutani/shepherd/pkg/utils/msg"
 )
 
@@ -49,10 +50,12 @@ func (e *PlanExecutor) runInvestigate(ctx context.Context, ticket *model.Ticket,
 	}
 
 	if err := async.RunParallel(ctx, fns...); err != nil {
-		// async.RunParallel surfaces panics & per-subtask errors; we still
-		// want to push whatever results we have to the planner. So log via
-		// the returned error chain but continue.
-		_ = err
+		// async.RunParallel returns a joined error covering panics and any
+		// per-subtask errors not swallowed by runSubtask. We still push the
+		// partial results to the planner — losing one subtask should not
+		// kill the iteration — but the error is surfaced via errutil so it
+		// reaches logs and Sentry.
+		errutil.Handle(ctx, goerr.Wrap(err, "investigate subtasks"))
 	}
 
 	// Feed aggregated results back as a user message so the planner sees them.

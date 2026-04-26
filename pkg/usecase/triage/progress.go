@@ -8,6 +8,7 @@ import (
 	"github.com/m-mizutani/shepherd/pkg/domain/model"
 	"github.com/m-mizutani/shepherd/pkg/domain/types"
 	slackService "github.com/m-mizutani/shepherd/pkg/service/slack"
+	"github.com/m-mizutani/shepherd/pkg/utils/errutil"
 	slackgo "github.com/slack-go/slack"
 )
 
@@ -103,9 +104,11 @@ func (p *progressMessage) MarkFailed(ctx context.Context, subtaskID types.Subtas
 }
 
 func (p *progressMessage) mutate(ctx context.Context, fn func(*slackService.SubtaskProgress), subtaskID types.SubtaskID) {
+	// Snapshot the rendered blocks under lock, then release before the
+	// network call. Holding the mutex across UpdateMessage would serialise
+	// every parallel subtask's progress update on Slack's API latency,
+	// negating the whole point of running them in parallel.
 	p.mu.Lock()
-	defer p.mu.Unlock()
-
 	for i := range p.rows {
 		if p.rows[i].ID == subtaskID {
 			fn(&p.rows[i])
@@ -113,15 +116,18 @@ func (p *progressMessage) mutate(ctx context.Context, fn func(*slackService.Subt
 		}
 	}
 	if !p.tsKnown {
+		p.mu.Unlock()
 		return
 	}
-
 	blocks := slackService.BuildProgressBlocks(ctx, p.headerMessage, p.rows)
-	if err := p.slack.UpdateMessage(ctx, string(p.channel), p.ts, blocks); err != nil {
-		// Slack update failures are non-fatal: the subtask still ran. We
-		// surface the error via the standard error pipeline so it shows up
-		// in Sentry without breaking the caller.
-		_ = err // intentionally swallowed — investigate-level error is the
-		// authoritative signal for the agent. See errutil.Handle in caller.
+	channel := string(p.channel)
+	ts := p.ts
+	p.mu.Unlock()
+
+	if err := p.slack.UpdateMessage(ctx, channel, ts, blocks); err != nil {
+		// Slack update failures are non-fatal: the subtask still ran, and
+		// the next mutate() call will repaint with the latest state. Route
+		// the error through errutil so it surfaces in logs / Sentry.
+		errutil.Handle(ctx, goerr.Wrap(err, "update progress message"))
 	}
 }
