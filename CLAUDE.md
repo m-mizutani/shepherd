@@ -59,6 +59,8 @@ Never call `slog.Info()`, `slog.Error()`, `slog.Debug()`, `slog.Warn()` or other
 - Never use `firestore` struct tags — they are a bug magnet. Use Go's default field names (PascalCase) as Firestore keys.
 - Never create wrapper types or conversion functions (e.g., `ticketToMap` / `mapToTicket`) for Firestore serialization. Store domain models directly via `ref.Set(ctx, model)` and retrieve via `doc.DataTo(&model)`.
 - Domain model structs in `pkg/domain/model/` are the single source of truth for both application logic and persistence schema.
+- **Do not design schemas or queries that require composite indexes.** Composite indexes have to be provisioned out-of-band (Firebase console / Terraform), break dev-mode bring-up, and are easy to forget when the schema evolves. Prefer queries that work against Firestore's automatic single-field indexes — typically a single `Where` *or* a single `OrderBy`, not both on different fields. When you need a filter + ordering combination, fetch the parent collection (which is already workspace-scoped and bounded), then filter and sort in Go. If a workload ever genuinely outgrows this, surface it explicitly rather than silently adding a composite-index requirement.
+- Multi-writer paths must be atomic. Avoid read-modify-write on a Firestore document; use `ref.Set` with `firestore.Merge([]string{"Field", "subkey"}, ...)` for per-field updates, or `RunTransaction` when multiple documents are involved.
 
 ## Tech Stack
 

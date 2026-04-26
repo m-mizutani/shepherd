@@ -2,6 +2,7 @@ package firestore
 
 import (
 	"context"
+	"sort"
 
 	"cloud.google.com/go/firestore"
 	"github.com/google/uuid"
@@ -56,12 +57,36 @@ func (r *sourceRepository) Get(ctx context.Context, ws types.WorkspaceID, id typ
 }
 
 func (r *sourceRepository) List(ctx context.Context, ws types.WorkspaceID) ([]*model.Source, error) {
-	return r.iterate(ctx, ws, r.collection(ws).OrderBy("CreatedAt", firestore.Asc).Documents(ctx))
+	// Per the project rule (CLAUDE.md "Firestore Storage"): no server-side
+	// filter+order combinations that require composite indexes. Fetch the
+	// per-workspace collection unsorted, then sort in Go. Source counts per
+	// workspace are bounded (handful of pages/databases), so this is cheap.
+	out, err := r.iterate(ctx, ws, r.collection(ws).Documents(ctx))
+	if err != nil {
+		return nil, err
+	}
+	sortByCreatedAtAsc(out)
+	return out, nil
 }
 
 func (r *sourceRepository) ListByProvider(ctx context.Context, ws types.WorkspaceID, p types.SourceProvider) ([]*model.Source, error) {
-	q := r.collection(ws).Where("Provider", "==", string(p)).OrderBy("CreatedAt", firestore.Asc).Documents(ctx)
-	return r.iterate(ctx, ws, q)
+	all, err := r.List(ctx, ws)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*model.Source, 0, len(all))
+	for _, s := range all {
+		if s.Provider == p {
+			out = append(out, s)
+		}
+	}
+	return out, nil
+}
+
+func sortByCreatedAtAsc(srcs []*model.Source) {
+	sort.SliceStable(srcs, func(i, j int) bool {
+		return srcs[i].CreatedAt.Before(srcs[j].CreatedAt)
+	})
 }
 
 func (r *sourceRepository) Delete(ctx context.Context, ws types.WorkspaceID, id types.SourceID) error {
