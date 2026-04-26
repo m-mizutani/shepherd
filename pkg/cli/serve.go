@@ -184,6 +184,8 @@ func cmdServe() *cli.Command {
 			}
 			if notionFactory.Available() {
 				logger.Info("Notion integration enabled")
+			} else {
+				logger.Info("Notion integration disabled (set --notion-token to enable)")
 			}
 
 			catalog := tool.NewCatalog(factories, repo.ToolSettings()).
