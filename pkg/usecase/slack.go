@@ -31,15 +31,24 @@ type SlackClient interface {
 	ListUsers(ctx context.Context) ([]*slackService.UserInfo, error)
 }
 
+// TriageTrigger fires when a ticket is freshly created from Slack so that
+// the triage usecase can begin its planning loop. Defined as an interface
+// so tests can substitute a fake and so the slack package does not depend
+// on the triage package directly.
+type TriageTrigger interface {
+	OnTicketCreated(ctx context.Context, ticket *model.Ticket)
+}
+
 type SlackUseCase struct {
-	repo        interfaces.Repository
-	registry    *model.WorkspaceRegistry
-	slack       SlackClient
-	baseURL     string
-	llm         gollem.LLMClient
-	historyRepo gollem.HistoryRepository
-	traceRepo   trace.Repository
-	userCache   sync.Map
+	repo          interfaces.Repository
+	registry      *model.WorkspaceRegistry
+	slack         SlackClient
+	baseURL       string
+	llm           gollem.LLMClient
+	historyRepo   gollem.HistoryRepository
+	traceRepo     trace.Repository
+	triageTrigger TriageTrigger
+	userCache     sync.Map
 }
 
 // NewSlackUseCase constructs a SlackUseCase. When llm is non-nil, both
@@ -56,6 +65,12 @@ func NewSlackUseCase(repo interfaces.Repository, registry *model.WorkspaceRegist
 		historyRepo: historyRepo,
 		traceRepo:   traceRepo,
 	}
+}
+
+// SetTriageTrigger wires the triage entry point invoked after a fresh
+// ticket is created. Optional: when nil, ticket creation is unaffected.
+func (uc *SlackUseCase) SetTriageTrigger(t TriageTrigger) {
+	uc.triageTrigger = t
 }
 
 func (uc *SlackUseCase) HandleNewMessage(ctx context.Context, channelID, userID, text, messageTS string) error {
@@ -131,6 +146,10 @@ func (uc *SlackUseCase) HandleNewMessage(ctx context.Context, channelID, userID,
 	ticketURL, _ := url.JoinPath(uc.baseURL, "ws", string(wsID), "tickets", string(created.ID))
 	if err := uc.slack.ReplyTicketCreated(ctx, channelID, messageTS, created.SeqNum, ticketURL); err != nil {
 		return goerr.Wrap(err, "failed to reply ticket created")
+	}
+
+	if uc.triageTrigger != nil {
+		uc.triageTrigger.OnTicketCreated(ctx, created)
 	}
 
 	return nil

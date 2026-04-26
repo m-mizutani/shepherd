@@ -38,6 +38,7 @@ type SlackConfig struct {
 	SigningSecret string
 	SlackUC       *usecase.SlackUseCase
 	Notifier      usecase.StatusChangeNotifier
+	TriageUC      TriageInteractionsUC
 }
 
 func WithSlack(cfg SlackConfig) ServerOption {
@@ -85,6 +86,9 @@ func New(registry *model.WorkspaceRegistry, repo interfaces.Repository, authUC u
 		s.mux.Route("/hooks/slack", func(r chi.Router) {
 			r.Use(slackSignatureMiddleware(s.slackCfg.SigningSecret))
 			r.Post("/event", slackEventHandler(s.slackCfg.SlackUC))
+			if s.slackCfg.TriageUC != nil {
+				r.Post("/interaction", slackInteractionsHandler(s.slackCfg.TriageUC))
+			}
 		})
 	}
 

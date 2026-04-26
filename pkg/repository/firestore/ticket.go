@@ -2,8 +2,10 @@ package firestore
 
 import (
 	"context"
+	"time"
 
 	"cloud.google.com/go/firestore"
+	"github.com/google/uuid"
 	"github.com/m-mizutani/goerr/v2"
 	"github.com/m-mizutani/shepherd/pkg/domain/model"
 	"github.com/m-mizutani/shepherd/pkg/domain/types"
@@ -124,6 +126,56 @@ func (r *ticketRepository) Delete(ctx context.Context, workspaceID types.Workspa
 		return goerr.Wrap(err, "failed to delete ticket")
 	}
 	return nil
+}
+
+func (r *ticketRepository) FinalizeTriage(ctx context.Context, workspaceID types.WorkspaceID, ticketID types.TicketID, assignee *types.SlackUserID, history *model.TicketHistory) error {
+	if history == nil {
+		return goerr.New("history entry is required")
+	}
+
+	ticketRef := r.ticketsCollection(workspaceID).Doc(string(ticketID))
+	historyCol := r.client.Collection("workspaces").Doc(string(workspaceID)).
+		Collection("tickets").Doc(string(ticketID)).Collection("history")
+
+	if history.ID == "" {
+		history.ID = uuid.Must(uuid.NewV7()).String()
+	}
+	if history.CreatedAt.IsZero() {
+		history.CreatedAt = time.Now()
+	}
+
+	return r.client.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		doc, err := tx.Get(ticketRef)
+		if err != nil {
+			if isNotFound(err) {
+				return goerr.New("ticket not found", goerr.V("ticket_id", ticketID))
+			}
+			return goerr.Wrap(err, "failed to read ticket")
+		}
+		var t model.Ticket
+		if err := doc.DataTo(&t); err != nil {
+			return goerr.Wrap(err, "failed to decode ticket")
+		}
+		// Idempotent: already finalized.
+		if t.Triaged {
+			return nil
+		}
+
+		updates := []firestore.Update{
+			{Path: "Triaged", Value: true},
+			{Path: "UpdatedAt", Value: time.Now()},
+		}
+		if assignee != nil {
+			updates = append(updates, firestore.Update{Path: "AssigneeID", Value: string(*assignee)})
+		}
+		if err := tx.Update(ticketRef, updates); err != nil {
+			return goerr.Wrap(err, "failed to update ticket")
+		}
+		if err := tx.Set(historyCol.Doc(history.ID), history); err != nil {
+			return goerr.Wrap(err, "failed to append history")
+		}
+		return nil
+	})
 }
 
 func (r *ticketRepository) GetBySlackThreadTS(ctx context.Context, workspaceID types.WorkspaceID, channelID types.SlackChannelID, threadTS types.SlackThreadTS) (*model.Ticket, error) {

@@ -13,15 +13,17 @@ import (
 )
 
 type TicketRepo struct {
-	mu       sync.RWMutex
-	tickets  map[string]map[string]*model.Ticket // workspaceID -> ticketID -> ticket
-	seqNums  map[string]int64                    // workspaceID -> next seq num
+	mu      sync.RWMutex
+	tickets map[string]map[string]*model.Ticket // workspaceID -> ticketID -> ticket
+	seqNums map[string]int64                    // workspaceID -> next seq num
+	history *TicketHistoryRepo                   // shared backing store for FinalizeTriage atomicity
 }
 
-func newTicketRepo() *TicketRepo {
+func newTicketRepo(history *TicketHistoryRepo) *TicketRepo {
 	return &TicketRepo{
 		tickets: make(map[string]map[string]*model.Ticket),
 		seqNums: make(map[string]int64),
+		history: history,
 	}
 }
 
@@ -114,6 +116,54 @@ func (r *TicketRepo) Delete(ctx context.Context, workspaceID types.WorkspaceID, 
 		return nil
 	}
 	delete(ws, string(id))
+	return nil
+}
+
+func (r *TicketRepo) FinalizeTriage(ctx context.Context, workspaceID types.WorkspaceID, ticketID types.TicketID, assignee *types.SlackUserID, history *model.TicketHistory) error {
+	if history == nil {
+		return goerr.New("history entry is required")
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	ws, ok := r.tickets[string(workspaceID)]
+	if !ok {
+		return goerr.New("ticket not found", goerr.V("ticket_id", ticketID))
+	}
+	t, ok := ws[string(ticketID)]
+	if !ok {
+		return goerr.New("ticket not found", goerr.V("ticket_id", ticketID))
+	}
+
+	// Idempotent: already finalized.
+	if t.Triaged {
+		return nil
+	}
+
+	// Update ticket fields.
+	t.Triaged = true
+	if assignee != nil {
+		t.AssigneeID = *assignee
+	}
+	t.UpdatedAt = time.Now()
+	copied := *t
+	ws[string(ticketID)] = &copied
+
+	// Append history entry. We acquire history's mu after the ticket repo's mu
+	// (lock ordering: ticket -> history) so the ticket update and history
+	// append are observed atomically by other readers.
+	if history.ID == "" {
+		history.ID = uuid.Must(uuid.NewV7()).String()
+	}
+	if history.CreatedAt.IsZero() {
+		history.CreatedAt = time.Now()
+	}
+	if r.history != nil {
+		r.history.mu.Lock()
+		r.history.appendLocked(workspaceID, ticketID, history)
+		r.history.mu.Unlock()
+	}
 	return nil
 }
 

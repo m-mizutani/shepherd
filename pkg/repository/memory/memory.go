@@ -20,10 +20,11 @@ type Repository struct {
 }
 
 func New() *Repository {
+	history := newTicketHistoryRepo()
 	return &Repository{
-		tickets:       newTicketRepo(),
+		tickets:       newTicketRepo(history),
 		comments:      newCommentRepo(),
-		ticketHistory: newTicketHistoryRepo(),
+		ticketHistory: history,
 		sources:       newSourceRepo(),
 		toolSettings:  newToolSettingsRepo(),
 		tokens:        make(map[string]*auth.Token),
