@@ -27,35 +27,35 @@ import (
 )
 
 const (
-	// ProposeInvestigateToolName is the gollem tool name the LLM calls to
+	// proposeInvestigateToolName is the gollem tool name the LLM calls to
 	// schedule a parallel investigation.
-	ProposeInvestigateToolName = "propose_investigate"
-	// ProposeAskToolName is the gollem tool name the LLM calls to ask the
+	proposeInvestigateToolName = "propose_investigate"
+	// proposeAskToolName is the gollem tool name the LLM calls to ask the
 	// reporter follow-up questions.
-	ProposeAskToolName = "propose_ask"
-	// ProposeCompleteToolName is the gollem tool name the LLM calls to finish
+	proposeAskToolName = "propose_ask"
+	// proposeCompleteToolName is the gollem tool name the LLM calls to finish
 	// triage with a hand-off summary.
-	ProposeCompleteToolName = "propose_complete"
+	proposeCompleteToolName = "propose_complete"
 )
 
-// PlanSessionID returns the gollem history session identifier for a ticket's
+// planSessionID returns the gollem history session identifier for a ticket's
 // plan-level conversation.
-func PlanSessionID(workspaceID types.WorkspaceID, ticketID types.TicketID) string {
+func planSessionID(workspaceID types.WorkspaceID, ticketID types.TicketID) string {
 	return fmt.Sprintf("%s/%s/plan", workspaceID, ticketID)
 }
 
-// SubtaskSessionID returns the gollem history session identifier for a child
+// subtaskSessionID returns the gollem history session identifier for a child
 // investigation agent.
-func SubtaskSessionID(workspaceID types.WorkspaceID, ticketID types.TicketID, subtaskID types.SubtaskID) string {
+func subtaskSessionID(workspaceID types.WorkspaceID, ticketID types.TicketID, subtaskID types.SubtaskID) string {
 	return fmt.Sprintf("%s/%s/sub/%s", workspaceID, ticketID, subtaskID)
 }
 
-// AppendUserMessage appends a user-role text message to the plan-level history
+// appendUserMessage appends a user-role text message to the plan-level history
 // for the given ticket. This is how triage feeds investigation results and
 // reporter answers back into the LLM context: the next llmPlan call sees
 // these messages naturally as conversation history.
-func AppendUserMessage(ctx context.Context, repo gollem.HistoryRepository, workspaceID types.WorkspaceID, ticketID types.TicketID, text string) error {
-	sid := PlanSessionID(workspaceID, ticketID)
+func appendUserMessage(ctx context.Context, repo gollem.HistoryRepository, workspaceID types.WorkspaceID, ticketID types.TicketID, text string) error {
+	sid := planSessionID(workspaceID, ticketID)
 	h, err := repo.Load(ctx, sid)
 	if err != nil {
 		return goerr.Wrap(err, "load plan history", goerr.V("session", sid))
@@ -78,12 +78,12 @@ func AppendUserMessage(ctx context.Context, repo gollem.HistoryRepository, works
 	return nil
 }
 
-// LoadLatestTriagePlan walks the plan-level history backwards looking for the
+// loadLatestTriagePlan walks the plan-level history backwards looking for the
 // most recent propose_* tool call and decodes it into a TriagePlan. Returns
 // (nil, nil) when there is no plan history yet or the trailing message is not
 // a propose_* tool call.
-func LoadLatestTriagePlan(ctx context.Context, repo gollem.HistoryRepository, workspaceID types.WorkspaceID, ticketID types.TicketID) (*model.TriagePlan, error) {
-	h, err := repo.Load(ctx, PlanSessionID(workspaceID, ticketID))
+func loadLatestTriagePlan(ctx context.Context, repo gollem.HistoryRepository, workspaceID types.WorkspaceID, ticketID types.TicketID) (*model.TriagePlan, error) {
+	h, err := repo.Load(ctx, planSessionID(workspaceID, ticketID))
 	if err != nil {
 		return nil, goerr.Wrap(err, "load plan history")
 	}
@@ -97,12 +97,12 @@ func LoadLatestTriagePlan(ctx context.Context, repo gollem.HistoryRepository, wo
 	return decodeTriagePlanFromToolCall(tc)
 }
 
-// IsWaitingUserSubmit reports true when the latest propose_* tool call is a
+// isWaitingUserSubmit reports true when the latest propose_* tool call is a
 // propose_ask AND no user-role message has been appended after it. That
 // combination is exactly the condition for "the reporter has been shown a
 // question form and we're waiting on their submit".
-func IsWaitingUserSubmit(ctx context.Context, repo gollem.HistoryRepository, workspaceID types.WorkspaceID, ticketID types.TicketID) (bool, error) {
-	h, err := repo.Load(ctx, PlanSessionID(workspaceID, ticketID))
+func isWaitingUserSubmit(ctx context.Context, repo gollem.HistoryRepository, workspaceID types.WorkspaceID, ticketID types.TicketID) (bool, error) {
+	h, err := repo.Load(ctx, planSessionID(workspaceID, ticketID))
 	if err != nil {
 		return false, goerr.Wrap(err, "load plan history")
 	}
@@ -132,14 +132,14 @@ func IsWaitingUserSubmit(ctx context.Context, repo gollem.HistoryRepository, wor
 			}
 		}
 	}
-	return lastProposeName == ProposeAskToolName && !userAfterPropose, nil
+	return lastProposeName == proposeAskToolName && !userAfterPropose, nil
 }
 
-// CountToolCalls returns the number of propose_* tool calls already recorded
+// countToolCalls returns the number of propose_* tool calls already recorded
 // in the plan history. The plan executor uses this to enforce its iteration
 // cap without persisting a separate counter.
-func CountToolCalls(ctx context.Context, repo gollem.HistoryRepository, workspaceID types.WorkspaceID, ticketID types.TicketID) (int, error) {
-	h, err := repo.Load(ctx, PlanSessionID(workspaceID, ticketID))
+func countToolCalls(ctx context.Context, repo gollem.HistoryRepository, workspaceID types.WorkspaceID, ticketID types.TicketID) (int, error) {
+	h, err := repo.Load(ctx, planSessionID(workspaceID, ticketID))
 	if err != nil {
 		return 0, goerr.Wrap(err, "load plan history")
 	}
@@ -164,10 +164,10 @@ func CountToolCalls(ctx context.Context, repo gollem.HistoryRepository, workspac
 	return count, nil
 }
 
-// HasPlanHistory reports whether any plan-level history exists yet for this
+// hasPlanHistory reports whether any plan-level history exists yet for this
 // ticket. Useful to distinguish "not started" from "in progress".
-func HasPlanHistory(ctx context.Context, repo gollem.HistoryRepository, workspaceID types.WorkspaceID, ticketID types.TicketID) (bool, error) {
-	h, err := repo.Load(ctx, PlanSessionID(workspaceID, ticketID))
+func hasPlanHistory(ctx context.Context, repo gollem.HistoryRepository, workspaceID types.WorkspaceID, ticketID types.TicketID) (bool, error) {
+	h, err := repo.Load(ctx, planSessionID(workspaceID, ticketID))
 	if err != nil {
 		return false, goerr.Wrap(err, "load plan history")
 	}
@@ -176,7 +176,7 @@ func HasPlanHistory(ctx context.Context, repo gollem.HistoryRepository, workspac
 
 func isProposeToolName(name string) bool {
 	switch name {
-	case ProposeInvestigateToolName, ProposeAskToolName, ProposeCompleteToolName:
+	case proposeInvestigateToolName, proposeAskToolName, proposeCompleteToolName:
 		return true
 	default:
 		return false
@@ -216,21 +216,21 @@ func decodeTriagePlanFromToolCall(tc *gollem.ToolCallContent) (*model.TriagePlan
 	}
 
 	switch tc.Name {
-	case ProposeInvestigateToolName:
+	case proposeInvestigateToolName:
 		plan.Kind = types.PlanInvestigate
 		var inv model.Investigate
 		if err := remarshal(tc.Arguments, &inv); err != nil {
 			return nil, goerr.Wrap(err, "decode propose_investigate args")
 		}
 		plan.Investigate = &inv
-	case ProposeAskToolName:
+	case proposeAskToolName:
 		plan.Kind = types.PlanAsk
 		var ask model.Ask
 		if err := remarshal(tc.Arguments, &ask); err != nil {
 			return nil, goerr.Wrap(err, "decode propose_ask args")
 		}
 		plan.Ask = &ask
-	case ProposeCompleteToolName:
+	case proposeCompleteToolName:
 		plan.Kind = types.PlanComplete
 		var comp model.Complete
 		if err := remarshal(tc.Arguments, &comp); err != nil {

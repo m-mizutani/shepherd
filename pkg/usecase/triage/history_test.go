@@ -98,19 +98,19 @@ func completeArgs() map[string]any {
 }
 
 func TestPlanSessionID(t *testing.T) {
-	got := triage.PlanSessionID(types.WorkspaceID("ws1"), types.TicketID("t1"))
+	got := triage.PlanSessionIDForTest(types.WorkspaceID("ws1"), types.TicketID("t1"))
 	gt.S(t, got).Equal("ws1/t1/plan")
 }
 
 func TestSubtaskSessionID(t *testing.T) {
-	got := triage.SubtaskSessionID("ws1", "t1", "stA")
+	got := triage.SubtaskSessionIDForTest("ws1", "t1", "stA")
 	gt.S(t, got).Equal("ws1/t1/sub/stA")
 }
 
 func TestAppendUserMessage(t *testing.T) {
 	repo := newFakeHistory()
 	ctx := context.Background()
-	gt.NoError(t, triage.AppendUserMessage(ctx, repo, "ws", "tk", "hello"))
+	gt.NoError(t, triage.AppendUserMessageForTest(ctx, repo, "ws", "tk", "hello"))
 
 	h := gt.R1(repo.Load(ctx, "ws/tk/plan")).NoError(t)
 	gt.NotNil(t, h)
@@ -124,8 +124,8 @@ func TestAppendUserMessage(t *testing.T) {
 func TestAppendUserMessage_AppendsToExisting(t *testing.T) {
 	repo := newFakeHistory()
 	ctx := context.Background()
-	gt.NoError(t, triage.AppendUserMessage(ctx, repo, "ws", "tk", "first"))
-	gt.NoError(t, triage.AppendUserMessage(ctx, repo, "ws", "tk", "second"))
+	gt.NoError(t, triage.AppendUserMessageForTest(ctx, repo, "ws", "tk", "first"))
+	gt.NoError(t, triage.AppendUserMessageForTest(ctx, repo, "ws", "tk", "second"))
 
 	h := gt.R1(repo.Load(ctx, "ws/tk/plan")).NoError(t)
 	gt.N(t, len(h.Messages)).Equal(2)
@@ -133,7 +133,7 @@ func TestAppendUserMessage_AppendsToExisting(t *testing.T) {
 
 func TestLoadLatestTriagePlan_Empty(t *testing.T) {
 	repo := newFakeHistory()
-	plan := gt.R1(triage.LoadLatestTriagePlan(context.Background(), repo, "ws", "tk")).NoError(t)
+	plan := gt.R1(triage.LoadLatestTriagePlanForTest(context.Background(), repo, "ws", "tk")).NoError(t)
 	gt.Nil(t, plan)
 }
 
@@ -141,10 +141,10 @@ func TestLoadLatestTriagePlan_Investigate(t *testing.T) {
 	repo := newFakeHistory()
 	ctx := context.Background()
 	h := &gollem.History{Version: gollem.HistoryVersion}
-	h.Messages = append(h.Messages, mustToolCallMessage(t, triage.ProposeInvestigateToolName, investigateArgs()))
+	h.Messages = append(h.Messages, mustToolCallMessage(t, triage.ProposeInvestigateToolNameForTest, investigateArgs()))
 	gt.NoError(t, repo.Save(ctx, "ws/tk/plan", h))
 
-	plan := gt.R1(triage.LoadLatestTriagePlan(ctx, repo, "ws", "tk")).NoError(t)
+	plan := gt.R1(triage.LoadLatestTriagePlanForTest(ctx, repo, "ws", "tk")).NoError(t)
 	gt.NotNil(t, plan)
 	gt.Equal(t, plan.Kind, types.PlanInvestigate)
 	gt.NotNil(t, plan.Investigate)
@@ -157,10 +157,10 @@ func TestLoadLatestTriagePlan_Ask(t *testing.T) {
 	repo := newFakeHistory()
 	ctx := context.Background()
 	h := &gollem.History{Version: gollem.HistoryVersion}
-	h.Messages = append(h.Messages, mustToolCallMessage(t, triage.ProposeAskToolName, askArgs()))
+	h.Messages = append(h.Messages, mustToolCallMessage(t, triage.ProposeAskToolNameForTest, askArgs()))
 	gt.NoError(t, repo.Save(ctx, "ws/tk/plan", h))
 
-	plan := gt.R1(triage.LoadLatestTriagePlan(ctx, repo, "ws", "tk")).NoError(t)
+	plan := gt.R1(triage.LoadLatestTriagePlanForTest(ctx, repo, "ws", "tk")).NoError(t)
 	gt.NotNil(t, plan)
 	gt.Equal(t, plan.Kind, types.PlanAsk)
 	gt.N(t, len(plan.Ask.Questions)).Equal(1)
@@ -172,13 +172,13 @@ func TestLoadLatestTriagePlan_PicksLatest(t *testing.T) {
 	ctx := context.Background()
 	h := &gollem.History{Version: gollem.HistoryVersion}
 	h.Messages = append(h.Messages,
-		mustToolCallMessage(t, triage.ProposeInvestigateToolName, investigateArgs()),
+		mustToolCallMessage(t, triage.ProposeInvestigateToolNameForTest, investigateArgs()),
 		mustUserTextMessage(t, "Investigate結果: ..."),
-		mustToolCallMessage(t, triage.ProposeAskToolName, askArgs()),
+		mustToolCallMessage(t, triage.ProposeAskToolNameForTest, askArgs()),
 	)
 	gt.NoError(t, repo.Save(ctx, "ws/tk/plan", h))
 
-	plan := gt.R1(triage.LoadLatestTriagePlan(ctx, repo, "ws", "tk")).NoError(t)
+	plan := gt.R1(triage.LoadLatestTriagePlanForTest(ctx, repo, "ws", "tk")).NoError(t)
 	gt.Equal(t, plan.Kind, types.PlanAsk)
 }
 
@@ -187,34 +187,34 @@ func TestIsWaitingUserSubmit(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("empty history", func(t *testing.T) {
-		ok := gt.R1(triage.IsWaitingUserSubmit(ctx, repo, "ws", "tk-empty")).NoError(t)
+		ok := gt.R1(triage.IsWaitingUserSubmitForTest(ctx, repo, "ws", "tk-empty")).NoError(t)
 		gt.False(t, ok)
 	})
 
 	t.Run("ask without user response", func(t *testing.T) {
 		h := &gollem.History{Version: gollem.HistoryVersion}
-		h.Messages = append(h.Messages, mustToolCallMessage(t, triage.ProposeAskToolName, askArgs()))
+		h.Messages = append(h.Messages, mustToolCallMessage(t, triage.ProposeAskToolNameForTest, askArgs()))
 		gt.NoError(t, repo.Save(ctx, "ws/tk-ask/plan", h))
-		ok := gt.R1(triage.IsWaitingUserSubmit(ctx, repo, "ws", "tk-ask")).NoError(t)
+		ok := gt.R1(triage.IsWaitingUserSubmitForTest(ctx, repo, "ws", "tk-ask")).NoError(t)
 		gt.True(t, ok)
 	})
 
 	t.Run("ask followed by user response", func(t *testing.T) {
 		h := &gollem.History{Version: gollem.HistoryVersion}
 		h.Messages = append(h.Messages,
-			mustToolCallMessage(t, triage.ProposeAskToolName, askArgs()),
+			mustToolCallMessage(t, triage.ProposeAskToolNameForTest, askArgs()),
 			mustUserTextMessage(t, "Q1=A1"),
 		)
 		gt.NoError(t, repo.Save(ctx, "ws/tk-answered/plan", h))
-		ok := gt.R1(triage.IsWaitingUserSubmit(ctx, repo, "ws", "tk-answered")).NoError(t)
+		ok := gt.R1(triage.IsWaitingUserSubmitForTest(ctx, repo, "ws", "tk-answered")).NoError(t)
 		gt.False(t, ok)
 	})
 
 	t.Run("investigate trailing", func(t *testing.T) {
 		h := &gollem.History{Version: gollem.HistoryVersion}
-		h.Messages = append(h.Messages, mustToolCallMessage(t, triage.ProposeInvestigateToolName, investigateArgs()))
+		h.Messages = append(h.Messages, mustToolCallMessage(t, triage.ProposeInvestigateToolNameForTest, investigateArgs()))
 		gt.NoError(t, repo.Save(ctx, "ws/tk-inv/plan", h))
-		ok := gt.R1(triage.IsWaitingUserSubmit(ctx, repo, "ws", "tk-inv")).NoError(t)
+		ok := gt.R1(triage.IsWaitingUserSubmitForTest(ctx, repo, "ws", "tk-inv")).NoError(t)
 		gt.False(t, ok)
 	})
 }
@@ -224,21 +224,21 @@ func TestCountToolCalls(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("empty", func(t *testing.T) {
-		n := gt.R1(triage.CountToolCalls(ctx, repo, "ws", "tk-empty")).NoError(t)
+		n := gt.R1(triage.CountToolCallsForTest(ctx, repo, "ws", "tk-empty")).NoError(t)
 		gt.N(t, n).Equal(0)
 	})
 
 	t.Run("multiple proposes", func(t *testing.T) {
 		h := &gollem.History{Version: gollem.HistoryVersion}
 		h.Messages = append(h.Messages,
-			mustToolCallMessage(t, triage.ProposeInvestigateToolName, investigateArgs()),
+			mustToolCallMessage(t, triage.ProposeInvestigateToolNameForTest, investigateArgs()),
 			mustUserTextMessage(t, "Investigate結果"),
-			mustToolCallMessage(t, triage.ProposeAskToolName, askArgs()),
+			mustToolCallMessage(t, triage.ProposeAskToolNameForTest, askArgs()),
 			mustUserTextMessage(t, "Q1=A1"),
-			mustToolCallMessage(t, triage.ProposeCompleteToolName, completeArgs()),
+			mustToolCallMessage(t, triage.ProposeCompleteToolNameForTest, completeArgs()),
 		)
 		gt.NoError(t, repo.Save(ctx, "ws/tk-multi/plan", h))
-		n := gt.R1(triage.CountToolCalls(ctx, repo, "ws", "tk-multi")).NoError(t)
+		n := gt.R1(triage.CountToolCallsForTest(ctx, repo, "ws", "tk-multi")).NoError(t)
 		gt.N(t, n).Equal(3)
 	})
 
@@ -246,7 +246,7 @@ func TestCountToolCalls(t *testing.T) {
 		h := &gollem.History{Version: gollem.HistoryVersion}
 		h.Messages = append(h.Messages, mustToolCallMessage(t, "slack_search_messages", map[string]any{"query": "x"}))
 		gt.NoError(t, repo.Save(ctx, "ws/tk-other/plan", h))
-		n := gt.R1(triage.CountToolCalls(ctx, repo, "ws", "tk-other")).NoError(t)
+		n := gt.R1(triage.CountToolCallsForTest(ctx, repo, "ws", "tk-other")).NoError(t)
 		gt.N(t, n).Equal(0)
 	})
 }
@@ -256,13 +256,13 @@ func TestHasPlanHistory(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("empty", func(t *testing.T) {
-		ok := gt.R1(triage.HasPlanHistory(ctx, repo, "ws", "tk-empty")).NoError(t)
+		ok := gt.R1(triage.HasPlanHistoryForTest(ctx, repo, "ws", "tk-empty")).NoError(t)
 		gt.False(t, ok)
 	})
 
 	t.Run("after append", func(t *testing.T) {
-		gt.NoError(t, triage.AppendUserMessage(ctx, repo, "ws", "tk-here", "hello"))
-		ok := gt.R1(triage.HasPlanHistory(ctx, repo, "ws", "tk-here")).NoError(t)
+		gt.NoError(t, triage.AppendUserMessageForTest(ctx, repo, "ws", "tk-here", "hello"))
+		ok := gt.R1(triage.HasPlanHistoryForTest(ctx, repo, "ws", "tk-here")).NoError(t)
 		gt.True(t, ok)
 	})
 }

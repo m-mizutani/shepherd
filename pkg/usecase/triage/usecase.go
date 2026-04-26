@@ -11,7 +11,6 @@ import (
 	"github.com/m-mizutani/shepherd/pkg/domain/types"
 	slackService "github.com/m-mizutani/shepherd/pkg/service/slack"
 	"github.com/m-mizutani/shepherd/pkg/utils/async"
-	"github.com/m-mizutani/shepherd/pkg/utils/i18n"
 	"github.com/m-mizutani/shepherd/pkg/utils/logging"
 	slackgo "github.com/slack-go/slack"
 )
@@ -90,7 +89,7 @@ func (u *UseCase) OnTicketCreated(ctx context.Context, ticket *model.Ticket) {
 	wsID := ticket.WorkspaceID
 	id := ticket.ID
 	async.Dispatch(ctx, func(ctx context.Context) error {
-		return u.executor.Run(ctx, wsID, id)
+		return u.executor.run(ctx, wsID, id)
 	})
 }
 
@@ -115,7 +114,7 @@ func (u *UseCase) HandleSubmit(ctx context.Context, sub Submission) error {
 		return nil
 	}
 
-	plan, err := LoadLatestTriagePlan(ctx, u.executor.historyRepo, sub.WorkspaceID, sub.TicketID)
+	plan, err := loadLatestTriagePlan(ctx, u.executor.historyRepo, sub.WorkspaceID, sub.TicketID)
 	if err != nil {
 		return goerr.Wrap(err, "load latest plan")
 	}
@@ -125,7 +124,7 @@ func (u *UseCase) HandleSubmit(ctx context.Context, sub Submission) error {
 		return nil
 	}
 
-	waiting, err := IsWaitingUserSubmit(ctx, u.executor.historyRepo, sub.WorkspaceID, sub.TicketID)
+	waiting, err := isWaitingUserSubmit(ctx, u.executor.historyRepo, sub.WorkspaceID, sub.TicketID)
 	if err != nil {
 		return goerr.Wrap(err, "check waiting state")
 	}
@@ -135,7 +134,7 @@ func (u *UseCase) HandleSubmit(ctx context.Context, sub Submission) error {
 		return nil
 	}
 
-	answers, err := MatchAnswers(plan.Ask, sub.State)
+	answers, err := matchAnswers(plan.Ask, sub.State)
 	if err != nil {
 		return goerr.Wrap(err, "match submission to questions")
 	}
@@ -151,7 +150,7 @@ func (u *UseCase) HandleSubmit(ctx context.Context, sub Submission) error {
 	}
 
 	answerSummary := formatAnswers(plan.Ask, answers)
-	if err := AppendUserMessage(ctx, u.executor.historyRepo, sub.WorkspaceID, sub.TicketID, answerSummary); err != nil {
+	if err := appendUserMessage(ctx, u.executor.historyRepo, sub.WorkspaceID, sub.TicketID, answerSummary); err != nil {
 		return goerr.Wrap(err, "append answers to plan history")
 	}
 
@@ -164,7 +163,7 @@ func (u *UseCase) HandleSubmit(ctx context.Context, sub Submission) error {
 	wsID := sub.WorkspaceID
 	tkID := sub.TicketID
 	async.Dispatch(ctx, func(ctx context.Context) error {
-		return u.executor.Run(ctx, wsID, tkID)
+		return u.executor.run(ctx, wsID, tkID)
 	})
 	return nil
 }
@@ -179,11 +178,11 @@ type Submission struct {
 	State       *slackgo.BlockActionStates
 }
 
-// MatchAnswers walks the submission state and pairs each input value with
+// matchAnswers walks the submission state and pairs each input value with
 // its question by block_id. Question.ID is used as block_id for the choice
 // input, and Question.ID + ":other" for the free-text fallback. Returns
 // answers in the same order as ask.Questions for stability.
-func MatchAnswers(ask *model.Ask, state *slackgo.BlockActionStates) ([]model.Answer, error) {
+func matchAnswers(ask *model.Ask, state *slackgo.BlockActionStates) ([]model.Answer, error) {
 	if ask == nil {
 		return nil, goerr.New("ask is nil")
 	}
@@ -277,10 +276,4 @@ func (u *UseCase) SubmitInvalid(ctx context.Context, channelID, messageTS string
 		slackService.BuildAskInvalidatedBlocks(ctx)); err != nil {
 		logging.From(ctx).Warn("failed to invalidate ask message", slog.String("error", err.Error()))
 	}
-}
-
-// Localised reports whether the i18n catalog knows the supplied key. Useful
-// during boot to fail fast if translations are missing.
-func Localised(ctx context.Context, key i18n.MsgKey) bool {
-	return i18n.From(ctx).T(key) != ""
 }

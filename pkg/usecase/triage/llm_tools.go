@@ -17,24 +17,24 @@ import (
 // continue the conversation.
 var errPlanProposed = errors.New("triage plan proposed")
 
-// PlanCapture stores the TriagePlan that the LLM produced via a propose_*
+// planCapture stores the TriagePlan that the LLM produced via a propose_*
 // tool call during a single agent.Execute() invocation. The plan executor
-// constructs one PlanCapture per llmPlan call, registers tools wired to it,
+// constructs one planCapture per llmPlan call, registers tools wired to it,
 // runs the agent, and then reads .Plan().
-type PlanCapture struct {
+type planCapture struct {
 	mu   sync.Mutex
 	plan *model.TriagePlan
 }
 
-// Plan returns the captured TriagePlan, or nil if no propose_* tool was
+// plan returns the captured TriagePlan, or nil if no propose_* tool was
 // invoked during the agent execution.
-func (c *PlanCapture) Plan() *model.TriagePlan {
+func (c *planCapture) get() *model.TriagePlan {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.plan
 }
 
-func (c *PlanCapture) set(plan *model.TriagePlan) error {
+func (c *planCapture) set(plan *model.TriagePlan) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.plan != nil {
@@ -50,10 +50,10 @@ func (c *PlanCapture) set(plan *model.TriagePlan) error {
 	return nil
 }
 
-// ProposeTools returns the three propose_* gollem.Tool implementations bound
-// to the supplied PlanCapture. The tools are passed to gollem.New via
+// proposeTools returns the three propose_* gollem.Tool implementations bound
+// to the supplied planCapture. The tools are passed to gollem.New via
 // WithTools and are independent from the workspace tool catalog.
-func ProposeTools(capture *PlanCapture) []gollem.Tool {
+func proposeTools(capture *planCapture) []gollem.Tool {
 	return []gollem.Tool{
 		&proposeInvestigateTool{capture: capture},
 		&proposeAskTool{capture: capture},
@@ -76,11 +76,11 @@ func intPtr(v int) *int { return &v }
 
 // --- propose_investigate ---
 
-type proposeInvestigateTool struct{ capture *PlanCapture }
+type proposeInvestigateTool struct{ capture *planCapture }
 
 func (t *proposeInvestigateTool) Spec() gollem.ToolSpec {
 	return gollem.ToolSpec{
-		Name: ProposeInvestigateToolName,
+		Name: proposeInvestigateToolName,
 		Description: "Schedule one or more investigation subtasks to be run in parallel by child agents. " +
 			"Use this when more information is needed before deciding what to ask the reporter or how to complete triage.",
 		Parameters: map[string]*gollem.Parameter{
@@ -144,11 +144,11 @@ func (t *proposeInvestigateTool) Run(ctx context.Context, args map[string]any) (
 
 // --- propose_ask ---
 
-type proposeAskTool struct{ capture *PlanCapture }
+type proposeAskTool struct{ capture *planCapture }
 
 func (t *proposeAskTool) Spec() gollem.ToolSpec {
 	return gollem.ToolSpec{
-		Name: ProposeAskToolName,
+		Name: proposeAskToolName,
 		Description: "Ask the reporter follow-up questions through a Slack message form. " +
 			"Use this when the missing information cannot be derived from investigation alone and must come from the reporter.",
 		Parameters: map[string]*gollem.Parameter{
@@ -226,11 +226,11 @@ func (t *proposeAskTool) Run(ctx context.Context, args map[string]any) (map[stri
 
 // --- propose_complete ---
 
-type proposeCompleteTool struct{ capture *PlanCapture }
+type proposeCompleteTool struct{ capture *planCapture }
 
 func (t *proposeCompleteTool) Spec() gollem.ToolSpec {
 	return gollem.ToolSpec{
-		Name: ProposeCompleteToolName,
+		Name: proposeCompleteToolName,
 		Description: "Conclude triage and produce the hand-off summary for the assignee. " +
 			"Choose this only when no further investigation or questions are needed.",
 		Parameters: map[string]*gollem.Parameter{

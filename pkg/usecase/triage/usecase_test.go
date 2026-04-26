@@ -131,8 +131,8 @@ func mustCreateTicket(t *testing.T, repo *memory.Repository, triaged bool) *mode
 func seedAskHistory(t *testing.T, hist *fakeHistoryRepo, ticketID types.TicketID) {
 	t.Helper()
 	h := &gollem.History{Version: gollem.HistoryVersion}
-	h.Messages = append(h.Messages, mustToolCallMessage(t, triage.ProposeAskToolName, askArgs()))
-	gt.NoError(t, hist.Save(context.Background(), triage.PlanSessionID(tWS, ticketID), h))
+	h.Messages = append(h.Messages, mustToolCallMessage(t, triage.ProposeAskToolNameForTest, askArgs()))
+	gt.NoError(t, hist.Save(context.Background(), triage.PlanSessionIDForTest(tWS, ticketID), h))
 }
 
 // stateFor builds a *slackgo.BlockActionStates that picks the given choice for
@@ -188,8 +188,8 @@ func TestHandleSubmit_LatestPlanNotAsk_Invalidates(t *testing.T) {
 
 	// Seed plan history with a propose_investigate (not an Ask).
 	h := &gollem.History{Version: gollem.HistoryVersion}
-	h.Messages = append(h.Messages, mustToolCallMessage(t, triage.ProposeInvestigateToolName, investigateArgs()))
-	gt.NoError(t, hist.Save(context.Background(), triage.PlanSessionID(tWS, ticket.ID), h))
+	h.Messages = append(h.Messages, mustToolCallMessage(t, triage.ProposeInvestigateToolNameForTest, investigateArgs()))
+	gt.NoError(t, hist.Save(context.Background(), triage.PlanSessionIDForTest(tWS, ticket.ID), h))
 
 	gt.NoError(t, uc.HandleSubmit(context.Background(), triage.Submission{
 		WorkspaceID: tWS, TicketID: ticket.ID,
@@ -208,10 +208,10 @@ func TestHandleSubmit_NotWaiting_Invalidates(t *testing.T) {
 	// is the "answers already submitted" condition — the form is stale.
 	h := &gollem.History{Version: gollem.HistoryVersion}
 	h.Messages = append(h.Messages,
-		mustToolCallMessage(t, triage.ProposeAskToolName, askArgs()),
+		mustToolCallMessage(t, triage.ProposeAskToolNameForTest, askArgs()),
 		mustUserTextMessage(t, "previous answer"),
 	)
-	gt.NoError(t, hist.Save(context.Background(), triage.PlanSessionID(tWS, ticket.ID), h))
+	gt.NoError(t, hist.Save(context.Background(), triage.PlanSessionIDForTest(tWS, ticket.ID), h))
 
 	gt.NoError(t, uc.HandleSubmit(context.Background(), triage.Submission{
 		WorkspaceID: tWS, TicketID: ticket.ID,
@@ -236,7 +236,7 @@ func TestHandleSubmit_ValidationError_RerendersForm(t *testing.T) {
 
 	gt.A(t, slack.updates).Length(1)
 	// History must NOT have been appended with answers.
-	hh, _ := hist.Load(context.Background(), triage.PlanSessionID(tWS, ticket.ID))
+	hh, _ := hist.Load(context.Background(), triage.PlanSessionIDForTest(tWS, ticket.ID))
 	gt.NotNil(t, hh)
 	for _, msg := range hh.Messages {
 		if msg.Role == gollem.RoleUser {
@@ -269,7 +269,7 @@ func TestHandleSubmit_HappyPath_AppendsAnswerAndAcksMessage(t *testing.T) {
 	gt.S(t, slack.updates[0].messageTS).Equal("msg-6")
 
 	// History: the formatted answers were appended as a user message.
-	hh, _ := hist.Load(context.Background(), triage.PlanSessionID(tWS, ticket.ID))
+	hh, _ := hist.Load(context.Background(), triage.PlanSessionIDForTest(tWS, ticket.ID))
 	gt.NotNil(t, hh)
 	var userMessages []string
 	for _, msg := range hh.Messages {
@@ -393,13 +393,13 @@ func TestLifecycle_TicketCreate_Ask_Submit_Complete(t *testing.T) {
 		case 1:
 			return &gollem.Response{
 				FunctionCalls: []*gollem.FunctionCall{
-					{ID: "fc-ask", Name: triage.ProposeAskToolName, Arguments: askPayload},
+					{ID: "fc-ask", Name: triage.ProposeAskToolNameForTest, Arguments: askPayload},
 				},
 			}
 		case 3:
 			return &gollem.Response{
 				FunctionCalls: []*gollem.FunctionCall{
-					{ID: "fc-comp", Name: triage.ProposeCompleteToolName, Arguments: completePayload},
+					{ID: "fc-comp", Name: triage.ProposeCompleteToolNameForTest, Arguments: completePayload},
 				},
 			}
 		case 2, 4:
@@ -479,7 +479,7 @@ func TestLifecycle_TicketCreate_Ask_Submit_Complete(t *testing.T) {
 	gt.S(t, userSlack.ticketCreated[0].channelID).Equal(channel)
 
 	// First planner turn ran and produced propose_ask in plan history.
-	plan := gt.R1(triage.LoadLatestTriagePlan(ctx, hist, wsID, ticket.ID)).NoError(t)
+	plan := gt.R1(triage.LoadLatestTriagePlanForTest(ctx, hist, wsID, ticket.ID)).NoError(t)
 	gt.NotNil(t, plan)
 	gt.Equal(t, plan.Kind, types.PlanAsk)
 
@@ -491,7 +491,7 @@ func TestLifecycle_TicketCreate_Ask_Submit_Complete(t *testing.T) {
 	askMessageTS := "ts-" + threadTS // fakeTriageSlack synthesises ts-<threadTS> for posts
 
 	// We are now in the waiting-for-submit state.
-	waiting := gt.R1(triage.IsWaitingUserSubmit(ctx, hist, wsID, ticket.ID)).NoError(t)
+	waiting := gt.R1(triage.IsWaitingUserSubmitForTest(ctx, hist, wsID, ticket.ID)).NoError(t)
 	gt.True(t, waiting)
 
 	// === Step 2: reporter submits answers =================================
@@ -511,7 +511,7 @@ func TestLifecycle_TicketCreate_Ask_Submit_Complete(t *testing.T) {
 
 	// History: the formatted answers landed as a user-role text message
 	// after the propose_ask tool call.
-	hh := gt.R1(hist.Load(ctx, triage.PlanSessionID(wsID, ticket.ID))).NoError(t)
+	hh := gt.R1(hist.Load(ctx, triage.PlanSessionIDForTest(wsID, ticket.ID))).NoError(t)
 	gt.NotNil(t, hh)
 	var userTexts []string
 	for _, m := range hh.Messages {
@@ -551,7 +551,7 @@ func TestLifecycle_TicketCreate_Ask_Submit_Complete(t *testing.T) {
 
 	// Latest plan in history is now propose_complete, confirming the
 	// resumed turn was persisted.
-	finalPlan := gt.R1(triage.LoadLatestTriagePlan(ctx, hist, wsID, ticket.ID)).NoError(t)
+	finalPlan := gt.R1(triage.LoadLatestTriagePlanForTest(ctx, hist, wsID, ticket.ID)).NoError(t)
 	gt.Equal(t, finalPlan.Kind, types.PlanComplete)
 
 	// A submit on the now-completed ticket should be a no-op (form

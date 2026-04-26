@@ -22,7 +22,7 @@ func TestExecutorRun_AlreadyTriaged_NoLLMCall(t *testing.T) {
 	_, exec, repo, _, slack := newRig(t, llm)
 	ticket := mustCreateTicket(t, repo, true)
 
-	gt.NoError(t, exec.Run(context.Background(), tWS, ticket.ID))
+	gt.NoError(t, exec.RunForTest(context.Background(), tWS, ticket.ID))
 	gt.A(t, slack.posts).Length(0)
 	gt.A(t, slack.updates).Length(0)
 }
@@ -38,7 +38,7 @@ func TestExecutorRun_WaitingForSubmit_NoLLMCall(t *testing.T) {
 	ticket := mustCreateTicket(t, repo, false)
 	seedAskHistory(t, hist, ticket.ID)
 
-	gt.NoError(t, exec.Run(context.Background(), tWS, ticket.ID))
+	gt.NoError(t, exec.RunForTest(context.Background(), tWS, ticket.ID))
 	gt.A(t, slack.posts).Length(0)
 	gt.A(t, slack.updates).Length(0)
 }
@@ -58,14 +58,14 @@ func TestExecutorRun_IterationCapExceeded_FinalizesAsAborted(t *testing.T) {
 	// per newRig.
 	h := &gollem.History{Version: gollem.HistoryVersion}
 	for range 5 {
-		h.Messages = append(h.Messages, mustToolCallMessage(t, triage.ProposeInvestigateToolName, investigateArgs()))
+		h.Messages = append(h.Messages, mustToolCallMessage(t, triage.ProposeInvestigateToolNameForTest, investigateArgs()))
 		// Pair each tool call with a user-role message so IsWaitingUserSubmit
 		// stays false (no trailing propose_ask).
 		h.Messages = append(h.Messages, mustUserTextMessage(t, "result"))
 	}
-	gt.NoError(t, hist.Save(context.Background(), triage.PlanSessionID(tWS, ticket.ID), h))
+	gt.NoError(t, hist.Save(context.Background(), triage.PlanSessionIDForTest(tWS, ticket.ID), h))
 
-	gt.NoError(t, exec.Run(context.Background(), tWS, ticket.ID))
+	gt.NoError(t, exec.RunForTest(context.Background(), tWS, ticket.ID))
 
 	// Ticket should now be Triaged via the abort path.
 	got, err := repo.Ticket().Get(context.Background(), tWS, ticket.ID)
@@ -89,7 +89,7 @@ func TestExecutorRun_LLMProposesComplete_FinalizesTriage(t *testing.T) {
 					FunctionCalls: []*gollem.FunctionCall{
 						{
 							ID:        "fc-1",
-							Name:      triage.ProposeCompleteToolName,
+							Name:      triage.ProposeCompleteToolNameForTest,
 							Arguments: args,
 						},
 					},
@@ -113,7 +113,7 @@ func TestExecutorRun_LLMProposesComplete_FinalizesTriage(t *testing.T) {
 	_, exec, repo, _, slack := newRig(t, llm)
 	ticket := mustCreateTicket(t, repo, false)
 
-	gt.NoError(t, exec.Run(context.Background(), tWS, ticket.ID))
+	gt.NoError(t, exec.RunForTest(context.Background(), tWS, ticket.ID))
 
 	// Persistence: Triaged flag flipped, assignee from completeArgs persisted.
 	got, err := repo.Ticket().Get(context.Background(), tWS, ticket.ID)
@@ -140,7 +140,7 @@ func TestExecutorRun_LLMProposesAsk_PostsFormAndPauses(t *testing.T) {
 			if n == 1 {
 				return &gollem.Response{
 					FunctionCalls: []*gollem.FunctionCall{
-						{ID: "fc-ask", Name: triage.ProposeAskToolName, Arguments: args},
+						{ID: "fc-ask", Name: triage.ProposeAskToolNameForTest, Arguments: args},
 					},
 				}, nil
 			}
@@ -160,7 +160,7 @@ func TestExecutorRun_LLMProposesAsk_PostsFormAndPauses(t *testing.T) {
 	_, exec, repo, _, slack := newRig(t, llm)
 	ticket := mustCreateTicket(t, repo, false)
 
-	gt.NoError(t, exec.Run(context.Background(), tWS, ticket.ID))
+	gt.NoError(t, exec.RunForTest(context.Background(), tWS, ticket.ID))
 
 	// Ticket must NOT be triaged yet — Ask just pauses the loop.
 	got, err := repo.Ticket().Get(context.Background(), tWS, ticket.ID)

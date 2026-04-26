@@ -22,7 +22,7 @@ import (
 //
 // Each subtask gets its own gollem session ("{ws}/{ticket}/sub/{subtaskID}")
 // so its tool-call traces stay isolated from the planner agent.
-func (e *PlanExecutor) runInvestigate(ctx context.Context, ticket *model.Ticket, plan *model.TriagePlan, progress *ProgressMessage) error {
+func (e *PlanExecutor) runInvestigate(ctx context.Context, ticket *model.Ticket, plan *model.TriagePlan, progress *progressMessage) error {
 	inv := plan.Investigate
 	if inv == nil {
 		return goerr.New("runInvestigate called without Investigate payload")
@@ -57,14 +57,14 @@ func (e *PlanExecutor) runInvestigate(ctx context.Context, ticket *model.Ticket,
 
 	// Feed aggregated results back as a user message so the planner sees them.
 	contextMsg := formatInvestigationContext(inv.Subtasks, summaries, failures)
-	if err := AppendUserMessage(ctx, e.historyRepo, ticket.WorkspaceID, ticket.ID, contextMsg); err != nil {
+	if err := appendUserMessage(ctx, e.historyRepo, ticket.WorkspaceID, ticket.ID, contextMsg); err != nil {
 		return goerr.Wrap(err, "append investigate result to plan history")
 	}
 	return nil
 }
 
 func (e *PlanExecutor) runSubtask(ctx context.Context, ticket *model.Ticket, st model.Subtask,
-	allTools []gollem.Tool, progress *ProgressMessage,
+	allTools []gollem.Tool, progress *progressMessage,
 	mu *sync.Mutex, summaries, failures map[types.SubtaskID]string) error {
 
 	systemPrompt, err := prompt.RenderTriageSubtask(prompt.TriageSubtaskInput{
@@ -93,7 +93,7 @@ func (e *PlanExecutor) runSubtask(ctx context.Context, ticket *model.Ticket, st 
 	child := gollem.New(e.llm,
 		gollem.WithSystemPrompt(systemPrompt),
 		gollem.WithTools(subTools...),
-		gollem.WithHistoryRepository(e.historyRepo, SubtaskSessionID(ticket.WorkspaceID, ticket.ID, st.ID)),
+		gollem.WithHistoryRepository(e.historyRepo, subtaskSessionID(ticket.WorkspaceID, ticket.ID, st.ID)),
 	)
 	resp, runErr := child.Execute(stCtx, gollem.Text(st.Request))
 

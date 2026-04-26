@@ -14,13 +14,13 @@ import (
 )
 
 // Config holds tunable parameters for the triage executor. Values come from
-// CLI flags / env vars at startup; defaults are applied via DefaultConfig.
+// CLI flags / env vars at startup; defaults are applied via defaultConfig.
 type Config struct {
 	IterationCap int
 }
 
-// DefaultConfig returns the default triage executor configuration.
-func DefaultConfig() Config {
+// defaultConfig returns the default triage executor configuration.
+func defaultConfig() Config {
 	return Config{IterationCap: 10}
 }
 
@@ -40,7 +40,7 @@ type PlanExecutor struct {
 // uses. Defined as an interface so tests can substitute a fake without
 // reaching the real Slack API. Implemented by *service/slack.Client.
 type SlackTriageClient interface {
-	ProgressSlack
+	progressSlack
 	ReplyThread(ctx context.Context, channelID, threadTS, text string) error
 	PostEphemeral(ctx context.Context, channelID, userID, text string) error
 }
@@ -50,7 +50,7 @@ type SlackTriageClient interface {
 func NewPlanExecutor(repo interfaces.Repository, historyRepo gollem.HistoryRepository,
 	llm gollem.LLMClient, slack SlackTriageClient, catalog *tool.Catalog, cfg Config) *PlanExecutor {
 	if cfg.IterationCap <= 0 {
-		cfg.IterationCap = DefaultConfig().IterationCap
+		cfg.IterationCap = defaultConfig().IterationCap
 	}
 	return &PlanExecutor{
 		repo:        repo,
@@ -67,7 +67,7 @@ func NewPlanExecutor(repo interfaces.Repository, historyRepo gollem.HistoryRepos
 // async.Dispatch from both the new-ticket trigger (Entry-1) and the submit
 // resume (Entry-2). The function returns nil on natural pauses
 // (waiting_user_submit, done, aborted).
-func (e *PlanExecutor) Run(ctx context.Context, workspaceID types.WorkspaceID, ticketID types.TicketID) error {
+func (e *PlanExecutor) run(ctx context.Context, workspaceID types.WorkspaceID, ticketID types.TicketID) error {
 	logger := logging.From(ctx).With(
 		slog.String("workspace_id", string(workspaceID)),
 		slog.String("ticket_id", string(ticketID)),
@@ -84,7 +84,7 @@ func (e *PlanExecutor) Run(ctx context.Context, workspaceID types.WorkspaceID, t
 	}
 
 	// Waiting for user submit? The submit handler will resume the loop.
-	waiting, err := IsWaitingUserSubmit(ctx, e.historyRepo, workspaceID, ticketID)
+	waiting, err := isWaitingUserSubmit(ctx, e.historyRepo, workspaceID, ticketID)
 	if err != nil {
 		return goerr.Wrap(err, "check waiting state")
 	}
@@ -94,7 +94,7 @@ func (e *PlanExecutor) Run(ctx context.Context, workspaceID types.WorkspaceID, t
 	}
 
 	for {
-		count, err := CountToolCalls(ctx, e.historyRepo, workspaceID, ticketID)
+		count, err := countToolCalls(ctx, e.historyRepo, workspaceID, ticketID)
 		if err != nil {
 			return goerr.Wrap(err, "count plan turns")
 		}
@@ -113,7 +113,7 @@ func (e *PlanExecutor) Run(ctx context.Context, workspaceID types.WorkspaceID, t
 
 		switch plan.Kind {
 		case types.PlanInvestigate:
-			progress, perr := NewProgressMessage(ctx, e.slack, ticket.SlackChannelID, ticket.SlackThreadTS, plan.Message, plan.Investigate.Subtasks)
+			progress, perr := newProgressMessage(ctx, e.slack, ticket.SlackChannelID, ticket.SlackThreadTS, plan.Message, plan.Investigate.Subtasks)
 			if perr != nil {
 				return goerr.Wrap(perr, "post progress message")
 			}

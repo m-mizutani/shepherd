@@ -11,19 +11,19 @@ import (
 )
 
 func TestProposeInvestigate_Capture(t *testing.T) {
-	cap := &triage.PlanCapture{}
-	tools := triage.ProposeTools(cap)
+	cap := &triage.PlanCaptureForTest{}
+	tools := triage.ProposeToolsForTest(cap)
 	gt.N(t, len(tools)).Equal(3)
 
 	var inv = tools[0]
-	gt.S(t, inv.Spec().Name).Equal(triage.ProposeInvestigateToolName)
+	gt.S(t, inv.Spec().Name).Equal(triage.ProposeInvestigateToolNameForTest)
 
 	out, err := inv.Run(context.Background(), investigateArgs())
 	// Run is expected to return a sentinel error to terminate the agent loop.
 	gt.True(t, err != nil)
 	gt.Equal(t, out["accepted"], true)
 
-	plan := cap.Plan()
+	plan := cap.PlanForTest()
 	gt.NotNil(t, plan)
 	gt.Equal(t, plan.Kind, types.PlanInvestigate)
 	gt.S(t, plan.Message).Equal("調査します")
@@ -33,15 +33,15 @@ func TestProposeInvestigate_Capture(t *testing.T) {
 }
 
 func TestProposeAsk_Capture(t *testing.T) {
-	cap := &triage.PlanCapture{}
-	tools := triage.ProposeTools(cap)
+	cap := &triage.PlanCaptureForTest{}
+	tools := triage.ProposeToolsForTest(cap)
 	ask := tools[1]
-	gt.S(t, ask.Spec().Name).Equal(triage.ProposeAskToolName)
+	gt.S(t, ask.Spec().Name).Equal(triage.ProposeAskToolNameForTest)
 
 	_, err := ask.Run(context.Background(), askArgs())
 	gt.True(t, err != nil)
 
-	plan := cap.Plan()
+	plan := cap.PlanForTest()
 	gt.NotNil(t, plan)
 	gt.Equal(t, plan.Kind, types.PlanAsk)
 	gt.NotNil(t, plan.Ask)
@@ -49,15 +49,15 @@ func TestProposeAsk_Capture(t *testing.T) {
 }
 
 func TestProposeComplete_Capture(t *testing.T) {
-	cap := &triage.PlanCapture{}
-	tools := triage.ProposeTools(cap)
+	cap := &triage.PlanCaptureForTest{}
+	tools := triage.ProposeToolsForTest(cap)
 	comp := tools[2]
-	gt.S(t, comp.Spec().Name).Equal(triage.ProposeCompleteToolName)
+	gt.S(t, comp.Spec().Name).Equal(triage.ProposeCompleteToolNameForTest)
 
 	_, err := comp.Run(context.Background(), completeArgs())
 	gt.True(t, err != nil)
 
-	plan := cap.Plan()
+	plan := cap.PlanForTest()
 	gt.NotNil(t, plan)
 	gt.Equal(t, plan.Kind, types.PlanComplete)
 	gt.NotNil(t, plan.Complete)
@@ -69,32 +69,32 @@ func TestProposeComplete_Capture(t *testing.T) {
 
 func TestPropose_RejectInvalidPlan(t *testing.T) {
 	// missing message - validation should fail.
-	cap := &triage.PlanCapture{}
-	tools := triage.ProposeTools(cap)
+	cap := &triage.PlanCaptureForTest{}
+	tools := triage.ProposeToolsForTest(cap)
 	args := investigateArgs()
 	delete(args, "message")
 	_, err := tools[0].Run(context.Background(), args)
 	gt.Error(t, err)
 	// Sentinel "plan proposed" error must NOT be the cause; we expect a real validation failure.
 	gt.False(t, errors.Is(err, errors.New("triage plan proposed")))
-	gt.Nil(t, cap.Plan())
+	gt.Nil(t, cap.PlanForTest())
 }
 
 func TestPropose_OnlyOneAcceptedPerCapture(t *testing.T) {
-	cap := &triage.PlanCapture{}
-	tools := triage.ProposeTools(cap)
+	cap := &triage.PlanCaptureForTest{}
+	tools := triage.ProposeToolsForTest(cap)
 	_, err := tools[0].Run(context.Background(), investigateArgs())
 	gt.True(t, err != nil)
 
 	// second call: must error out, plan must remain the first one.
 	_, err = tools[1].Run(context.Background(), askArgs())
 	gt.Error(t, err)
-	gt.Equal(t, cap.Plan().Kind, types.PlanInvestigate)
+	gt.Equal(t, cap.PlanForTest().Kind, types.PlanInvestigate)
 }
 
 func TestProposeSpecValidate(t *testing.T) {
-	cap := &triage.PlanCapture{}
-	for _, tool := range triage.ProposeTools(cap) {
+	cap := &triage.PlanCaptureForTest{}
+	for _, tool := range triage.ProposeToolsForTest(cap) {
 		spec := tool.Spec()
 		gt.NoError(t, spec.Validate())
 	}
