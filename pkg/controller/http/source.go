@@ -93,6 +93,32 @@ func (h *APIHandler) ListToolSettings(w http.ResponseWriter, r *http.Request, wo
 		errutil.HandleHTTP(r.Context(), w, goerr.New("tool catalog not configured"), http.StatusServiceUnavailable)
 		return
 	}
+	// Eagerly persist DefaultEnabled for any Available factory not yet present
+	// in the workspace's ToolSettings. Without this, the UI checkbox derives
+	// from factory.DefaultEnabled while the Firestore document has no
+	// corresponding key — which surprised users ("UI says enabled but DB has
+	// nothing"). After this, the Firestore doc always mirrors what the user
+	// sees.
+	if h.repo != nil {
+		current, err := h.repo.ToolSettings().Get(r.Context(), types.WorkspaceID(workspaceId))
+		if err != nil {
+			handleUseCaseError(r.Context(), w, err)
+			return
+		}
+		for _, f := range h.catalog.Factories() {
+			if !f.Available() {
+				continue
+			}
+			pid := string(f.ID())
+			if _, ok := current.Enabled[pid]; ok {
+				continue
+			}
+			if err := h.repo.ToolSettings().Set(r.Context(), types.WorkspaceID(workspaceId), pid, f.DefaultEnabled()); err != nil {
+				handleUseCaseError(r.Context(), w, err)
+				return
+			}
+		}
+	}
 	states, err := h.catalog.States(r.Context(), types.WorkspaceID(workspaceId))
 	if err != nil {
 		handleUseCaseError(r.Context(), w, err)
