@@ -9,6 +9,7 @@ import (
 
 	"github.com/m-mizutani/gollem"
 	"github.com/m-mizutani/shepherd/pkg/domain/interfaces"
+	"github.com/m-mizutani/shepherd/pkg/domain/types"
 	notionsvc "github.com/m-mizutani/shepherd/pkg/service/notion"
 	"github.com/m-mizutani/shepherd/pkg/tool"
 	"github.com/m-mizutani/shepherd/pkg/usecase/source"
@@ -76,9 +77,23 @@ func (f *Factory) DefaultEnabled() bool { return false }
 func (f *Factory) Client() *notionsvc.Client { return f.client }
 
 func buildTools(client *notionsvc.Client, guard *source.NotionGuard) []gollem.Tool {
+	return buildToolsWithAuthorizer(client, &guardAdapter{g: guard})
+}
+
+func buildToolsWithAuthorizer(client *notionsvc.Client, auth authorizer) []gollem.Tool {
 	return []gollem.Tool{
-		newSearchTool(client, guard),
-		newGetPageTool(client, guard),
-		newQueryDatabaseTool(client, guard),
+		newSearchTool(client, auth),
+		newGetPageTool(client, auth),
+		newQueryDatabaseTool(client, auth),
 	}
+}
+
+// guardAdapter narrows *source.NotionGuard to the local authorizer interface.
+// Necessary because Go interfaces are not covariant on return types — the
+// concrete NewWalker returns *source.Walker, but tool consumers want the
+// walkAuthorizer interface so test fakes can stand in.
+type guardAdapter struct{ g *source.NotionGuard }
+
+func (a *guardAdapter) NewWalker(ctx context.Context, ws types.WorkspaceID) (walkAuthorizer, error) {
+	return a.g.NewWalker(ctx, ws)
 }

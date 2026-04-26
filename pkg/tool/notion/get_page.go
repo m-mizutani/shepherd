@@ -78,7 +78,11 @@ func (t *getPageTool) Run(ctx context.Context, args map[string]any) (map[string]
 	maxDepth := boundedInt(argsutil.Int(args, "max_depth"), getPageDefaultDepth, 1, getPageMaxDepth)
 	maxPages := boundedInt(argsutil.Int(args, "max_pages"), getPageDefaultPages, 1, getPageMaxPages)
 
-	if err := t.guard.Authorize(ctx, wsID, types.NotionObjectPage, id); err != nil {
+	walker, err := t.guard.NewWalker(ctx, wsID)
+	if err != nil {
+		return nil, goerr.Wrap(err, "failed to load notion source roots")
+	}
+	if err := walker.Authorize(ctx, types.NotionObjectPage, id); err != nil {
 		return nil, goerr.Wrap(err, "notion page not in allowed sources",
 			goerr.V("page_id", id))
 	}
@@ -141,7 +145,7 @@ func (t *getPageTool) Run(ctx context.Context, args map[string]any) (map[string]
 			if _, dup := visited[child]; dup {
 				continue
 			}
-			if err := t.guard.Authorize(ctx, wsID, types.NotionObjectPage, child); err != nil {
+			if err := walker.Authorize(ctx, types.NotionObjectPage, child); err != nil {
 				skipped = append(skipped, map[string]any{
 					"id":     child,
 					"reason": "out_of_scope",

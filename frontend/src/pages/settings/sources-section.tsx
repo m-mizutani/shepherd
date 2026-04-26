@@ -54,13 +54,18 @@ export function SourcesSection({ workspaceId }: Props) {
       qc.invalidateQueries({ queryKey: ["tools", workspaceId] });
     },
     onError: (e: { status?: number }) => {
-      // The server returns 400/409 with a JSON error body. Map status → key.
       switch (e?.status) {
-        case 409:
-          setErrorKey("sourcesErrorDuplicate");
-          break;
         case 400:
           setErrorKey("sourcesErrorInvalidUrl");
+          break;
+        case 403:
+          setErrorKey("sourcesErrorForbidden");
+          break;
+        case 404:
+          setErrorKey("sourcesErrorNotFound");
+          break;
+        case 409:
+          setErrorKey("sourcesErrorDuplicate");
           break;
         default:
           setErrorKey("sourcesErrorGeneric");

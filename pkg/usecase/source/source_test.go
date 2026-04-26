@@ -143,6 +143,55 @@ func TestGuard_OutOfScope(t *testing.T) {
 	gt.True(t, errors.Is(err, source.ErrOutOfScope))
 }
 
+func TestWalker_MemoizesParentLookups(t *testing.T) {
+	ctx := context.Background()
+	repo := memory.New().Source()
+	_, _ = repo.Create(ctx, &model.Source{
+		WorkspaceID: "ws-1",
+		Provider:    types.SourceProviderNotion,
+		Notion:      &model.NotionSource{ObjectType: types.NotionObjectPage, ObjectID: pageA},
+	})
+
+	calls := map[string]int{}
+	fk := &countingNotion{calls: calls, pages: map[string]*notion.PageMeta{
+		pageB:      {ID: pageB, ParentType: "page_id", ParentID: pageA},
+		pageOrphan: {ID: pageOrphan, ParentType: "page_id", ParentID: pageB}, // pageOrphan→pageB→pageA
+	}}
+	g := source.NewNotionGuard(repo, fk)
+	w, err := g.NewWalker(ctx, "ws-1")
+	gt.NoError(t, err)
+
+	// Authorize three different objects whose ancestry shares pageB.
+	gt.NoError(t, w.Authorize(ctx, types.NotionObjectPage, pageB))
+	gt.NoError(t, w.Authorize(ctx, types.NotionObjectPage, pageOrphan))
+	// Repeat — should hit the decided cache, no new API calls.
+	gt.NoError(t, w.Authorize(ctx, types.NotionObjectPage, pageB))
+
+	// pageB is fetched once (during first Authorize), pageOrphan is fetched
+	// once. pageA is a registered root, so it never needs RetrievePage.
+	gt.Equal(t, calls[pageB], 1)
+	gt.Equal(t, calls[pageOrphan], 1)
+	gt.Equal(t, calls[pageA], 0)
+}
+
+type countingNotion struct {
+	calls map[string]int
+	pages map[string]*notion.PageMeta
+}
+
+func (c *countingNotion) RetrievePage(_ context.Context, id string) (*notion.PageMeta, error) {
+	c.calls[id]++
+	if p, ok := c.pages[id]; ok {
+		return p, nil
+	}
+	return nil, goerr.Wrap(notion.ErrNotFound, "page not in fake")
+}
+
+func (c *countingNotion) RetrieveDatabase(_ context.Context, id string) (*notion.DatabaseMeta, error) {
+	c.calls[id]++
+	return nil, goerr.Wrap(notion.ErrNotFound, "db not in fake")
+}
+
 func TestGuard_DatabaseRoot(t *testing.T) {
 	ctx := context.Background()
 	repo := memory.New().Source()

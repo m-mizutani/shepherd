@@ -16,9 +16,16 @@ type searcher interface {
 	Search(ctx context.Context, query string, opts notionsvc.SearchOptions) ([]*notionsvc.SearchHit, error)
 }
 
-// authorizer abstracts the NotionGuard.Authorize signature.
+// authorizer abstracts NotionGuard so tools can construct a request-scoped
+// Walker (one repo read + parent-walk memo per tool call) without leaking the
+// concrete *source.NotionGuard type.
 type authorizer interface {
-	Authorize(ctx context.Context, ws types.WorkspaceID, t types.NotionObjectType, id string) error
+	NewWalker(ctx context.Context, ws types.WorkspaceID) (walkAuthorizer, error)
+}
+
+// walkAuthorizer is the per-call surface returned by authorizer.NewWalker.
+type walkAuthorizer interface {
+	Authorize(ctx context.Context, t types.NotionObjectType, id string) error
 }
 
 const (
@@ -80,9 +87,14 @@ func (t *searchTool) Run(ctx context.Context, args map[string]any) (map[string]a
 		return nil, goerr.Wrap(err, "notion_search failed")
 	}
 
+	walker, err := t.guard.NewWalker(ctx, wsID)
+	if err != nil {
+		return nil, goerr.Wrap(err, "failed to load notion source roots")
+	}
+
 	allowed := make([]map[string]any, 0, len(hits))
 	for _, h := range hits {
-		if err := t.guard.Authorize(ctx, wsID, h.ObjectType, normalizeOrEmpty(h.ID)); err != nil {
+		if err := walker.Authorize(ctx, h.ObjectType, normalizeOrEmpty(h.ID)); err != nil {
 			continue
 		}
 		allowed = append(allowed, map[string]any{

@@ -4,8 +4,8 @@ import (
 	"context"
 
 	"github.com/m-mizutani/gollem"
-	"github.com/m-mizutani/shepherd/pkg/domain/types"
 	notionsvc "github.com/m-mizutani/shepherd/pkg/service/notion"
+	"github.com/m-mizutani/shepherd/pkg/usecase/source"
 )
 
 // notionAPI is the union of every method the in-package tools call. Tests
@@ -17,17 +17,14 @@ type notionAPI interface {
 	QueryDatabase(ctx context.Context, dbID string, opts notionsvc.QueryDatabaseOptions) (*notionsvc.QueryDatabaseResult, error)
 }
 
-type guardLike interface {
-	Authorize(ctx context.Context, ws types.WorkspaceID, t types.NotionObjectType, id string) error
-}
-
 // BuildToolsForTest constructs the tool slice from arbitrary fakes. Used by
 // notion_test.go so tests do not need to spin up an HTTP server.
-func BuildToolsForTest(api notionAPI, guard guardLike) []gollem.Tool {
+func BuildToolsForTest(api notionAPI, guard *source.NotionGuard) []gollem.Tool {
+	auth := &guardAdapter{g: guard}
 	return []gollem.Tool{
-		newSearchTool(api, guard),
-		newGetPageTool(api, guard),
-		newQueryDatabaseTool(api, guard),
+		newSearchTool(api, auth),
+		newGetPageTool(api, auth),
+		newQueryDatabaseTool(api, auth),
 	}
 }
 

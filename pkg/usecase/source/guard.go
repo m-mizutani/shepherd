@@ -57,44 +57,122 @@ func (g *NotionGuard) AllowedRoots(ctx context.Context, ws types.WorkspaceID) (p
 	return pageIDs, dbIDs, nil
 }
 
-// Authorize returns nil when the object is reachable from a registered Source.
-// Walks parents up to maxParentWalk hops via the Notion API.
+// Authorize is a one-shot convenience wrapper around NewWalker → Authorize.
+// Tools that issue many checks in a row (notion_search, notion_get_page's
+// recursion, notion_query_database's row checks) MUST use NewWalker instead so
+// AllowedRoots is fetched once and parent-walk results are memoized within the
+// call's lifetime.
 func (g *NotionGuard) Authorize(ctx context.Context, ws types.WorkspaceID, objectType types.NotionObjectType, objectID string) error {
+	w, err := g.NewWalker(ctx, ws)
+	if err != nil {
+		return err
+	}
+	return w.Authorize(ctx, objectType, objectID)
+}
+
+// Walker is a request-scoped Authorize cache. Holds the workspace's allowed
+// roots (one repo read at construction) plus a memo of parent-walk decisions
+// for the duration of a single tool call. Not safe for concurrent use across
+// goroutines.
+type Walker struct {
+	g       *NotionGuard
+	ws      types.WorkspaceID
+	rootSet map[string]struct{}
+	// parent[id] = canonical parent (type+id) discovered during this walk.
+	// Lets a search batch share parent-chain work across hits.
+	parent map[string]parentEntry
+	// decided[id] = "is this id in scope?" cached terminal result.
+	decided map[string]bool
+}
+
+type parentEntry struct {
+	t  types.NotionObjectType
+	id string
+}
+
+// NewWalker fetches AllowedRoots once for the workspace and returns a Walker
+// whose Authorize calls share that root set + a parent-walk memo.
+func (g *NotionGuard) NewWalker(ctx context.Context, ws types.WorkspaceID) (*Walker, error) {
+	pageRoots, dbRoots, err := g.AllowedRoots(ctx, ws)
+	if err != nil {
+		return nil, err
+	}
+	rs := make(map[string]struct{}, len(pageRoots)+len(dbRoots))
+	for _, p := range pageRoots {
+		rs[p] = struct{}{}
+	}
+	for _, d := range dbRoots {
+		rs[d] = struct{}{}
+	}
+	return &Walker{
+		g:       g,
+		ws:      ws,
+		rootSet: rs,
+		parent:  map[string]parentEntry{},
+		decided: map[string]bool{},
+	}, nil
+}
+
+// Authorize returns nil when the object is reachable from a registered Source
+// for the walker's workspace. Walks parents up to maxParentWalk hops, sharing
+// memoized lookups across calls on this walker.
+func (w *Walker) Authorize(ctx context.Context, objectType types.NotionObjectType, objectID string) error {
 	id, err := notion.NormalizeID(objectID)
 	if err != nil {
 		return goerr.Wrap(err, "invalid notion id")
 	}
-	pageRoots, dbRoots, err := g.AllowedRoots(ctx, ws)
-	if err != nil {
-		return err
-	}
-	rootSet := make(map[string]struct{}, len(pageRoots)+len(dbRoots))
-	for _, p := range pageRoots {
-		rootSet[p] = struct{}{}
-	}
-	for _, d := range dbRoots {
-		rootSet[d] = struct{}{}
+	if ok, cached := w.decided[id]; cached {
+		if ok {
+			return nil
+		}
+		return goerr.Wrap(ErrOutOfScope, "notion object out of allowed sources",
+			goerr.V("workspace_id", string(w.ws)),
+			goerr.V("object_id", objectID))
 	}
 
+	visited := []string{id}
 	currentType := objectType
 	currentID := id
 	for range maxParentWalk {
-		if _, ok := rootSet[currentID]; ok {
+		if _, ok := w.rootSet[currentID]; ok {
+			for _, v := range visited {
+				w.decided[v] = true
+			}
 			return nil
 		}
-		parentType, parentID, err := g.parentOf(ctx, currentType, currentID)
+		parentType, parentID, err := w.parentLookup(ctx, currentType, currentID)
 		if err != nil {
 			return err
 		}
 		if parentID == "" {
 			break
 		}
+		visited = append(visited, parentID)
 		currentType = parentType
 		currentID = parentID
 	}
+
+	for _, v := range visited {
+		w.decided[v] = false
+	}
 	return goerr.Wrap(ErrOutOfScope, "notion object out of allowed sources",
-		goerr.V("workspace_id", string(ws)),
+		goerr.V("workspace_id", string(w.ws)),
 		goerr.V("object_id", objectID))
+}
+
+// parentLookup memoizes parentOf for the lifetime of the walker — so a sweep
+// over many search hits sharing a common ancestor incurs at most one
+// RetrievePage per ancestor.
+func (w *Walker) parentLookup(ctx context.Context, t types.NotionObjectType, id string) (types.NotionObjectType, string, error) {
+	if pe, ok := w.parent[id]; ok {
+		return pe.t, pe.id, nil
+	}
+	pt, pid, err := w.g.parentOf(ctx, t, id)
+	if err != nil {
+		return "", "", err
+	}
+	w.parent[id] = parentEntry{t: pt, id: pid}
+	return pt, pid, nil
 }
 
 func (g *NotionGuard) parentOf(ctx context.Context, t types.NotionObjectType, id string) (types.NotionObjectType, string, error) {

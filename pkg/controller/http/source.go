@@ -147,10 +147,14 @@ func tokenSubFromCtx(ctx context.Context) string {
 func writeSourceError(ctx context.Context, w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, source.ErrInvalidURL),
-		errors.Is(err, source.ErrTypeMismatch),
-		errors.Is(err, source.ErrNotionForbidden),
-		errors.Is(err, source.ErrNotionNotFound):
+		errors.Is(err, source.ErrTypeMismatch):
 		errutil.HandleHTTP(ctx, w, err, http.StatusBadRequest)
+	case errors.Is(err, source.ErrNotionForbidden):
+		// Distinct status so the WebUI can render the "invite the integration"
+		// message without parsing error strings.
+		errutil.HandleHTTP(ctx, w, err, http.StatusForbidden)
+	case errors.Is(err, source.ErrNotionNotFound):
+		errutil.HandleHTTP(ctx, w, err, http.StatusNotFound)
 	case errors.Is(err, source.ErrDuplicate):
 		errutil.HandleHTTP(ctx, w, err, http.StatusConflict)
 	case errors.Is(err, source.ErrNotionUnauthorized):

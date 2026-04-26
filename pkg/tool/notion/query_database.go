@@ -85,7 +85,11 @@ func (t *queryDatabaseTool) Run(ctx context.Context, args map[string]any) (map[s
 	limit := clamp.Limit(argsutil.Int(args, "limit"), queryDefaultLimit, queryMaxLimit)
 	includeBody := boolArg(args, "include_body")
 
-	if err := t.guard.Authorize(ctx, wsID, types.NotionObjectDatabase, dbID); err != nil {
+	walker, err := t.guard.NewWalker(ctx, wsID)
+	if err != nil {
+		return nil, goerr.Wrap(err, "failed to load notion source roots")
+	}
+	if err := walker.Authorize(ctx, types.NotionObjectDatabase, dbID); err != nil {
 		return nil, goerr.Wrap(err, "notion database not in allowed sources",
 			goerr.V("database_id", dbID))
 	}

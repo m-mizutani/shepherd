@@ -41,13 +41,20 @@ func (r *toolSettingsRepository) Get(ctx context.Context, ws types.WorkspaceID) 
 }
 
 func (r *toolSettingsRepository) Set(ctx context.Context, ws types.WorkspaceID, providerID string, enabled bool) error {
-	cur, err := r.Get(ctx, ws)
-	if err != nil {
-		return err
+	// Update only the toggled key + UpdatedAt via field-path merge so two
+	// concurrent toggles for different providers do not clobber each other.
+	// Set with firestore.Merge handles both create-if-absent and atomic
+	// per-field write — RunTransaction would also work but adds round-trips.
+	payload := map[string]any{
+		"WorkspaceID": string(ws),
+		"Enabled":     map[string]bool{providerID: enabled},
+		"UpdatedAt":   time.Now(),
 	}
-	cur.Enabled[providerID] = enabled
-	cur.UpdatedAt = time.Now()
-	if _, err := r.ref(ws).Set(ctx, cur); err != nil {
+	if _, err := r.ref(ws).Set(ctx, payload, firestore.Merge(
+		[]string{"WorkspaceID"},
+		[]string{"Enabled", providerID},
+		[]string{"UpdatedAt"},
+	)); err != nil {
 		return goerr.Wrap(err, "failed to set tool_settings")
 	}
 	return nil
