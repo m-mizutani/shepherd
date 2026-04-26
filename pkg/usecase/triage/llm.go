@@ -41,8 +41,10 @@ func (e *PlanExecutor) llmPlan(ctx context.Context, ticket *model.Ticket) (*mode
 	)
 
 	// Execute returns errPlanProposed after the LLM picks an action. That is
-	// the success path; surface every other error.
-	if _, err := agent.Execute(ctx, gollem.Text("")); err != nil {
+	// the success path; surface every other error. The kickoff text is
+	// non-empty because Gemini's GenerateContent rejects empty parts
+	// ("required oneof field 'data' must have one initialized field").
+	if _, err := agent.Execute(ctx, gollem.Text("Decide and call exactly one of propose_investigate, propose_ask, or propose_complete based on the ticket and any prior context above.")); err != nil {
 		if !errors.Is(err, errPlanProposed) {
 			return nil, goerr.Wrap(err, "agent execute",
 				goerr.V("ticket_id", ticket.ID))
