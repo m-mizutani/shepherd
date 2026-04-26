@@ -203,42 +203,55 @@ func findLatestProposeToolCall(h *gollem.History) *gollem.ToolCallContent {
 	return nil
 }
 
-// decodeTriagePlanFromToolCall converts a captured propose_* tool call into a
-// TriagePlan. The tool call's Arguments is a JSON-shaped map; we round-trip
-// it through encoding/json to populate the strongly typed payload.
+// decodeTriagePlanFromToolCall converts a captured propose_* tool call (as
+// stored in the session history) into a TriagePlan.
 func decodeTriagePlanFromToolCall(tc *gollem.ToolCallContent) (*model.TriagePlan, error) {
 	if tc == nil {
 		return nil, goerr.New("nil tool call")
 	}
+	return decodePlan(tc.Name, tc.Arguments)
+}
+
+// decodePlanFromFunctionCall converts a fresh function call returned by
+// Session.Generate into a TriagePlan. Same shape as decodeTriagePlanFromToolCall
+// but reads the FunctionCall variant of the same payload.
+func decodePlanFromFunctionCall(fc *gollem.FunctionCall) (*model.TriagePlan, error) {
+	if fc == nil {
+		return nil, goerr.New("nil function call")
+	}
+	return decodePlan(fc.Name, fc.Arguments)
+}
+
+func decodePlan(name string, args map[string]any) (*model.TriagePlan, error) {
 	plan := &model.TriagePlan{}
-	if msg, ok := tc.Arguments["message"].(string); ok {
+	if msg, ok := args["message"].(string); ok {
 		plan.Message = msg
 	}
 
-	switch tc.Name {
+	switch name {
 	case proposeInvestigateToolName:
 		plan.Kind = types.PlanInvestigate
 		var inv model.Investigate
-		if err := remarshal(tc.Arguments, &inv); err != nil {
+		if err := remarshal(args, &inv); err != nil {
 			return nil, goerr.Wrap(err, "decode propose_investigate args")
 		}
 		plan.Investigate = &inv
 	case proposeAskToolName:
 		plan.Kind = types.PlanAsk
 		var ask model.Ask
-		if err := remarshal(tc.Arguments, &ask); err != nil {
+		if err := remarshal(args, &ask); err != nil {
 			return nil, goerr.Wrap(err, "decode propose_ask args")
 		}
 		plan.Ask = &ask
 	case proposeCompleteToolName:
 		plan.Kind = types.PlanComplete
 		var comp model.Complete
-		if err := remarshal(tc.Arguments, &comp); err != nil {
+		if err := remarshal(args, &comp); err != nil {
 			return nil, goerr.Wrap(err, "decode propose_complete args")
 		}
 		plan.Complete = &comp
 	default:
-		return nil, goerr.New("unknown propose tool", goerr.V("name", tc.Name))
+		return nil, goerr.New("unknown propose tool", goerr.V("name", name))
 	}
 	if err := plan.Validate(); err != nil {
 		return nil, goerr.Wrap(err, "invalid plan from tool call")

@@ -2,62 +2,21 @@ package triage
 
 import (
 	"context"
-	"errors"
-	"sync"
 
 	"github.com/m-mizutani/goerr/v2"
 	"github.com/m-mizutani/gollem"
-	"github.com/m-mizutani/shepherd/pkg/domain/model"
-	"github.com/m-mizutani/shepherd/pkg/domain/types"
 )
 
-// errPlanProposed is returned by every propose_* tool's Run method to make
-// gollem stop the agent loop after the LLM picks an action. We treat the
-// chosen action as the final output of llmPlan, so there is no need to
-// continue the conversation.
-var errPlanProposed = errors.New("triage plan proposed")
-
-// planCapture stores the TriagePlan that the LLM produced via a propose_*
-// tool call during a single agent.Execute() invocation. The plan executor
-// constructs one planCapture per llmPlan call, registers tools wired to it,
-// runs the agent, and then reads .Plan().
-type planCapture struct {
-	mu   sync.Mutex
-	plan *model.TriagePlan
-}
-
-// plan returns the captured TriagePlan, or nil if no propose_* tool was
-// invoked during the agent execution.
-func (c *planCapture) get() *model.TriagePlan {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.plan
-}
-
-func (c *planCapture) set(plan *model.TriagePlan) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.plan != nil {
-		// LLM should pick exactly one action per turn. Treat a second call as
-		// a programming-side error so it surfaces during testing.
-		return goerr.New("plan already proposed in this turn",
-			goerr.V("first", c.plan.Kind), goerr.V("second", plan.Kind))
-	}
-	if err := plan.Validate(); err != nil {
-		return goerr.Wrap(err, "invalid plan from llm")
-	}
-	c.plan = plan
-	return nil
-}
-
-// proposeTools returns the three propose_* gollem.Tool implementations bound
-// to the supplied planCapture. The tools are passed to gollem.New via
-// WithTools and are independent from the workspace tool catalog.
-func proposeTools(capture *planCapture) []gollem.Tool {
+// proposeTools returns the three propose_* tool specs the LLM is allowed to
+// emit during a planning turn. The tools exist purely to advertise schemas
+// to the model; their Run is never invoked because llmPlan calls
+// Session.Generate directly (no agent loop) and decodes the FunctionCall
+// from the response.
+func proposeTools() []gollem.Tool {
 	return []gollem.Tool{
-		&proposeInvestigateTool{capture: capture},
-		&proposeAskTool{capture: capture},
-		&proposeCompleteTool{capture: capture},
+		&proposeInvestigateTool{},
+		&proposeAskTool{},
+		&proposeCompleteTool{},
 	}
 }
 
@@ -74,9 +33,15 @@ func commonMessageParam() *gollem.Parameter {
 
 func intPtr(v int) *int { return &v }
 
+// errToolNotInvokable is returned by every propose_* tool's Run because the
+// triage planner never executes propose_* tools — it only inspects the
+// FunctionCall the model emitted. Hitting Run means an Agent loop is being
+// driven over these tools by mistake; surfacing an error makes that obvious.
+var errToolNotInvokable = goerr.New("propose_* tools are spec-only and must not be executed by an agent loop")
+
 // --- propose_investigate ---
 
-type proposeInvestigateTool struct{ capture *planCapture }
+type proposeInvestigateTool struct{}
 
 func (t *proposeInvestigateTool) Spec() gollem.ToolSpec {
 	return gollem.ToolSpec{
@@ -125,26 +90,13 @@ func (t *proposeInvestigateTool) Spec() gollem.ToolSpec {
 	}
 }
 
-func (t *proposeInvestigateTool) Run(ctx context.Context, args map[string]any) (map[string]any, error) {
-	var inv model.Investigate
-	if err := remarshal(args, &inv); err != nil {
-		return nil, goerr.Wrap(err, "decode propose_investigate args")
-	}
-	msg, _ := args["message"].(string)
-	plan := &model.TriagePlan{
-		Kind:        types.PlanInvestigate,
-		Message:     msg,
-		Investigate: &inv,
-	}
-	if err := t.capture.set(plan); err != nil {
-		return nil, err
-	}
-	return map[string]any{"accepted": true}, errPlanProposed
+func (t *proposeInvestigateTool) Run(_ context.Context, _ map[string]any) (map[string]any, error) {
+	return nil, errToolNotInvokable
 }
 
 // --- propose_ask ---
 
-type proposeAskTool struct{ capture *planCapture }
+type proposeAskTool struct{}
 
 func (t *proposeAskTool) Spec() gollem.ToolSpec {
 	return gollem.ToolSpec{
@@ -207,26 +159,13 @@ func (t *proposeAskTool) Spec() gollem.ToolSpec {
 	}
 }
 
-func (t *proposeAskTool) Run(ctx context.Context, args map[string]any) (map[string]any, error) {
-	var ask model.Ask
-	if err := remarshal(args, &ask); err != nil {
-		return nil, goerr.Wrap(err, "decode propose_ask args")
-	}
-	msg, _ := args["message"].(string)
-	plan := &model.TriagePlan{
-		Kind:    types.PlanAsk,
-		Message: msg,
-		Ask:     &ask,
-	}
-	if err := t.capture.set(plan); err != nil {
-		return nil, err
-	}
-	return map[string]any{"accepted": true}, errPlanProposed
+func (t *proposeAskTool) Run(_ context.Context, _ map[string]any) (map[string]any, error) {
+	return nil, errToolNotInvokable
 }
 
 // --- propose_complete ---
 
-type proposeCompleteTool struct{ capture *planCapture }
+type proposeCompleteTool struct{}
 
 func (t *proposeCompleteTool) Spec() gollem.ToolSpec {
 	return gollem.ToolSpec{
@@ -293,20 +232,6 @@ func (t *proposeCompleteTool) Spec() gollem.ToolSpec {
 	}
 }
 
-func (t *proposeCompleteTool) Run(ctx context.Context, args map[string]any) (map[string]any, error) {
-	var comp model.Complete
-	if err := remarshal(args, &comp); err != nil {
-		return nil, goerr.Wrap(err, "decode propose_complete args")
-	}
-	msg, _ := args["message"].(string)
-	plan := &model.TriagePlan{
-		Kind:     types.PlanComplete,
-		Message:  msg,
-		Complete: &comp,
-	}
-	if err := t.capture.set(plan); err != nil {
-		return nil, err
-	}
-	return map[string]any{"accepted": true}, errPlanProposed
+func (t *proposeCompleteTool) Run(_ context.Context, _ map[string]any) (map[string]any, error) {
+	return nil, errToolNotInvokable
 }
-

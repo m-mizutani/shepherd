@@ -2,6 +2,7 @@ package triage_test
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -246,7 +247,15 @@ func TestHandleSubmit_ValidationError_RerendersForm(t *testing.T) {
 }
 
 func TestHandleSubmit_HappyPath_AppendsAnswerAndAcksMessage(t *testing.T) {
-	uc, _, repo, hist, slack := newRig(t, nil)
+	// Supply a stub LLM that errors out from NewSession; errutil.Handle in the
+	// dispatched Run goroutine swallows the error. We only care about the
+	// synchronous side effects of HandleSubmit here.
+	stubLLM := &mock.LLMClientMock{
+		NewSessionFunc: func(_ context.Context, _ ...gollem.SessionOption) (gollem.Session, error) {
+			return nil, errors.New("stub: not configured")
+		},
+	}
+	uc, _, repo, hist, slack := newRig(t, stubLLM)
 	ticket := mustCreateTicket(t, repo, false)
 	seedAskHistory(t, hist, ticket.ID)
 
@@ -387,6 +396,9 @@ func TestLifecycle_TicketCreate_Ask_Submit_Complete(t *testing.T) {
 	askPayload := askArgs()
 	completePayload := completeArgs()
 	var llmCalls int32
+	// llmPlan now calls Session.Generate exactly once per planner turn
+	// (no agent loop), so the lifecycle traverses two turns total: turn 1
+	// posts the ask, turn 2 (resumed by Submit) completes triage.
 	makeResp := func(t *testing.T, n int32) *gollem.Response {
 		t.Helper()
 		switch n {
@@ -396,18 +408,14 @@ func TestLifecycle_TicketCreate_Ask_Submit_Complete(t *testing.T) {
 					{ID: "fc-ask", Name: triage.ProposeAskToolNameForTest, Arguments: askPayload},
 				},
 			}
-		case 3:
+		case 2:
 			return &gollem.Response{
 				FunctionCalls: []*gollem.FunctionCall{
 					{ID: "fc-comp", Name: triage.ProposeCompleteToolNameForTest, Arguments: completePayload},
 				},
 			}
-		case 2, 4:
-			// Loop tail: empty response so the agent loop exits after the
-			// preceding tool call.
-			return &gollem.Response{}
 		default:
-			t.Fatalf("LLM should not be called more than 4 times, got %d", n)
+			t.Fatalf("LLM should not be called more than 2 times, got %d", n)
 			return nil
 		}
 	}
@@ -545,9 +553,8 @@ func TestLifecycle_TicketCreate_Ask_Submit_Complete(t *testing.T) {
 	gt.S(t, last.threadTS).Equal(threadTS)
 	gt.True(t, len(last.blocks) > 0)
 
-	// LLM was driven exactly 4 times: ask + tail, complete + tail. Going
-	// over 4 (or under 3) means the loop misbehaved.
-	gt.N(t, int(atomic.LoadInt32(&llmCalls))).Equal(4)
+	// LLM was driven exactly twice — turn 1 (ask) + turn 2 (complete).
+	gt.N(t, int(atomic.LoadInt32(&llmCalls))).Equal(2)
 
 	// Latest plan in history is now propose_complete, confirming the
 	// resumed turn was persisted.
@@ -564,5 +571,5 @@ func TestLifecycle_TicketCreate_Ask_Submit_Complete(t *testing.T) {
 	}))
 	async.Wait()
 	gt.N(t, len(triageSlack.updates)).Equal(prevUpdates + 1) // one invalidation update, no new posts
-	gt.N(t, int(atomic.LoadInt32(&llmCalls))).Equal(4)        // LLM was NOT invoked again
+	gt.N(t, int(atomic.LoadInt32(&llmCalls))).Equal(2)        // LLM was NOT invoked again
 }

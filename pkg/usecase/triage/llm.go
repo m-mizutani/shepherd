@@ -2,7 +2,6 @@ package triage
 
 import (
 	"context"
-	"errors"
 
 	"github.com/m-mizutani/goerr/v2"
 	"github.com/m-mizutani/gollem"
@@ -10,16 +9,17 @@ import (
 	"github.com/m-mizutani/shepherd/pkg/usecase/prompt"
 )
 
-// llmPlan executes one planning turn against the LLM and returns the
-// proposed TriagePlan. The prior turn's user-facing context (investigation
-// summaries, reporter answers) must be appended to history via
-// appendUserMessage before this is called; the gollem agent loads that
-// history from sessionID and asks the LLM what to do next.
+// llmPlan executes one planning turn against the LLM and returns the proposed
+// TriagePlan.
 //
-// Internally it wires three propose_* tools to a fresh planCapture, runs
-// agent.Execute(""), and reads back the captured plan. The propose_* tools
-// return errPlanProposed to short-circuit the agent loop after the first
-// (and only) tool call.
+// The implementation is deliberately a single Session.Generate call rather
+// than a full agent.Execute loop: the planner needs exactly one propose_*
+// tool call from the model, and Session.Generate already returns the model's
+// FunctionCalls in its Response. Running an agent loop would (a) execute the
+// propose_* tools (we don't want that — they're spec-only), and (b) require
+// a sentinel error / side-channel state to short-circuit the loop. Decoding
+// the FunctionCall directly from the response is straightforward and
+// honest about what the planner is doing.
 func (e *PlanExecutor) llmPlan(ctx context.Context, ticket *model.Ticket) (*model.TriagePlan, error) {
 	systemPrompt, err := prompt.RenderTriagePlan(prompt.TriagePlanInput{
 		Title:          ticket.Title,
@@ -31,30 +31,56 @@ func (e *PlanExecutor) llmPlan(ctx context.Context, ticket *model.Ticket) (*mode
 		return nil, goerr.Wrap(err, "render triage_plan prompt")
 	}
 
-	capture := &planCapture{}
-	tools := proposeTools(capture)
-
-	agent := gollem.New(e.llm,
-		gollem.WithSystemPrompt(systemPrompt),
-		gollem.WithTools(tools...),
-		gollem.WithHistoryRepository(e.historyRepo, planSessionID(ticket.WorkspaceID, ticket.ID)),
-	)
-
-	// Execute returns errPlanProposed after the LLM picks an action. That is
-	// the success path; surface every other error. The kickoff text is
-	// non-empty because Gemini's GenerateContent rejects empty parts
-	// ("required oneof field 'data' must have one initialized field").
-	if _, err := agent.Execute(ctx, gollem.Text("Decide and call exactly one of propose_investigate, propose_ask, or propose_complete based on the ticket and any prior context above.")); err != nil {
-		if !errors.Is(err, errPlanProposed) {
-			return nil, goerr.Wrap(err, "agent execute",
-				goerr.V("ticket_id", ticket.ID))
-		}
+	sid := planSessionID(ticket.WorkspaceID, ticket.ID)
+	history, err := e.historyRepo.Load(ctx, sid)
+	if err != nil {
+		return nil, goerr.Wrap(err, "load plan history",
+			goerr.V("session_id", sid))
 	}
 
-	plan := capture.get()
-	if plan == nil {
-		return nil, goerr.New("LLM did not propose any plan", goerr.V("ticket_id", ticket.ID))
+	opts := []gollem.SessionOption{
+		gollem.WithSessionSystemPrompt(systemPrompt),
+		gollem.WithSessionTools(proposeTools()...),
 	}
+	if history != nil {
+		opts = append(opts, gollem.WithSessionHistory(history))
+	}
+	session, err := e.llm.NewSession(ctx, opts...)
+	if err != nil {
+		return nil, goerr.Wrap(err, "new llm session")
+	}
+
+	// Non-empty kickoff text: Gemini's GenerateContent rejects empty parts.
+	resp, err := session.Generate(ctx, []gollem.Input{
+		gollem.Text("Decide and call exactly one of propose_investigate, propose_ask, or propose_complete based on the ticket and any prior context above."),
+	})
+	if err != nil {
+		return nil, goerr.Wrap(err, "generate triage plan",
+			goerr.V("ticket_id", ticket.ID))
+	}
+	if len(resp.FunctionCalls) == 0 {
+		return nil, goerr.New("LLM did not call a propose_* tool",
+			goerr.V("ticket_id", ticket.ID),
+			goerr.V("texts", resp.Texts))
+	}
+
+	plan, err := decodePlanFromFunctionCall(resp.FunctionCalls[0])
+	if err != nil {
+		return nil, goerr.Wrap(err, "decode plan",
+			goerr.V("ticket_id", ticket.ID))
+	}
+
+	// Persist the session's updated history (now including the LLM's
+	// assistant tool-call message) so the next planning turn picks up
+	// where this one left off.
+	updated, err := session.History()
+	if err != nil {
+		return nil, goerr.Wrap(err, "read session history")
+	}
+	if err := e.historyRepo.Save(ctx, sid, updated); err != nil {
+		return nil, goerr.Wrap(err, "save plan history",
+			goerr.V("session_id", sid))
+	}
+
 	return plan, nil
 }
-

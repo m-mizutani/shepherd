@@ -18,9 +18,11 @@ const (
 	ProposeCompleteToolNameForTest    = proposeCompleteToolName
 )
 
-type PlanCaptureForTest = planCapture
-
 var ProposeToolsForTest = proposeTools
+
+func DecodePlanFromFunctionCallForTest(fc *gollem.FunctionCall) (*model.TriagePlan, error) {
+	return decodePlanFromFunctionCall(fc)
+}
 
 func PlanSessionIDForTest(ws types.WorkspaceID, id types.TicketID) string {
 	return planSessionID(ws, id)
@@ -49,10 +51,6 @@ func CountToolCallsForTest(ctx context.Context, repo gollem.HistoryRepository, w
 func HasPlanHistoryForTest(ctx context.Context, repo gollem.HistoryRepository, ws types.WorkspaceID, id types.TicketID) (bool, error) {
 	return hasPlanHistory(ctx, repo, ws, id)
 }
-
-// PlanForTest exposes planCapture.get() so tests can read what the propose_*
-// tool stored without enlarging the production surface.
-func (c *planCapture) PlanForTest() *model.TriagePlan { return c.get() }
 
 // RunForTest is the test-only entry point for PlanExecutor's planner loop.
 func (e *PlanExecutor) RunForTest(ctx context.Context, ws types.WorkspaceID, id types.TicketID) error {
