@@ -19,6 +19,7 @@ type Ticket struct {
 	SlackChannelID      types.SlackChannelID
 	SlackThreadTS       types.SlackThreadTS
 	FieldValues         map[string]FieldValue
+	Triaged             bool
 	CreatedAt           time.Time
 	UpdatedAt           time.Time
 }

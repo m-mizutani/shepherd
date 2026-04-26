@@ -45,6 +45,57 @@ func (c *Client) ReplyThread(ctx context.Context, channelID, threadTS, text stri
 	return nil
 }
 
+// PostThreadBlocks posts a Slack message containing arbitrary Block Kit
+// blocks into a thread, returning the new message's timestamp so callers
+// can subsequently update or reference it.
+func (c *Client) PostThreadBlocks(ctx context.Context, channelID, threadTS string, blocks []slackgo.Block) (string, error) {
+	_, ts, err := c.api.PostMessageContext(ctx, channelID,
+		slackgo.MsgOptionTS(threadTS),
+		slackgo.MsgOptionBlocks(blocks...),
+	)
+	if err != nil {
+		return "", goerr.Wrap(err, "failed to post slack thread blocks",
+			goerr.V("channel_id", channelID),
+			goerr.V("thread_ts", threadTS),
+			goerr.Tag(errutil.TagSlackError),
+		)
+	}
+	return ts, nil
+}
+
+// UpdateMessage rewrites an existing Slack message with the supplied Block
+// Kit blocks. Used to mutate triage progress / question messages in place.
+func (c *Client) UpdateMessage(ctx context.Context, channelID, messageTS string, blocks []slackgo.Block) error {
+	_, _, _, err := c.api.UpdateMessageContext(ctx, channelID, messageTS,
+		slackgo.MsgOptionBlocks(blocks...),
+	)
+	if err != nil {
+		return goerr.Wrap(err, "failed to update slack message",
+			goerr.V("channel_id", channelID),
+			goerr.V("message_ts", messageTS),
+			goerr.Tag(errutil.TagSlackError),
+		)
+	}
+	return nil
+}
+
+// PostEphemeral posts a message visible only to the supplied user inside a
+// channel. Used for transient triage error feedback (e.g. "this form is no
+// longer valid") when chat.update is not appropriate.
+func (c *Client) PostEphemeral(ctx context.Context, channelID, userID, text string) error {
+	_, err := c.api.PostEphemeralContext(ctx, channelID, userID,
+		slackgo.MsgOptionText(text, false),
+	)
+	if err != nil {
+		return goerr.Wrap(err, "failed to post ephemeral slack message",
+			goerr.V("channel_id", channelID),
+			goerr.V("user_id", userID),
+			goerr.Tag(errutil.TagSlackError),
+		)
+	}
+	return nil
+}
+
 type UserInfo struct {
 	ID       string
 	Name     string

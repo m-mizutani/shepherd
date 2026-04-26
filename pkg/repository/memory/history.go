@@ -29,21 +29,25 @@ func (r *TicketHistoryRepo) Create(ctx context.Context, workspaceID types.Worksp
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	wsKey := string(workspaceID)
-	tkKey := string(ticketID)
-
-	if r.histories[wsKey] == nil {
-		r.histories[wsKey] = make(map[string][]*model.TicketHistory)
-	}
-
 	h.ID = uuid.Must(uuid.NewV7()).String()
 	if h.CreatedAt.IsZero() {
 		h.CreatedAt = time.Now()
 	}
+	r.appendLocked(workspaceID, ticketID, h)
+	return h, nil
+}
 
+// appendLocked appends a history entry without acquiring r.mu. The caller must
+// already hold a coordinating lock (e.g. TicketRepo.mu during FinalizeTriage)
+// to keep the ticket update and history append atomic with respect to readers.
+func (r *TicketHistoryRepo) appendLocked(workspaceID types.WorkspaceID, ticketID types.TicketID, h *model.TicketHistory) {
+	wsKey := string(workspaceID)
+	tkKey := string(ticketID)
+	if r.histories[wsKey] == nil {
+		r.histories[wsKey] = make(map[string][]*model.TicketHistory)
+	}
 	copied := *h
 	r.histories[wsKey][tkKey] = append(r.histories[wsKey][tkKey], &copied)
-	return h, nil
 }
 
 func (r *TicketHistoryRepo) List(ctx context.Context, workspaceID types.WorkspaceID, ticketID types.TicketID) ([]*model.TicketHistory, error) {

@@ -13,12 +13,15 @@ import (
 	"github.com/m-mizutani/shepherd/pkg/cli/config"
 	httpController "github.com/m-mizutani/shepherd/pkg/controller/http"
 	"github.com/m-mizutani/shepherd/pkg/domain/types"
+	slackService "github.com/m-mizutani/shepherd/pkg/service/slack"
 	"github.com/m-mizutani/shepherd/pkg/tool"
 	"github.com/m-mizutani/shepherd/pkg/tool/meta"
 	tnotion "github.com/m-mizutani/shepherd/pkg/tool/notion"
 	tslack "github.com/m-mizutani/shepherd/pkg/tool/slack"
 	"github.com/m-mizutani/shepherd/pkg/tool/ticket"
+	usecaseroot "github.com/m-mizutani/shepherd/pkg/usecase"
 	"github.com/m-mizutani/shepherd/pkg/usecase/source"
+	"github.com/m-mizutani/shepherd/pkg/usecase/triage"
 	"github.com/m-mizutani/shepherd/pkg/utils/async"
 	"github.com/m-mizutani/shepherd/pkg/utils/errutil"
 	"github.com/m-mizutani/shepherd/pkg/utils/i18n"
@@ -41,12 +44,14 @@ func cmdServe() *cli.Command {
 		baseURL string
 		lang    string
 
-		workspaceCfg     config.WorkspaceFiles
-		repoCfg          config.Repository
-		slackCfg         config.Slack
-		sentryCfg        config.Sentry
-		llmCfg           config.LLM
-		agentStorageCfg  config.AgentStorage
+		workspaceCfg    config.WorkspaceFiles
+		repoCfg         config.Repository
+		slackCfg        config.Slack
+		sentryCfg       config.Sentry
+		llmCfg          config.LLM
+		agentStorageCfg config.AgentStorage
+
+		triageIterationCap int
 
 		// Tool factories own their own --flags via Flags() and are constructed
 		// up-front so the CLI flag list can be aggregated without pkg/cli
@@ -74,6 +79,13 @@ func cmdServe() *cli.Command {
 			Sources:     cli.EnvVars("SHEPHERD_LANG"),
 			Value:       "en",
 			Destination: &lang,
+		},
+		&cli.IntFlag{
+			Name:        "triage-iteration-cap",
+			Usage:       "Maximum number of triage planner turns per ticket before aborting",
+			Sources:     cli.EnvVars("SHEPHERD_TRIAGE_ITERATION_CAP"),
+			Value:       10,
+			Destination: &triageIterationCap,
 		},
 	}
 	flags = append(flags, workspaceCfg.Flags()...)
@@ -155,14 +167,11 @@ func cmdServe() *cli.Command {
 			logger.Info("Agent storage configured", "agent_storage", &agentStorageCfg)
 
 			var serverOpts []httpController.ServerOption
+			var slackUC *usecaseroot.SlackUseCase
+			var slackClient *slackService.Client
 			if slackCfg.IsWebhookConfigured() {
-				slackClient := slackCfg.NewSlackClient()
-				slackUC := slackCfg.NewSlackUseCase(repo, registry, baseURL, llmClient, historyRepo, traceRepo)
-				serverOpts = append(serverOpts, httpController.WithSlack(httpController.SlackConfig{
-					SigningSecret: slackCfg.SignSecret(),
-					SlackUC:       slackUC,
-					Notifier:      slackClient,
-				}))
+				slackClient = slackCfg.NewSlackClient()
+				slackUC = slackCfg.NewSlackUseCase(repo, registry, baseURL, llmClient, historyRepo, traceRepo)
 				logger.Info("Slack integration enabled")
 			}
 			// Build the tool catalog: meta/ticket/slack are inert without
@@ -196,6 +205,32 @@ func cmdServe() *cli.Command {
 					}
 					return len(srcs) > 0, nil
 				})
+
+			// Build the triage usecase once Slack + catalog are ready, and
+			// register it with both the SlackUseCase (Entry-1: ticket
+			// creation trigger) and the HTTP interactions endpoint (Entry-2:
+			// reporter submit click).
+			var triageUC *triage.UseCase
+			if slackUC != nil {
+				triageExec := triage.NewPlanExecutor(
+					repo, historyRepo, llmClient, slackClient, catalog,
+					triage.Config{IterationCap: triageIterationCap},
+				)
+				triageUC = triage.NewUseCase(triageExec, &triage.RegistryResolver{Registry: registry})
+				slackUC.SetTriageTrigger(triageUC)
+				logger.Info("Triage agent enabled",
+					"iteration_cap", triageIterationCap,
+				)
+			}
+
+			if slackUC != nil {
+				serverOpts = append(serverOpts, httpController.WithSlack(httpController.SlackConfig{
+					SigningSecret: slackCfg.SignSecret(),
+					SlackUC:       slackUC,
+					Notifier:      slackClient,
+					TriageUC:      triageUC,
+				}))
+			}
 
 			sourceUC := source.New(repo.Source(), notionFactory.Client(), time.Now)
 			serverOpts = append(serverOpts, httpController.WithSource(sourceUC, catalog))

@@ -14,9 +14,17 @@ var systemTemplateSource string
 //go:embed mention.md
 var mentionTemplateSource string
 
+//go:embed triage_plan.md
+var triagePlanTemplateSource string
+
+//go:embed triage_subtask.md
+var triageSubtaskTemplateSource string
+
 var (
-	systemTemplate  = template.Must(template.New("system").Parse(systemTemplateSource))
-	mentionTemplate = template.Must(template.New("mention").Parse(mentionTemplateSource))
+	systemTemplate        = template.Must(template.New("system").Parse(systemTemplateSource))
+	mentionTemplate       = template.Must(template.New("mention").Parse(mentionTemplateSource))
+	triagePlanTemplate    = template.Must(template.New("triage_plan").Parse(triagePlanTemplateSource))
+	triageSubtaskTemplate = template.Must(template.New("triage_subtask").Parse(triageSubtaskTemplateSource))
 )
 
 // SystemInput is the data for the system prompt template. It carries the
@@ -51,6 +59,44 @@ func RenderMention(in MentionInput) (string, error) {
 	var buf strings.Builder
 	if err := mentionTemplate.Execute(&buf, in); err != nil {
 		return "", goerr.Wrap(err, "failed to execute mention template")
+	}
+	return buf.String(), nil
+}
+
+// TriagePlanInput is the data for the triage planner system prompt. It carries
+// the static ticket context that does not change between turns. Per-turn
+// observations (investigation results, reporter answers) are appended to the
+// gollem agent history as user messages instead.
+type TriagePlanInput struct {
+	Title          string
+	Description    string
+	InitialMessage string
+	Reporter       string
+}
+
+// TriageSubtaskInput is the data for the triage subtask system prompt. It is
+// rendered once per subtask, embedding the planner-specified request and
+// acceptance criteria.
+type TriageSubtaskInput struct {
+	Request            string
+	AcceptanceCriteria []string
+}
+
+// RenderTriagePlan renders the system prompt for the triage planner agent.
+func RenderTriagePlan(in TriagePlanInput) (string, error) {
+	var buf strings.Builder
+	if err := triagePlanTemplate.Execute(&buf, in); err != nil {
+		return "", goerr.Wrap(err, "failed to execute triage_plan template")
+	}
+	return buf.String(), nil
+}
+
+// RenderTriageSubtask renders the system prompt for a triage investigation
+// subtask agent.
+func RenderTriageSubtask(in TriageSubtaskInput) (string, error) {
+	var buf strings.Builder
+	if err := triageSubtaskTemplate.Execute(&buf, in); err != nil {
+		return "", goerr.Wrap(err, "failed to execute triage_subtask template")
 	}
 	return buf.String(), nil
 }
