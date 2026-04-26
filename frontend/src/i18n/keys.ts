@@ -78,6 +78,7 @@ export const msgKeys = {
   sourcesDescriptionPlaceholder: "sourcesDescriptionPlaceholder",
   sourcesDescriptionHint: "sourcesDescriptionHint",
   sourcesAddButton: "sourcesAddButton",
+  sourcesAddDialogTitle: "sourcesAddDialogTitle",
   sourcesAdding: "sourcesAdding",
   sourcesEmptyNotion: "sourcesEmptyNotion",
   sourcesThTitle: "sourcesThTitle",

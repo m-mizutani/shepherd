@@ -78,6 +78,7 @@ export const ja: Messages = {
   sourcesDescriptionHint:
     "notion_list_sources を通じて LLM に渡され、検索時の判断材料になります。",
   sourcesAddButton: "追加",
+  sourcesAddDialogTitle: "Notion ソースを追加",
   sourcesAdding: "追加中…",
   sourcesEmptyNotion: "まだ Notion のソースは登録されていません。",
   sourcesThTitle: "タイトル",

@@ -78,6 +78,7 @@ export const en: Messages = {
   sourcesDescriptionHint:
     "Shown to the LLM via notion_list_sources so it knows when to query this source.",
   sourcesAddButton: "Add source",
+  sourcesAddDialogTitle: "Add a Notion source",
   sourcesAdding: "Adding…",
   sourcesEmptyNotion: "No Notion sources registered yet.",
   sourcesThTitle: "Title",
