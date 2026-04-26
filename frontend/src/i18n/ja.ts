@@ -108,12 +108,7 @@ export const ja: Messages = {
   toolsReasonWorkspaceDisabled: "このワークスペースで無効化されています。",
   toolsReasonGateBlocked: "前提条件が満たされていません（例: ソース未登録）。",
   toolsToggleEnabled: "有効",
-  settingsBannerReadOnly:
-    "読み取り専用 — 現時点でワークスペース設定は workspace.yaml で管理しています。編集 UI は順次対応予定です。",
-  settingsBannerEditMode:
-    "編集モードが ON です。多くの項目はまだ workspace.yaml で管理されています。",
-  settingsBannerEdit: "編集",
-  settingsBannerDone: "完了",
+  toolsToggleSaving: "保存中…",
   settingsLoadFailed: "ワークスペース設定の読み込みに失敗しました",
   settingsTitleGeneral: "一般",
   settingsSubtitleGeneral: "基本のワークスペースメタデータ。",

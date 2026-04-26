@@ -108,12 +108,7 @@ export const en: Messages = {
   toolsReasonWorkspaceDisabled: "Disabled for this workspace.",
   toolsReasonGateBlocked: "Prerequisite missing (e.g. no source registered).",
   toolsToggleEnabled: "Enabled",
-  settingsBannerReadOnly:
-    "Read-only — workspace settings are managed in workspace.yaml for now. Editing UI is coming soon.",
-  settingsBannerEditMode:
-    "Edit mode is on. Most fields are still managed in workspace.yaml.",
-  settingsBannerEdit: "Edit",
-  settingsBannerDone: "Done",
+  toolsToggleSaving: "Saving…",
   settingsLoadFailed: "Failed to load workspace config",
   settingsTitleGeneral: "General",
   settingsSubtitleGeneral: "Basic workspace metadata.",

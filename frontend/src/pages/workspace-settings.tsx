@@ -1,11 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
-import { useState } from "react";
 import { api } from "../lib/api";
 import { PageShell } from "../components/ui/page-shell";
 import { Card } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
-import { Button } from "../components/ui/button";
 import { Icon, type IconName } from "../components/ui/icon";
 import { Skeleton } from "../components/ui/skeleton";
 import { ErrorBox } from "../components/ui/error-box";
@@ -43,7 +41,6 @@ export default function WorkspaceSettingsPage() {
   const { t } = useTranslation();
   const validIds = new Set(NAV_ITEMS.map((i) => i.id));
   const active = section && validIds.has(section) ? section : DEFAULT_SECTION;
-  const [editMode, setEditMode] = useState(false);
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["workspace-config", workspaceId],
@@ -104,23 +101,6 @@ export default function WorkspaceSettingsPage() {
         </nav>
 
         <main>
-          {/* Read-only banner */}
-          <div className="px-3.5 py-2.5 mb-5 bg-info-soft border border-[#bfdbfe] rounded-3 flex items-center gap-2.5">
-            <Icon name="eye" size={14} className="text-info" />
-            <div className="flex-1 text-[12.5px] text-[#1e3a8a]">
-              {editMode
-                ? t("settingsBannerEditMode")
-                : t("settingsBannerReadOnly")}
-            </div>
-            <Button
-              size="sm"
-              onClick={() => setEditMode((m) => !m)}
-            >
-              <Icon name="edit" size={11} />{" "}
-              {editMode ? t("settingsBannerDone") : t("settingsBannerEdit")}
-            </Button>
-          </div>
-
           {isLoading && (
             <div className="space-y-3">
               <Skeleton width="40%" height={18} />
@@ -169,11 +149,6 @@ export default function WorkspaceSettingsPage() {
             <Section
               title={t("settingsTitleStatuses")}
               subtitle={t("settingsSubtitleStatuses")}
-              action={
-                <Button size="sm" disabled={!editMode}>
-                  <Icon name="plus" size={11} /> {t("settingsBtnAdd")}
-                </Button>
-              }
             >
               <Card className="p-0 overflow-hidden">
                 <table className="w-full border-separate border-spacing-0">
@@ -230,11 +205,6 @@ export default function WorkspaceSettingsPage() {
             <Section
               title={t("settingsTitleFields")}
               subtitle={t("settingsSubtitleFields")}
-              action={
-                <Button size="sm" disabled={!editMode}>
-                  <Icon name="plus" size={11} /> {t("settingsBtnAdd")}
-                </Button>
-              }
             >
               <Card className="p-0 overflow-hidden">
                 <table className="w-full border-separate border-spacing-0">
