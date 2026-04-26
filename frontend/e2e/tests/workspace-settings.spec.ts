@@ -21,7 +21,7 @@ test.describe("Workspace Settings (Read-Only)", () => {
 
   test("displays field definitions", async ({ page }) => {
     await page.goto("/ws/support/settings");
-    await page.getByRole("button", { name: "Fields", exact: true }).click();
+    await page.getByRole("link", { name: "Fields", exact: true }).click();
 
     await expect(page.getByRole("heading", { name: "Custom Fields" })).toBeVisible();
     // Fields from examples/config.toml: priority, category, due-date, reference-url
@@ -36,7 +36,7 @@ test.describe("Workspace Settings (Read-Only)", () => {
   test("displays ticket config", async ({ page }) => {
     await page.goto("/ws/support/settings");
     // Activate the Ticket Config section in the side nav
-    await page.getByRole("button", { name: "Ticket Config" }).click();
+    await page.getByRole("link", { name: "Ticket Config" }).click();
 
     await expect(page.getByRole("heading", { name: "Ticket Config" })).toBeVisible();
     const section = page.locator("section").filter({ hasText: "Ticket Config" });
@@ -49,7 +49,7 @@ test.describe("Workspace Settings (Read-Only)", () => {
 
   test("displays labels", async ({ page }) => {
     await page.goto("/ws/support/settings");
-    await page.getByRole("button", { name: "Labels" }).click();
+    await page.getByRole("link", { name: "Labels" }).click();
 
     await expect(page.getByRole("heading", { name: "Labels" })).toBeVisible();
   });
