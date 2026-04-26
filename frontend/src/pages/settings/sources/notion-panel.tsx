@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../../../lib/api";
 import { Card } from "../../../components/ui/card";
 import { Button } from "../../../components/ui/button";
@@ -20,6 +20,7 @@ export function NotionSourcesPanel({ workspaceId }: Props) {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
 
   const list = useQuery({
     queryKey: ["sources", workspaceId],
@@ -97,7 +98,7 @@ export function NotionSourcesPanel({ workspaceId }: Props) {
                 <th className="text-left px-3 py-2 border-b border-line w-[170px]">
                   {t("sourcesThAdded")}
                 </th>
-                <th className="text-right px-3 py-2 border-b border-line w-[70px]">
+                <th className="text-right px-3 py-2 border-b border-line w-[140px]">
                   {t("sourcesThActions")}
                 </th>
               </tr>
@@ -135,16 +136,29 @@ export function NotionSourcesPanel({ workspaceId }: Props) {
                     {new Date(s.createdAt).toLocaleString()}
                   </td>
                   <td className="px-3 py-2 text-right">
-                    <Button
-                      size="sm"
-                      onClick={() => {
-                        if (window.confirm(t("sourcesDeleteConfirm"))) {
-                          remove.mutate(s.id);
+                    <div className="inline-flex items-center gap-1.5">
+                      <Button
+                        size="sm"
+                        onClick={() =>
+                          setEditTarget({
+                            id: s.id,
+                            description: s.description ?? "",
+                          })
                         }
-                      }}
-                    >
-                      <Icon name="trash" size={11} />
-                    </Button>
+                      >
+                        <Icon name="edit" size={11} />
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          if (window.confirm(t("sourcesDeleteConfirm"))) {
+                            remove.mutate(s.id);
+                          }
+                        }}
+                      >
+                        <Icon name="trash" size={11} />
+                      </Button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -158,14 +172,104 @@ export function NotionSourcesPanel({ workspaceId }: Props) {
         onClose={() => setDialogOpen(false)}
         workspaceId={workspaceId}
       />
+      <EditSourceDialog
+        target={editTarget}
+        onClose={() => setEditTarget(null)}
+        workspaceId={workspaceId}
+      />
     </section>
   );
+}
+
+interface EditTarget {
+  id: string;
+  description: string;
 }
 
 interface DialogProps {
   open: boolean;
   onClose: () => void;
   workspaceId: string;
+}
+
+function EditSourceDialog({
+  target,
+  onClose,
+  workspaceId,
+}: {
+  target: EditTarget | null;
+  onClose: () => void;
+  workspaceId: string;
+}) {
+  const { t } = useTranslation();
+  const qc = useQueryClient();
+  const [description, setDescription] = useState(target?.description ?? "");
+
+  // Re-sync the input when a different row's edit dialog opens.
+  // Using key prop on the dialog would also work; this is simpler.
+  useSyncDescription(target?.id ?? null, target?.description ?? "", setDescription);
+
+  const save = useMutation({
+    mutationFn: async () => {
+      if (!target) return;
+      const { error } = await api.PATCH(
+        "/api/v1/ws/{workspaceId}/sources/{sourceId}",
+        {
+          params: { path: { workspaceId, sourceId: target.id } },
+          body: { description },
+        },
+      );
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sources", workspaceId] });
+      onClose();
+    },
+  });
+
+  return (
+    <Dialog
+      open={target !== null}
+      onClose={onClose}
+      title={t("sourcesEditDialogTitle")}
+      width={520}
+      footer={
+        <>
+          <Button onClick={onClose}>{t("btnCancel")}</Button>
+          <Button onClick={() => save.mutate()} disabled={save.isPending}>
+            {save.isPending ? t("sourcesSaving") : t("sourcesSaveButton")}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-1">
+        <label className="block text-[11.5px] font-medium text-ink-3">
+          {t("sourcesDescriptionLabel")}
+        </label>
+        <textarea
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder={t("sourcesDescriptionPlaceholder")}
+          rows={4}
+          autoFocus
+          className="w-full border border-line rounded-2 px-3 py-2 text-[13px] focus:outline-none focus:ring-2 focus:ring-brand"
+        />
+        <p className="text-[11.5px] text-ink-3">{t("sourcesDescriptionHint")}</p>
+      </div>
+    </Dialog>
+  );
+}
+
+function useSyncDescription(
+  id: string | null,
+  initial: string,
+  setDescription: (s: string) => void,
+) {
+  // Reset the textarea when a different row's edit dialog is opened so we
+  // don't display the previous target's value.
+  useEffect(() => {
+    if (id !== null) setDescription(initial);
+  }, [id, initial, setDescription]);
 }
 
 function AddNotionSourceDialog({ open, onClose, workspaceId }: DialogProps) {

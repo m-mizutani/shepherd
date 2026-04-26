@@ -161,7 +161,7 @@ export interface paths {
         delete: operations["deleteSource"];
         options?: never;
         head?: never;
-        patch?: never;
+        patch: operations["updateSource"];
         trace?: never;
     };
     "/api/v1/ws/{workspaceId}/tools": {
@@ -331,6 +331,9 @@ export interface components {
             provider: "notion";
             url: string;
             description?: string;
+        };
+        UpdateSourceRequest: {
+            description: string;
         };
         ToolState: {
             providerId: string;
@@ -756,6 +759,40 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    updateSource: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                sourceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateSourceRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Source"];
+                };
             };
             /** @description Not Found */
             404: {

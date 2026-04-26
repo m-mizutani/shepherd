@@ -80,6 +80,20 @@ func (r *SourceRepo) ListByProvider(ctx context.Context, ws types.WorkspaceID, p
 	return out, nil
 }
 
+func (r *SourceRepo) UpdateDescription(ctx context.Context, ws types.WorkspaceID, id types.SourceID, description string) (*model.Source, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	bucket := r.sources[ws]
+	src, ok := bucket[id]
+	if !ok {
+		return nil, goerr.New("source not found",
+			goerr.V("workspace_id", string(ws)),
+			goerr.V("source_id", string(id)))
+	}
+	src.Description = description
+	return cloneSource(src), nil
+}
+
 func (r *SourceRepo) Delete(ctx context.Context, ws types.WorkspaceID, id types.SourceID) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

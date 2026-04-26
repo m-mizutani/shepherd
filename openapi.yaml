@@ -242,6 +242,30 @@ paths:
           description: Conflict
 
   /api/v1/ws/{workspaceId}/sources/{sourceId}:
+    patch:
+      operationId: updateSource
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - name: sourceId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateSourceRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Source"
+        "404":
+          description: Not Found
     delete:
       operationId: deleteSource
       parameters:
@@ -589,6 +613,13 @@ components:
         description:
           type: string
       required: [provider, url]
+
+    UpdateSourceRequest:
+      type: object
+      properties:
+        description:
+          type: string
+      required: [description]
 
     ToolState:
       type: object

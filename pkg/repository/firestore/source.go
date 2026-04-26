@@ -89,6 +89,26 @@ func sortByCreatedAtAsc(srcs []*model.Source) {
 	})
 }
 
+func (r *sourceRepository) UpdateDescription(ctx context.Context, ws types.WorkspaceID, id types.SourceID, description string) (*model.Source, error) {
+	ref := r.collection(ws).Doc(string(id))
+	if _, err := ref.Get(ctx); err != nil {
+		if isNotFound(err) {
+			return nil, goerr.New("source not found",
+				goerr.V("workspace_id", string(ws)),
+				goerr.V("source_id", string(id)))
+		}
+		return nil, goerr.Wrap(err, "failed to lookup source for update")
+	}
+	// Field-path merge so the description update is atomic and never
+	// re-writes URL / object id / createdAt.
+	if _, err := ref.Set(ctx, map[string]any{
+		"Description": description,
+	}, firestore.Merge([]string{"Description"})); err != nil {
+		return nil, goerr.Wrap(err, "failed to update source description")
+	}
+	return r.Get(ctx, ws, id)
+}
+
 func (r *sourceRepository) Delete(ctx context.Context, ws types.WorkspaceID, id types.SourceID) error {
 	ref := r.collection(ws).Doc(string(id))
 	if _, err := ref.Get(ctx); err != nil {

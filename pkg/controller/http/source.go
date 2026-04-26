@@ -58,6 +58,24 @@ func (h *APIHandler) CreateSource(w http.ResponseWriter, r *http.Request, worksp
 	writeJSON(r.Context(), w, http.StatusCreated, toSourceResponse(s))
 }
 
+func (h *APIHandler) UpdateSource(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId, sourceId string) {
+	if h.sourceUC == nil {
+		errutil.HandleHTTP(r.Context(), w, goerr.New("source feature not configured"), http.StatusServiceUnavailable)
+		return
+	}
+	var req UpdateSourceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		errutil.HandleHTTP(r.Context(), w, goerr.Wrap(err, "invalid request body"), http.StatusBadRequest)
+		return
+	}
+	s, err := h.sourceUC.UpdateDescription(r.Context(), types.WorkspaceID(workspaceId), types.SourceID(sourceId), req.Description)
+	if err != nil {
+		handleUseCaseError(r.Context(), w, err)
+		return
+	}
+	writeJSON(r.Context(), w, http.StatusOK, toSourceResponse(s))
+}
+
 func (h *APIHandler) DeleteSource(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId, sourceId string) {
 	if h.sourceUC == nil {
 		errutil.HandleHTTP(r.Context(), w, goerr.New("source feature not configured"), http.StatusServiceUnavailable)

@@ -25,6 +25,7 @@ type SourceRepository interface {
 	Get(ctx context.Context, ws types.WorkspaceID, id types.SourceID) (*model.Source, error)
 	List(ctx context.Context, ws types.WorkspaceID) ([]*model.Source, error)
 	ListByProvider(ctx context.Context, ws types.WorkspaceID, p types.SourceProvider) ([]*model.Source, error)
+	UpdateDescription(ctx context.Context, ws types.WorkspaceID, id types.SourceID, description string) (*model.Source, error)
 	Delete(ctx context.Context, ws types.WorkspaceID, id types.SourceID) error
 }
 

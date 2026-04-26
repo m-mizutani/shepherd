@@ -130,6 +130,11 @@ func (u *UseCase) Delete(ctx context.Context, ws types.WorkspaceID, id types.Sou
 	return u.repo.Delete(ctx, ws, id)
 }
 
+// UpdateDescription replaces the free-text description for the Source.
+func (u *UseCase) UpdateDescription(ctx context.Context, ws types.WorkspaceID, id types.SourceID, description string) (*model.Source, error) {
+	return u.repo.UpdateDescription(ctx, ws, id, description)
+}
+
 func classifyNotionErr(err error) error {
 	switch {
 	case errors.Is(err, notion.ErrUnauthorized):

@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { useState } from "react";
 import { api } from "../lib/api";
 import { PageShell } from "../components/ui/page-shell";
@@ -33,10 +33,16 @@ const NAV_ITEMS: {
   { id: "tools", labelKey: "settingsNavTools", icon: "settings", group: "integration" },
 ];
 
+const DEFAULT_SECTION = "statuses";
+
 export default function WorkspaceSettingsPage() {
-  const { workspaceId } = useParams<{ workspaceId: string }>();
+  const { workspaceId, section } = useParams<{
+    workspaceId: string;
+    section?: string;
+  }>();
   const { t } = useTranslation();
-  const [active, setActive] = useState<string>("statuses");
+  const validIds = new Set(NAV_ITEMS.map((i) => i.id));
+  const active = section && validIds.has(section) ? section : DEFAULT_SECTION;
   const [editMode, setEditMode] = useState(false);
 
   const { data, isLoading, error, refetch } = useQuery({
@@ -73,12 +79,11 @@ export default function WorkspaceSettingsPage() {
                 {groupLabel(g)}
               </div>
               {NAV_ITEMS.filter((i) => i.group === g).map((it) => (
-                <button
+                <Link
                   key={it.id}
-                  type="button"
-                  onClick={() => setActive(it.id)}
+                  to={`/ws/${workspaceId}/settings/${it.id}`}
                   className={cn(
-                    "w-full flex items-center gap-2 px-2.5 py-1.5 rounded-2 text-[13px] cursor-pointer text-left",
+                    "w-full flex items-center gap-2 px-2.5 py-1.5 rounded-2 text-[13px] cursor-pointer text-left no-underline",
                     it.id === active
                       ? "bg-brand-soft text-ink-1 font-semibold"
                       : "text-ink-3 font-medium hover:bg-bg-sunken hover:text-ink-1",
@@ -92,7 +97,7 @@ export default function WorkspaceSettingsPage() {
                     }
                   />
                   {t(it.labelKey)}
-                </button>
+                </Link>
               ))}
             </div>
           ))}
