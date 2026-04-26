@@ -28,7 +28,7 @@ func TestFactory_AvailableFollowsToken(t *testing.T) {
 		tnotion.SetTokenForTest(f, "secret_xx")
 		gt.NoError(t, f.Init(context.Background()))
 		gt.True(t, f.Available())
-		gt.Equal(t, len(f.Tools()), 3)
+		gt.Equal(t, len(f.Tools()), 4) // search / get_page / query_database / list_sources
 		gt.NotNil(t, f.Client())
 	})
 }

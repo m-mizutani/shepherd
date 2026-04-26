@@ -13,6 +13,10 @@ type Source struct {
 	ID          types.SourceID
 	WorkspaceID types.WorkspaceID
 	Provider    types.SourceProvider
+	// Description is free-text the user adds to explain what this Source is.
+	// Surfaced to the LLM (via list_sources) so it can pick the right Source
+	// to search.
+	Description string
 	Notion      *NotionSource
 	CreatedAt   time.Time
 	CreatedBy   string

@@ -46,7 +46,11 @@ func (h *APIHandler) CreateSource(w http.ResponseWriter, r *http.Request, worksp
 		return
 	}
 	createdBy := tokenSubFromCtx(r.Context())
-	s, err := h.sourceUC.CreateNotionSource(r.Context(), types.WorkspaceID(workspaceId), req.Url, createdBy)
+	description := ""
+	if req.Description != nil {
+		description = *req.Description
+	}
+	s, err := h.sourceUC.CreateNotionSource(r.Context(), types.WorkspaceID(workspaceId), req.Url, description, createdBy)
 	if err != nil {
 		writeSourceError(r.Context(), w, err)
 		return
@@ -120,6 +124,10 @@ func toSourceResponse(s *model.Source) Source {
 	if s.CreatedBy != "" {
 		v := s.CreatedBy
 		out.CreatedBy = &v
+	}
+	if s.Description != "" {
+		v := s.Description
+		out.Description = &v
 	}
 	if s.Notion != nil {
 		ns := NotionSource{

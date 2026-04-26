@@ -29,8 +29,6 @@ const NAV_ITEMS: {
   { id: "fields", labelKey: "settingsNavFields", icon: "filter", group: "workspace" },
   { id: "ticket-config", labelKey: "settingsNavTicketConfig", icon: "inbox", group: "workspace" },
   { id: "labels", labelKey: "settingsNavLabels", icon: "book", group: "workspace" },
-  { id: "slack", labelKey: "settingsNavSlack", icon: "slack", group: "integration" },
-  { id: "members", labelKey: "settingsNavMembers", icon: "user", group: "integration" },
   { id: "sources", labelKey: "settingsNavSources", icon: "link", group: "integration" },
   { id: "tools", labelKey: "settingsNavTools", icon: "settings", group: "integration" },
 ];

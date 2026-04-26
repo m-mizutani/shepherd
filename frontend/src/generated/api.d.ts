@@ -320,6 +320,7 @@ export interface components {
             workspaceId: string;
             /** @enum {string} */
             provider: "notion";
+            description?: string;
             notion?: components["schemas"]["NotionSource"];
             /** Format: date-time */
             createdAt: string;
@@ -329,6 +330,7 @@ export interface components {
             /** @enum {string} */
             provider: "notion";
             url: string;
+            description?: string;
         };
         ToolState: {
             providerId: string;

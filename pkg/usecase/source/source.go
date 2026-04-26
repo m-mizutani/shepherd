@@ -92,7 +92,7 @@ func (u *UseCase) VerifyNotionTarget(ctx context.Context, raw string) (*model.No
 
 // CreateNotionSource verifies and persists a Source. Returns ErrDuplicate when
 // the same (provider, objectID) is already registered for this workspace.
-func (u *UseCase) CreateNotionSource(ctx context.Context, ws types.WorkspaceID, raw string, createdBy string) (*model.Source, error) {
+func (u *UseCase) CreateNotionSource(ctx context.Context, ws types.WorkspaceID, raw, description, createdBy string) (*model.Source, error) {
 	notionSrc, err := u.VerifyNotionTarget(ctx, raw)
 	if err != nil {
 		return nil, err
@@ -111,6 +111,7 @@ func (u *UseCase) CreateNotionSource(ctx context.Context, ws types.WorkspaceID, 
 	created, err := u.repo.Create(ctx, &model.Source{
 		WorkspaceID: ws,
 		Provider:    types.SourceProviderNotion,
+		Description: description,
 		Notion:      notionSrc,
 		CreatedAt:   u.now(),
 		CreatedBy:   createdBy,

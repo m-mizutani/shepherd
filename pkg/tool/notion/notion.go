@@ -63,7 +63,7 @@ func (f *Factory) Init(_ context.Context) error {
 	}
 	f.client = notionsvc.New(f.token, f.httpClient)
 	f.guard = source.NewNotionGuard(f.sourceRepo, f.client)
-	f.tools = buildTools(f.client, f.guard)
+	f.tools = append(buildTools(f.client, f.guard), newListSourcesTool(f.sourceRepo))
 	return nil
 }
 

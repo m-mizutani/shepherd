@@ -567,6 +567,8 @@ components:
         provider:
           type: string
           enum: [notion]
+        description:
+          type: string
         notion:
           $ref: "#/components/schemas/NotionSource"
         createdAt:
@@ -583,6 +585,8 @@ components:
           type: string
           enum: [notion]
         url:
+          type: string
+        description:
           type: string
       required: [provider, url]
 

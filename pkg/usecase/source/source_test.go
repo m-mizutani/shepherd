@@ -58,13 +58,13 @@ func TestUseCase_VerifyAndCreate(t *testing.T) {
 	}
 	uc := source.New(repo, fk, nil)
 
-	src, err := uc.CreateNotionSource(ctx, "ws-1", "https://www.notion.so/x/Page-A-"+pageA, "user1")
+	src, err := uc.CreateNotionSource(ctx, "ws-1", "https://www.notion.so/x/Page-A-"+pageA, "tickets-DB", "user1")
 	gt.NoError(t, err)
 	gt.Equal(t, src.Notion.Title, "Page A")
 	gt.Equal(t, src.Notion.ObjectID, pageA)
 
 	// Duplicate
-	_, err = uc.CreateNotionSource(ctx, "ws-1", "https://www.notion.so/x/Page-A-"+pageA, "user1")
+	_, err = uc.CreateNotionSource(ctx, "ws-1", "https://www.notion.so/x/Page-A-"+pageA, "tickets-DB", "user1")
 	gt.True(t, errors.Is(err, source.ErrDuplicate))
 }
 
