@@ -12,10 +12,28 @@ type Repository interface {
 	Ticket() TicketRepository
 	Comment() CommentRepository
 	TicketHistory() TicketHistoryRepository
+	Source() SourceRepository
+	ToolSettings() ToolSettingsRepository
 	PutToken(ctx context.Context, token *auth.Token) error
 	GetToken(ctx context.Context, tokenID auth.TokenID) (*auth.Token, error)
 	DeleteToken(ctx context.Context, tokenID auth.TokenID) error
 	Close() error
+}
+
+type SourceRepository interface {
+	Create(ctx context.Context, s *model.Source) (*model.Source, error)
+	Get(ctx context.Context, ws types.WorkspaceID, id types.SourceID) (*model.Source, error)
+	List(ctx context.Context, ws types.WorkspaceID) ([]*model.Source, error)
+	ListByProvider(ctx context.Context, ws types.WorkspaceID, p types.SourceProvider) ([]*model.Source, error)
+	Delete(ctx context.Context, ws types.WorkspaceID, id types.SourceID) error
+}
+
+type ToolSettingsRepository interface {
+	// Get returns the workspace's recorded settings, or an empty (non-nil)
+	// ToolSettings when nothing has been written yet. Callers apply factory
+	// defaults to absent keys via ToolSettings.IsEnabled.
+	Get(ctx context.Context, ws types.WorkspaceID) (*model.ToolSettings, error)
+	Set(ctx context.Context, ws types.WorkspaceID, providerID string, enabled bool) error
 }
 
 type TicketRepository interface {

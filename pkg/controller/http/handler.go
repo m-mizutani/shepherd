@@ -10,7 +10,9 @@ import (
 	"github.com/m-mizutani/shepherd/pkg/domain/model"
 	"github.com/m-mizutani/shepherd/pkg/domain/model/config"
 	"github.com/m-mizutani/shepherd/pkg/domain/types"
+	"github.com/m-mizutani/shepherd/pkg/tool"
 	"github.com/m-mizutani/shepherd/pkg/usecase"
+	"github.com/m-mizutani/shepherd/pkg/usecase/source"
 	"github.com/m-mizutani/shepherd/pkg/utils/errutil"
 )
 
@@ -18,15 +20,21 @@ type APIHandler struct {
 	workspaceUC *usecase.WorkspaceUseCase
 	ticketUC    *usecase.TicketUseCase
 	slackUC     *usecase.SlackUseCase
+	sourceUC    *source.UseCase
+	repo        interfaces.Repository
+	catalog     *tool.Catalog
 }
 
 var _ ServerInterface = (*APIHandler)(nil)
 
-func NewAPIHandler(registry *model.WorkspaceRegistry, repo interfaces.Repository, notifier usecase.StatusChangeNotifier, slackUC *usecase.SlackUseCase) *APIHandler {
+func NewAPIHandler(registry *model.WorkspaceRegistry, repo interfaces.Repository, notifier usecase.StatusChangeNotifier, slackUC *usecase.SlackUseCase, sourceUC *source.UseCase, catalog *tool.Catalog) *APIHandler {
 	return &APIHandler{
 		workspaceUC: usecase.NewWorkspaceUseCase(registry),
 		ticketUC:    usecase.NewTicketUseCase(repo, registry, notifier),
 		slackUC:     slackUC,
+		sourceUC:    sourceUC,
+		repo:        repo,
+		catalog:     catalog,
 	}
 }
 

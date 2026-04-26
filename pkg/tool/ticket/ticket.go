@@ -11,22 +11,34 @@ import (
 	"github.com/m-mizutani/gollem"
 	"github.com/m-mizutani/shepherd/pkg/domain/interfaces"
 	"github.com/m-mizutani/shepherd/pkg/domain/types"
+	"github.com/m-mizutani/shepherd/pkg/tool"
+	"github.com/urfave/cli/v3"
 )
 
-// Deps bundles the repository tools depend on.
-type Deps struct {
-	Repo interfaces.Repository
+// Factory implements tool.ToolFactory for ticket tools.
+type Factory struct {
+	repo  interfaces.Repository
+	tools []gollem.Tool
 }
 
-// Tools returns every gollem.Tool exported from this package.
-func Tools(d Deps) []gollem.Tool {
-	return []gollem.Tool{
-		newSearchTool(d.Repo),
-		newGetTool(d.Repo),
-		newGetCommentsTool(d.Repo),
-		newGetHistoryTool(d.Repo),
+func New(repo interfaces.Repository) *Factory { return &Factory{repo: repo} }
+
+func (f *Factory) ID() tool.ProviderID { return tool.ProviderTicket }
+func (f *Factory) Flags() []cli.Flag   { return nil }
+
+func (f *Factory) Init(_ context.Context) error {
+	f.tools = []gollem.Tool{
+		newSearchTool(f.repo),
+		newGetTool(f.repo),
+		newGetCommentsTool(f.repo),
+		newGetHistoryTool(f.repo),
 	}
+	return nil
 }
+
+func (f *Factory) Available() bool      { return f.repo != nil }
+func (f *Factory) Tools() []gollem.Tool { return f.tools }
+func (f *Factory) DefaultEnabled() bool { return true }
 
 // workspaceFromCtx returns the active workspace ID, erroring out cleanly when
 // the caller forgot to bind one. The error message is structured for the LLM.

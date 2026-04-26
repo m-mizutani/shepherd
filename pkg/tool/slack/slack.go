@@ -8,10 +8,12 @@ import (
 
 	"github.com/m-mizutani/gollem"
 	slackService "github.com/m-mizutani/shepherd/pkg/service/slack"
+	"github.com/m-mizutani/shepherd/pkg/tool"
+	"github.com/urfave/cli/v3"
 )
 
 // SlackTooler is the subset of the Slack service used by the tools in this
-// package. The parent pkg/tool defines the same shape and re-exports it.
+// package. Production code passes *slackService.Client directly.
 type SlackTooler interface {
 	SearchMessages(ctx context.Context, query string, count int, sort string) ([]*slackService.SearchMatch, error)
 	GetThreadMessages(ctx context.Context, channelID, threadTS string, limit int) ([]*slackService.Message, error)
@@ -19,17 +21,31 @@ type SlackTooler interface {
 	GetUserInfo(ctx context.Context, userID string) (*slackService.UserInfo, error)
 }
 
-// Deps bundles dependencies for Slack-facing tools.
-type Deps struct {
-	Slack SlackTooler
+// Factory implements tool.ToolFactory for Slack tools.
+type Factory struct {
+	svc   SlackTooler
+	tools []gollem.Tool
 }
 
-// Tools returns every gollem.Tool exported from this package.
-func Tools(d Deps) []gollem.Tool {
-	return []gollem.Tool{
-		newSearchMessagesTool(d.Slack),
-		newGetThreadTool(d.Slack),
-		newGetChannelHistoryTool(d.Slack),
-		newGetUserInfoTool(d.Slack),
+// New constructs a Factory. svc may be nil — Available() then reports false.
+func New(svc SlackTooler) *Factory { return &Factory{svc: svc} }
+
+func (f *Factory) ID() tool.ProviderID { return tool.ProviderSlack }
+func (f *Factory) Flags() []cli.Flag   { return nil }
+
+func (f *Factory) Init(_ context.Context) error {
+	if f.svc == nil {
+		return nil
 	}
+	f.tools = []gollem.Tool{
+		newSearchMessagesTool(f.svc),
+		newGetThreadTool(f.svc),
+		newGetChannelHistoryTool(f.svc),
+		newGetUserInfoTool(f.svc),
+	}
+	return nil
 }
+
+func (f *Factory) Available() bool      { return f.svc != nil }
+func (f *Factory) Tools() []gollem.Tool { return f.tools }
+func (f *Factory) DefaultEnabled() bool { return true }

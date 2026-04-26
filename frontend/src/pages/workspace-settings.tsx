@@ -13,6 +13,8 @@ import { EmptyState } from "../components/ui/empty-state";
 import { cn } from "../lib/utils";
 import { useTranslation } from "../i18n";
 import type { MsgKey } from "../i18n/keys";
+import { SourcesSection } from "./settings/sources-section";
+import { ToolsSection } from "./settings/tools-section";
 
 type NavGroup = "workspace" | "integration";
 
@@ -29,6 +31,8 @@ const NAV_ITEMS: {
   { id: "labels", labelKey: "settingsNavLabels", icon: "book", group: "workspace" },
   { id: "slack", labelKey: "settingsNavSlack", icon: "slack", group: "integration" },
   { id: "members", labelKey: "settingsNavMembers", icon: "user", group: "integration" },
+  { id: "sources", labelKey: "settingsNavSources", icon: "link", group: "integration" },
+  { id: "tools", labelKey: "settingsNavTools", icon: "settings", group: "integration" },
 ];
 
 export default function WorkspaceSettingsPage() {
@@ -130,6 +134,14 @@ export default function WorkspaceSettingsPage() {
               title={t("settingsLoadFailed")}
               onRetry={() => refetch()}
             />
+          )}
+
+          {active === "sources" && workspaceId && (
+            <SourcesSection workspaceId={workspaceId} />
+          )}
+
+          {active === "tools" && workspaceId && (
+            <ToolsSection workspaceId={workspaceId} />
           )}
 
           {data && active === "general" && (

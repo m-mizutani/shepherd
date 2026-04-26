@@ -12,12 +12,28 @@ import (
 	"github.com/m-mizutani/goerr/v2"
 	"github.com/m-mizutani/shepherd/pkg/cli/config"
 	httpController "github.com/m-mizutani/shepherd/pkg/controller/http"
+	"github.com/m-mizutani/shepherd/pkg/domain/types"
+	"github.com/m-mizutani/shepherd/pkg/tool"
+	"github.com/m-mizutani/shepherd/pkg/tool/meta"
+	tnotion "github.com/m-mizutani/shepherd/pkg/tool/notion"
+	tslack "github.com/m-mizutani/shepherd/pkg/tool/slack"
+	"github.com/m-mizutani/shepherd/pkg/tool/ticket"
+	"github.com/m-mizutani/shepherd/pkg/usecase/source"
 	"github.com/m-mizutani/shepherd/pkg/utils/async"
 	"github.com/m-mizutani/shepherd/pkg/utils/errutil"
 	"github.com/m-mizutani/shepherd/pkg/utils/i18n"
 	"github.com/m-mizutani/shepherd/pkg/utils/logging"
 	"github.com/urfave/cli/v3"
 )
+
+// slackToolerOrNil returns the Slack tool client when a bot token is
+// configured, or nil so the slack Factory reports Available()=false.
+func slackToolerOrNil(cfg config.Slack) tslack.SlackTooler {
+	if cfg.BotToken() == "" {
+		return nil
+	}
+	return cfg.NewSlackClient()
+}
 
 func cmdServe() *cli.Command {
 	var (
@@ -31,6 +47,11 @@ func cmdServe() *cli.Command {
 		sentryCfg        config.Sentry
 		llmCfg           config.LLM
 		agentStorageCfg  config.AgentStorage
+
+		// Tool factories own their own --flags via Flags() and are constructed
+		// up-front so the CLI flag list can be aggregated without pkg/cli
+		// having to learn anything about the inner provider deps.
+		notionFactory = tnotion.New(nil, nil) // deps wired after repo is built
 	)
 
 	flags := []cli.Flag{
@@ -61,6 +82,7 @@ func cmdServe() *cli.Command {
 	flags = append(flags, sentryCfg.Flags()...)
 	flags = append(flags, llmCfg.Flags()...)
 	flags = append(flags, agentStorageCfg.Flags()...)
+	flags = append(flags, notionFactory.Flags()...)
 
 	return &cli.Command{
 		Name:  "serve",
@@ -143,6 +165,36 @@ func cmdServe() *cli.Command {
 				}))
 				logger.Info("Slack integration enabled")
 			}
+			// Build the tool catalog: meta/ticket/slack are inert without
+			// per-workspace data; notion gets its repo-derived deps + Init
+			// here, after the repo is constructed.
+			httpClient := &http.Client{Timeout: 30 * time.Second}
+			notionFactory.SetDeps(repo.Source(), httpClient)
+
+			factories := []tool.ToolFactory{
+				meta.New(registry, time.Now),
+				ticket.New(repo),
+				tslack.New(slackToolerOrNil(slackCfg)),
+				notionFactory,
+			}
+			for _, f := range factories {
+				if err := f.Init(ctx); err != nil {
+					return goerr.Wrap(err, "tool factory init failed", goerr.V("provider", string(f.ID())))
+				}
+			}
+
+			catalog := tool.NewCatalog(factories, repo.ToolSettings()).
+				WithGate(tool.ProviderNotion, func(ctx context.Context, ws types.WorkspaceID) (bool, error) {
+					srcs, err := repo.Source().ListByProvider(ctx, ws, types.SourceProviderNotion)
+					if err != nil {
+						return false, err
+					}
+					return len(srcs) > 0, nil
+				})
+
+			sourceUC := source.New(repo.Source(), notionFactory.Client(), time.Now)
+			serverOpts = append(serverOpts, httpController.WithSource(sourceUC, catalog))
+
 			httpServer := httpController.New(registry, repo, authUC, serverOpts...)
 
 			server := &http.Server{

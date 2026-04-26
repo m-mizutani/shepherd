@@ -14,6 +14,8 @@ type Repository struct {
 	tickets       *TicketRepo
 	comments      *CommentRepo
 	ticketHistory *TicketHistoryRepo
+	sources       *SourceRepo
+	toolSettings  *ToolSettingsRepo
 	tokens        map[string]*auth.Token
 }
 
@@ -22,6 +24,8 @@ func New() *Repository {
 		tickets:       newTicketRepo(),
 		comments:      newCommentRepo(),
 		ticketHistory: newTicketHistoryRepo(),
+		sources:       newSourceRepo(),
+		toolSettings:  newToolSettingsRepo(),
 		tokens:        make(map[string]*auth.Token),
 	}
 }
@@ -31,6 +35,8 @@ var _ interfaces.Repository = (*Repository)(nil)
 func (r *Repository) Ticket() interfaces.TicketRepository              { return r.tickets }
 func (r *Repository) Comment() interfaces.CommentRepository            { return r.comments }
 func (r *Repository) TicketHistory() interfaces.TicketHistoryRepository { return r.ticketHistory }
+func (r *Repository) Source() interfaces.SourceRepository              { return r.sources }
+func (r *Repository) ToolSettings() interfaces.ToolSettingsRepository  { return r.toolSettings }
 
 func (r *Repository) PutToken(ctx context.Context, token *auth.Token) error {
 	r.mu.Lock()

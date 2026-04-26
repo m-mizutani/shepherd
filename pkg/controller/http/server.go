@@ -10,16 +10,29 @@ import (
 	"github.com/m-mizutani/shepherd/frontend"
 	"github.com/m-mizutani/shepherd/pkg/domain/interfaces"
 	"github.com/m-mizutani/shepherd/pkg/domain/model"
+	"github.com/m-mizutani/shepherd/pkg/tool"
 	"github.com/m-mizutani/shepherd/pkg/usecase"
+	"github.com/m-mizutani/shepherd/pkg/usecase/source"
 	"github.com/m-mizutani/shepherd/pkg/utils/safe"
 )
 
 type Server struct {
-	mux      *chi.Mux
-	slackCfg *SlackConfig
+	mux       *chi.Mux
+	slackCfg  *SlackConfig
+	sourceUC  *source.UseCase
+	catalog   *tool.Catalog
 }
 
 type ServerOption func(*Server)
+
+// WithSource wires the Source/Tool-settings management endpoints. catalog and
+// sourceUC are required when this option is applied.
+func WithSource(sourceUC *source.UseCase, catalog *tool.Catalog) ServerOption {
+	return func(s *Server) {
+		s.sourceUC = sourceUC
+		s.catalog = catalog
+	}
+}
 
 type SlackConfig struct {
 	SigningSecret string
@@ -61,7 +74,7 @@ func New(registry *model.WorkspaceRegistry, repo interfaces.Repository, authUC u
 		notifier = s.slackCfg.Notifier
 		slackUC = s.slackCfg.SlackUC
 	}
-	apiHandler := NewAPIHandler(registry, repo, notifier, slackUC)
+	apiHandler := NewAPIHandler(registry, repo, notifier, slackUC, s.sourceUC, s.catalog)
 	s.mux.Group(func(r chi.Router) {
 		r.Use(authMiddleware(authUC))
 		HandlerFromMux(apiHandler, r)

@@ -20,6 +20,11 @@ import (
 	"github.com/oapi-codegen/runtime"
 )
 
+// Defines values for CreateSourceRequestProvider.
+const (
+	CreateSourceRequestProviderNotion CreateSourceRequestProvider = "notion"
+)
+
 // Defines values for FieldType.
 const (
 	Date        FieldType = "date"
@@ -32,6 +37,24 @@ const (
 	User        FieldType = "user"
 )
 
+// Defines values for NotionSourceObjectType.
+const (
+	Database NotionSourceObjectType = "database"
+	Page     NotionSourceObjectType = "page"
+)
+
+// Defines values for SourceProvider.
+const (
+	SourceProviderNotion SourceProvider = "notion"
+)
+
+// Defines values for ToolStateReason.
+const (
+	GateBlocked         ToolStateReason = "gate_blocked"
+	ProviderUnavailable ToolStateReason = "provider_unavailable"
+	WorkspaceDisabled   ToolStateReason = "workspace_disabled"
+)
+
 // Comment defines model for Comment.
 type Comment struct {
 	Body        string    `json:"body"`
@@ -39,6 +62,15 @@ type Comment struct {
 	Id          string    `json:"id"`
 	SlackUserId string    `json:"slackUserId"`
 }
+
+// CreateSourceRequest defines model for CreateSourceRequest.
+type CreateSourceRequest struct {
+	Provider CreateSourceRequestProvider `json:"provider"`
+	Url      string                      `json:"url"`
+}
+
+// CreateSourceRequestProvider defines model for CreateSourceRequest.Provider.
+type CreateSourceRequestProvider string
 
 // CreateTicketRequest defines model for CreateTicketRequest.
 type CreateTicketRequest struct {
@@ -83,6 +115,17 @@ type FieldValue struct {
 	Value   interface{}   `json:"value"`
 }
 
+// NotionSource defines model for NotionSource.
+type NotionSource struct {
+	ObjectId   string                 `json:"objectId"`
+	ObjectType NotionSourceObjectType `json:"objectType"`
+	Title      *string                `json:"title,omitempty"`
+	Url        string                 `json:"url"`
+}
+
+// NotionSourceObjectType defines model for NotionSource.ObjectType.
+type NotionSourceObjectType string
+
 // SlackUserInfo defines model for SlackUserInfo.
 type SlackUserInfo struct {
 	Email    *string `json:"email,omitempty"`
@@ -90,6 +133,19 @@ type SlackUserInfo struct {
 	ImageUrl *string `json:"imageUrl,omitempty"`
 	Name     string  `json:"name"`
 }
+
+// Source defines model for Source.
+type Source struct {
+	CreatedAt   time.Time      `json:"createdAt"`
+	CreatedBy   *string        `json:"createdBy,omitempty"`
+	Id          string         `json:"id"`
+	Notion      *NotionSource  `json:"notion,omitempty"`
+	Provider    SourceProvider `json:"provider"`
+	WorkspaceId string         `json:"workspaceId"`
+}
+
+// SourceProvider defines model for Source.Provider.
+type SourceProvider string
 
 // StatusDef defines model for StatusDef.
 type StatusDef struct {
@@ -121,6 +177,18 @@ type TicketConfig struct {
 	ClosedStatusIds []string `json:"closedStatusIds"`
 	DefaultStatusId string   `json:"defaultStatusId"`
 }
+
+// ToolState defines model for ToolState.
+type ToolState struct {
+	Available      bool             `json:"available"`
+	DefaultEnabled bool             `json:"defaultEnabled"`
+	Enabled        bool             `json:"enabled"`
+	ProviderId     string           `json:"providerId"`
+	Reason         *ToolStateReason `json:"reason,omitempty"`
+}
+
+// ToolStateReason defines model for ToolState.Reason.
+type ToolStateReason string
 
 // UpdateTicketRequest defines model for UpdateTicketRequest.
 type UpdateTicketRequest struct {
@@ -157,11 +225,22 @@ type ListTicketsParams struct {
 	IsClosed *bool   `form:"isClosed,omitempty" json:"isClosed,omitempty"`
 }
 
+// SetToolEnabledJSONBody defines parameters for SetToolEnabled.
+type SetToolEnabledJSONBody struct {
+	Enabled bool `json:"enabled"`
+}
+
+// CreateSourceJSONRequestBody defines body for CreateSource for application/json ContentType.
+type CreateSourceJSONRequestBody = CreateSourceRequest
+
 // CreateTicketJSONRequestBody defines body for CreateTicket for application/json ContentType.
 type CreateTicketJSONRequestBody = CreateTicketRequest
 
 // UpdateTicketJSONRequestBody defines body for UpdateTicket for application/json ContentType.
 type UpdateTicketJSONRequestBody = UpdateTicketRequest
+
+// SetToolEnabledJSONRequestBody defines body for SetToolEnabled for application/json ContentType.
+type SetToolEnabledJSONRequestBody SetToolEnabledJSONBody
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -184,6 +263,15 @@ type ServerInterface interface {
 	// (GET /api/v1/ws/{workspaceId}/slack/users/{userId})
 	GetSlackUserInfo(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId, userId string)
 
+	// (GET /api/v1/ws/{workspaceId}/sources)
+	ListSources(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId)
+
+	// (POST /api/v1/ws/{workspaceId}/sources)
+	CreateSource(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId)
+
+	// (DELETE /api/v1/ws/{workspaceId}/sources/{sourceId})
+	DeleteSource(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId, sourceId string)
+
 	// (GET /api/v1/ws/{workspaceId}/tickets)
 	ListTickets(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId, params ListTicketsParams)
 
@@ -201,6 +289,12 @@ type ServerInterface interface {
 
 	// (GET /api/v1/ws/{workspaceId}/tickets/{ticketId}/comments)
 	ListComments(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId, ticketId TicketId)
+
+	// (GET /api/v1/ws/{workspaceId}/tools)
+	ListToolSettings(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId)
+
+	// (PUT /api/v1/ws/{workspaceId}/tools/{providerId})
+	SetToolEnabled(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId, providerId string)
 }
 
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
@@ -237,6 +331,21 @@ func (_ Unimplemented) GetSlackUserInfo(w http.ResponseWriter, r *http.Request, 
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// (GET /api/v1/ws/{workspaceId}/sources)
+func (_ Unimplemented) ListSources(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /api/v1/ws/{workspaceId}/sources)
+func (_ Unimplemented) CreateSource(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (DELETE /api/v1/ws/{workspaceId}/sources/{sourceId})
+func (_ Unimplemented) DeleteSource(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId, sourceId string) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // (GET /api/v1/ws/{workspaceId}/tickets)
 func (_ Unimplemented) ListTickets(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId, params ListTicketsParams) {
 	w.WriteHeader(http.StatusNotImplemented)
@@ -264,6 +373,16 @@ func (_ Unimplemented) UpdateTicket(w http.ResponseWriter, r *http.Request, work
 
 // (GET /api/v1/ws/{workspaceId}/tickets/{ticketId}/comments)
 func (_ Unimplemented) ListComments(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId, ticketId TicketId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /api/v1/ws/{workspaceId}/tools)
+func (_ Unimplemented) ListToolSettings(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PUT /api/v1/ws/{workspaceId}/tools/{providerId})
+func (_ Unimplemented) SetToolEnabled(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId, providerId string) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -404,6 +523,90 @@ func (siw *ServerInterfaceWrapper) GetSlackUserInfo(w http.ResponseWriter, r *ht
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetSlackUserInfo(w, r, workspaceId, userId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListSources operation middleware
+func (siw *ServerInterfaceWrapper) ListSources(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "workspaceId" -------------
+	var workspaceId WorkspaceId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "workspaceId", chi.URLParam(r, "workspaceId"), &workspaceId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "workspaceId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListSources(w, r, workspaceId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateSource operation middleware
+func (siw *ServerInterfaceWrapper) CreateSource(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "workspaceId" -------------
+	var workspaceId WorkspaceId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "workspaceId", chi.URLParam(r, "workspaceId"), &workspaceId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "workspaceId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateSource(w, r, workspaceId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteSource operation middleware
+func (siw *ServerInterfaceWrapper) DeleteSource(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "workspaceId" -------------
+	var workspaceId WorkspaceId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "workspaceId", chi.URLParam(r, "workspaceId"), &workspaceId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "workspaceId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "sourceId" -------------
+	var sourceId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "sourceId", chi.URLParam(r, "sourceId"), &sourceId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sourceId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteSource(w, r, workspaceId, sourceId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -618,6 +821,65 @@ func (siw *ServerInterfaceWrapper) ListComments(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
+// ListToolSettings operation middleware
+func (siw *ServerInterfaceWrapper) ListToolSettings(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "workspaceId" -------------
+	var workspaceId WorkspaceId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "workspaceId", chi.URLParam(r, "workspaceId"), &workspaceId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "workspaceId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListToolSettings(w, r, workspaceId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SetToolEnabled operation middleware
+func (siw *ServerInterfaceWrapper) SetToolEnabled(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "workspaceId" -------------
+	var workspaceId WorkspaceId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "workspaceId", chi.URLParam(r, "workspaceId"), &workspaceId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "workspaceId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "providerId" -------------
+	var providerId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "providerId", chi.URLParam(r, "providerId"), &providerId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "providerId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SetToolEnabled(w, r, workspaceId, providerId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 type UnescapedCookieParamError struct {
 	ParamName string
 	Err       error
@@ -750,6 +1012,15 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/api/v1/ws/{workspaceId}/slack/users/{userId}", wrapper.GetSlackUserInfo)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/ws/{workspaceId}/sources", wrapper.ListSources)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/ws/{workspaceId}/sources", wrapper.CreateSource)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/api/v1/ws/{workspaceId}/sources/{sourceId}", wrapper.DeleteSource)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/ws/{workspaceId}/tickets", wrapper.ListTickets)
 	})
 	r.Group(func(r chi.Router) {
@@ -767,6 +1038,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/ws/{workspaceId}/tickets/{ticketId}/comments", wrapper.ListComments)
 	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/ws/{workspaceId}/tools", wrapper.ListToolSettings)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/api/v1/ws/{workspaceId}/tools/{providerId}", wrapper.SetToolEnabled)
+	})
 
 	return r
 }
@@ -774,28 +1051,34 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"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",
+	"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",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file
