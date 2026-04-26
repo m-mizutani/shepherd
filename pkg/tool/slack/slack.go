@@ -48,4 +48,7 @@ func (f *Factory) Init(_ context.Context) error {
 
 func (f *Factory) Available() bool      { return f.svc != nil }
 func (f *Factory) Tools() []gollem.Tool { return f.tools }
-func (f *Factory) DefaultEnabled() bool { return true }
+// DefaultEnabled is false: Slack tools touch live channels and read user
+// messages, so each workspace owner has to opt in explicitly from the Tools
+// settings page.
+func (f *Factory) DefaultEnabled() bool { return false }
