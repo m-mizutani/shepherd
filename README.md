@@ -10,35 +10,27 @@ Slack-native ticket management for team workflows — messages become tickets, t
   <img src="./docs/images/logo.png" height="128" />
 </p>
 
+## What it does
 
-## Overview
+- **Slack-first** — Tickets are created from Slack messages; status updates flow back to threads.
+- **Workspace-based** — Each Slack channel maps to a workspace with its own statuses and custom fields.
+- **Triage built in** — A background agent investigates new tickets, asks the reporter follow-up questions in-thread, and produces a summary for the assignee.
+- **Web UI** — A React SPA for browsing tickets, configuring workspaces, and tracking status.
 
-Shepherd turns Slack channels into lightweight ticket queues. New messages in a monitored channel automatically create tickets; thread replies become ticket comments. Status changes are notified back to the thread as context blocks.
+See [docs/slack.md § How It Works](docs/slack.md#how-it-works) for the user-facing flow.
 
-- **Slack-first** — Tickets are created from Slack messages, status updates flow back to threads
-- **Workspace-based** — Multiple independent workspaces, each with its own channel, statuses, and custom fields
-- **Web UI** — React SPA for managing tickets, configuring workspaces, and tracking status
-- **Single binary** — Frontend is embedded into the Go binary via `go:embed`
+## Getting started
 
-## Tech Stack
+Read [docs/setup.md](docs/setup.md) for the end-to-end setup walkthrough — from getting a binary to running against a real Slack workspace.
 
-| Layer | Technology |
-|-------|-----------|
-| Backend | Go (chi/v5, goerr/v2, urfave/cli/v3) |
-| Frontend | TypeScript, React, Vite, Tailwind CSS, shadcn/ui |
-| API | OpenAPI-first (oapi-codegen + openapi-typescript) |
-| Database | Firestore (+ in-memory backend for development) |
-| Auth | Slack OIDC (+ `--no-authn` dev mode) |
-| Error tracking | Sentry |
+## Documentation
 
-## Quick Start
-
-```bash
-# Development mode (in-memory DB, no auth)
-shepherd serve --no-authn U_DEV --repository-backend memory --config examples/config.toml
-```
-
-See [docs/slack.md](docs/slack.md) for Slack app setup.
+| Document | Purpose |
+|---|---|
+| [docs/setup.md](docs/setup.md) | End-to-end setup walkthrough (build, configure, run, verify). |
+| [docs/configuration.md](docs/configuration.md) | Reference for every CLI flag, environment variable, and workspace TOML field. |
+| [docs/slack.md](docs/slack.md) | Slack app provisioning and event/interactivity wiring. |
+| [docs/notion.md](docs/notion.md) | Notion integration setup and Source registration. |
 
 ## License
 

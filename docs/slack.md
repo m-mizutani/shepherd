@@ -2,6 +2,8 @@
 
 Shepherd integrates with Slack for authentication (OIDC) and event-driven ticket management. This guide covers how to create and configure a Slack app for use with Shepherd.
 
+For a top-level walkthrough that ties Slack setup together with LLM, storage, and workspace configuration, see [docs/setup.md](setup.md). The full reference for every CLI flag and environment variable mentioned below is in [docs/configuration.md](configuration.md).
+
 ## Prerequisites
 
 - A Slack workspace where you have admin permissions
