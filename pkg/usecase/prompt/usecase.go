@@ -199,7 +199,7 @@ func (u *UseCase) RenderTriagePlan(ctx context.Context, ws types.WorkspaceID, in
 	logging.From(ctx).Warn("triage prompt override execution failed; using default",
 		slog.String("workspace_id", string(ws)),
 		slog.Int("prompt_version", version))
-	def, _ := slotDefs[model.PromptIDTriage]
+	def := slotDefs[model.PromptIDTriage]
 	return executeTemplate(string(model.PromptIDTriage), def.defaultSource, in)
 }
 
