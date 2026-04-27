@@ -196,6 +196,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ws/{workspaceId}/prompts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listPrompts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ws/{workspaceId}/prompts/{promptId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getPrompt"];
+        put: operations["savePrompt"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ws/{workspaceId}/prompts/{promptId}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listPromptHistory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ws/{workspaceId}/prompts/{promptId}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["restorePrompt"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ws/{workspaceId}/tickets/{ticketId}/comments": {
         parameters: {
             query?: never;
@@ -343,11 +407,62 @@ export interface components {
             /** @enum {string} */
             reason?: "provider_unavailable" | "workspace_disabled" | "gate_blocked";
         };
+        PromptSlot: {
+            /** @description Stable identifier (e.g. "triage"). */
+            id: string;
+            label: string;
+            description: string;
+            /** @description false for slots that are placeholders only. */
+            customizable: boolean;
+            /** @description true when at least one override version exists. */
+            configured: boolean;
+            /** @description Current version (0 when no override exists yet). */
+            version: number;
+            length: number;
+            /** Format: date-time */
+            updatedAt?: string | null;
+            updatedBy?: components["schemas"]["PromptAuthor"];
+        };
+        PromptDetail: {
+            id: string;
+            content: string;
+            /** @description 0 when the embedded default is in force, else the latest stored version. */
+            version: number;
+            isOverride: boolean;
+            defaultContent: string;
+            variables: string[];
+            /** Format: date-time */
+            updatedAt?: string | null;
+            updatedBy?: components["schemas"]["PromptAuthor"];
+        };
+        PromptVersion: {
+            version: number;
+            content: string;
+            /** Format: date-time */
+            updatedAt: string;
+            current: boolean;
+            updatedBy?: components["schemas"]["PromptAuthor"];
+        };
+        PromptAuthor: {
+            name: string;
+            email?: string;
+        };
+        PromptVersionConflict: {
+            /** @enum {string} */
+            error: "version_conflict";
+            currentVersion: number;
+        };
+        PromptTemplateError: {
+            /** @enum {string} */
+            error: "invalid_template";
+            reason: string;
+        };
     };
     responses: never;
     parameters: {
         WorkspaceId: string;
         TicketId: string;
+        PromptId: string;
     };
     requestBodies: never;
     headers: never;
@@ -851,6 +966,196 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    listPrompts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        prompts: components["schemas"]["PromptSlot"][];
+                    };
+                };
+            };
+        };
+    };
+    getPrompt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                promptId: components["parameters"]["PromptId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromptDetail"];
+                };
+            };
+            /** @description Unknown promptId */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    savePrompt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                promptId: components["parameters"]["PromptId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    content: string;
+                    /** @description The version number the caller is writing. Must equal current+1 (or 1 when no override exists yet); otherwise 409 Conflict. */
+                    version: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Saved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromptVersion"];
+                };
+            };
+            /** @description Unknown promptId */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Version conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromptVersionConflict"];
+                };
+            };
+            /** @description Invalid template */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromptTemplateError"];
+                };
+            };
+        };
+    };
+    listPromptHistory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                promptId: components["parameters"]["PromptId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        versions: components["schemas"]["PromptVersion"][];
+                    };
+                };
+            };
+            /** @description Unknown promptId */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    restorePrompt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: components["parameters"]["WorkspaceId"];
+                promptId: components["parameters"]["PromptId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description The version to restore from. */
+                    targetVersion: number;
+                    /** @description The new version number to write the restored content as. Must equal current+1. */
+                    version: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Restored as a new version */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromptVersion"];
+                };
+            };
+            /** @description Unknown promptId or targetVersion */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Version conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromptVersionConflict"];
+                };
             };
         };
     };

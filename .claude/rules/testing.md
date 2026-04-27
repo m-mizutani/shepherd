@@ -56,3 +56,16 @@ Concretely, a lifecycle test should:
 A useful rule of thumb: if you can imagine a refactor that changes which internal helper does which step but preserves external behavior, the lifecycle test should still pass. If your tests would all break, they're locked too tightly to the current call shape.
 
 Place lifecycle tests in the test file paired with the orchestrating source file (e.g. tests for `pkg/usecase/triage/usecase.go`'s end-to-end flow live in `usecase_test.go`). The "Test file naming" rule above forbids carved-out files like `lifecycle_test.go` — keep the lifecycle test alongside the per-method tests of the same orchestrating type, prefixed with `TestLifecycle_...` so it is still trivially greppable.
+
+## Frontend E2E tests (Playwright)
+
+The Playwright suite under `frontend/e2e/tests/` is the only contract that verifies the UI actually works end-to-end. Run it with `task test:e2e`.
+
+When you add or change a frontend feature, extend the E2E suite **in the same change**:
+
+- One spec file per feature area (`prompts.spec.ts`, `ticket-crud.spec.ts`, `workspace-settings.spec.ts`, …). Add tests inside the matching file; do not invent ad-hoc files for one-off fixes.
+- Cover at minimum: the happy path through the UI, the primary error / edge state surfaced by the feature (validation, conflict, empty), and any persistence side effect (cross-check via the HTTP API in the same test using the Playwright `request` fixture).
+- Tests run serially against a single memory-backed server (`workers: 1`). Do NOT assume a fresh server between tests in the same file: read current state through the API at the start of the test and assert deltas (e.g. `version === before.version + 1`), not absolute numbers. Tests whose assertions only hold on a pristine server must guard with `test.skip(...)`.
+- Use stable role / text selectors (`getByRole`, `getByText`) anchored on i18n strings from `frontend/src/i18n/en.ts`. Avoid CSS-class selectors — the Tailwind class soup is not a contract.
+- All string literals in `frontend/e2e/tests/*.spec.ts` MUST be English, for the same reasons described in "String literals in tests" above (greppability, contributor friction). When asserting against UI text, use the `en` translation as the source of truth — never hardcode the Japanese rendering.
+- Run `task test:e2e` and confirm green before reporting the task done. "tsc passes" + "Go tests pass" is **not** sufficient evidence the feature works in a browser.

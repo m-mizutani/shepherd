@@ -18,6 +18,7 @@ import (
 	slackService "github.com/m-mizutani/shepherd/pkg/service/slack"
 	"github.com/m-mizutani/shepherd/pkg/tool"
 	"github.com/m-mizutani/shepherd/pkg/usecase"
+	"github.com/m-mizutani/shepherd/pkg/usecase/prompt"
 	"github.com/m-mizutani/shepherd/pkg/usecase/triage"
 	"github.com/m-mizutani/shepherd/pkg/utils/async"
 	slackgo "github.com/slack-go/slack"
@@ -96,7 +97,8 @@ func newRig(t *testing.T, llm gollem.LLMClient) (*triage.UseCase, *triage.PlanEx
 	hist := newFakeHistory()
 	slack := &fakeTriageSlack{}
 	catalog := tool.NewCatalog(nil, repo.ToolSettings())
-	exec := triage.NewPlanExecutor(repo, hist, llm, slack, catalog, triage.Config{IterationCap: 5})
+	promptUC := prompt.New(repo.Prompt())
+	exec := triage.NewPlanExecutor(repo, hist, llm, slack, catalog, promptUC, triage.Config{IterationCap: 5})
 	uc := triage.NewUseCase(exec, &fakeResolver{ws: tWS, channel: tChannel})
 	return uc, exec, repo, hist, slack
 }
@@ -453,7 +455,8 @@ func TestLifecycle_TicketCreate_Ask_Submit_Complete(t *testing.T) {
 	userSlack := &fakeUserSlack{}
 	triageSlack := &fakeTriageSlack{}
 	catalog := tool.NewCatalog(nil, repo.ToolSettings())
-	exec := triage.NewPlanExecutor(repo, hist, llm, triageSlack, catalog, triage.Config{IterationCap: 5})
+	promptUC := prompt.New(repo.Prompt())
+	exec := triage.NewPlanExecutor(repo, hist, llm, triageSlack, catalog, promptUC, triage.Config{IterationCap: 5})
 	triageUC := triage.NewUseCase(exec, &fakeResolver{ws: wsID, channel: channel})
 
 	slackUC := usecase.NewSlackUseCase(repo, registry, userSlack, "https://shepherd.example.com", llm, hist, nil)
