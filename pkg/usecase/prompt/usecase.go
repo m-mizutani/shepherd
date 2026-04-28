@@ -2,12 +2,8 @@ package prompt
 
 import (
 	"context"
-	"errors"
-	"fmt"
-	"io"
 	"log/slog"
 	"strings"
-	"text/template"
 	"time"
 
 	"github.com/m-mizutani/goerr/v2"
@@ -18,14 +14,13 @@ import (
 	"github.com/m-mizutani/shepherd/pkg/utils/logging"
 )
 
-// ErrInvalidTemplate is returned by UseCase.Save when the supplied content
-// either fails to parse as a Go text/template or fails to Execute against
-// every registered probe input. Controllers map this to HTTP 422.
-var ErrInvalidTemplate = goerr.New("invalid prompt template")
-
 // UseCase manages workspace-level prompt overrides. It is also the single
 // place that renders prompts for downstream agents (e.g. triage planner),
 // so override lookup and rendering are colocated.
+//
+// The user-facing override stored here is workspace-specific *additional
+// guidance* — opaque markdown that gets embedded into the shepherd-managed
+// base template at render time. The base template itself is not editable.
 type UseCase struct {
 	repo interfaces.PromptRepository
 }
@@ -43,39 +38,18 @@ type Author struct {
 	Sub   string
 }
 
-// slotDef registers per-PromptID metadata: the embedded default content and
-// the probe inputs used to validate user-supplied templates at Save time.
-//
-// probes must collectively exercise every {{ .Field }} / {{ if }} / {{ range }}
-// action in the default template — both the populated and the empty branch —
-// so a user who introduces a typo in a field name (caught by missingkey=error)
-// or pipelines `range` over the wrong type fails Save instead of triage.
-type slotDef struct {
-	defaultSource string
-	probes        []any
+// slotDefs enumerates every PromptID this usecase recognises. Membership is
+// the only fact callers depend on (lookups for unknown IDs error out), so the
+// value is a zero-sized struct.
+var slotDefs = map[model.PromptID]struct{}{
+	model.PromptIDTriage: {},
 }
 
-var slotDefs = map[model.PromptID]slotDef{
-	model.PromptIDTriage: {
-		defaultSource: triagePlanTemplateSource,
-		probes: []any{
-			TriagePlanInput{
-				Title:          "Sample title",
-				Description:    "Sample description",
-				InitialMessage: "Sample initial message",
-				Reporter:       "U123",
-			},
-			TriagePlanInput{Title: "title only"},
-		},
-	},
-}
-
-// Effective returns the content currently in force for (ws, id) along with
-// its version number. version == 0 means no override exists yet and the
-// returned content is the embedded default.
+// Effective returns the user-supplied additional guidance for (ws, id) along
+// with its version number. version == 0 means no override exists yet and the
+// returned content is empty (the slot is using the bare base prompt).
 func (u *UseCase) Effective(ctx context.Context, ws types.WorkspaceID, id model.PromptID) (string, int, error) {
-	def, ok := slotDefs[id]
-	if !ok {
+	if _, ok := slotDefs[id]; !ok {
 		return "", 0, goerr.New("unknown prompt id", goerr.V("prompt_id", string(id)))
 	}
 	cur, err := u.Current(ctx, ws, id)
@@ -83,7 +57,7 @@ func (u *UseCase) Effective(ctx context.Context, ws types.WorkspaceID, id model.
 		return "", 0, err
 	}
 	if cur == nil {
-		return def.defaultSource, 0, nil
+		return "", 0, nil
 	}
 	return cur.Content, cur.Version, nil
 }
@@ -109,30 +83,17 @@ func (u *UseCase) Current(ctx context.Context, ws types.WorkspaceID, id model.Pr
 	return cur, nil
 }
 
-// Default returns the embedded default content for id (used by the UI to
-// present a "Discard to default" option and by Effective fallback).
-func (u *UseCase) Default(id model.PromptID) (string, error) {
-	def, ok := slotDefs[id]
-	if !ok {
-		return "", goerr.New("unknown prompt id", goerr.V("prompt_id", string(id)))
-	}
-	return def.defaultSource, nil
-}
-
-// Save validates content against the slot's parser + probe inputs and
-// atomically appends it as `version`. The version must equal current+1
-// (or 1 when no override exists yet); otherwise the call is rejected with
-// ErrPromptVersionConflict. ErrInvalidTemplate indicates the user-supplied
-// content is unsafe.
+// Save atomically appends content as the next version. Content is stored
+// verbatim — it is not parsed as a Go template — so the only validation here
+// is that the slot is known and the optimistic-lock version is fresh.
+// version must equal current+1 (or 1 when no override exists yet); otherwise
+// the call is rejected with ErrPromptVersionConflict.
 func (u *UseCase) Save(ctx context.Context, ws types.WorkspaceID, id model.PromptID, version int, content string, by Author) (*model.PromptVersion, error) {
 	if u.repo == nil {
 		return nil, goerr.New("prompt repository not configured")
 	}
 	if _, ok := slotDefs[id]; !ok {
 		return nil, goerr.New("unknown prompt id", goerr.V("prompt_id", string(id)))
-	}
-	if err := validateTemplate(id, content); err != nil {
-		return nil, err
 	}
 
 	draft := &model.PromptVersion{
@@ -172,11 +133,6 @@ func (u *UseCase) Restore(ctx context.Context, ws types.WorkspaceID, id model.Pr
 	if err != nil {
 		return nil, err
 	}
-	// Restore should not be a back-door for storing previously-valid but
-	// now-broken content (slotDefs may have changed). Re-validate.
-	if err := validateTemplate(id, target.Content); err != nil {
-		return nil, err
-	}
 	draft := &model.PromptVersion{
 		Version:        version,
 		Content:        target.Content,
@@ -188,95 +144,21 @@ func (u *UseCase) Restore(ctx context.Context, ws types.WorkspaceID, id model.Pr
 	return u.repo.Append(ctx, ws, id, draft)
 }
 
-// RenderTriagePlan looks up the effective triage prompt for ws and executes
-// it against the supplied input. Triage must keep working even if the
-// override is broken or the repository is unreachable, so failures from
-// either lookup or override execution log and fall back to the embedded
-// default for that turn.
+// RenderTriagePlan looks up the workspace-specific additional guidance for ws
+// and embeds it into the shepherd-managed base template. Only the base
+// template is executed through text/template; the user content is treated as
+// opaque markdown. Repository failures log and continue with an empty
+// guidance string, so a flapping data layer does not take triage down.
 func (u *UseCase) RenderTriagePlan(ctx context.Context, ws types.WorkspaceID, in TriagePlanInput) (string, error) {
-	content, version, err := u.Effective(ctx, ws, model.PromptIDTriage)
+	guidance, _, err := u.Effective(ctx, ws, model.PromptIDTriage)
 	if err != nil {
-		// Repository unreachable / decode error / etc. Log + Sentry then
-		// fall back to the embedded default so a flapping data layer does
-		// not also take triage down.
 		errutil.Handle(ctx,
-			goerr.Wrap(err, "load effective triage prompt failed; falling back to default",
+			goerr.Wrap(err, "load triage prompt guidance failed; continuing without",
 				goerr.V("workspace_id", string(ws))))
-		logging.From(ctx).Warn("triage prompt lookup failed; using default",
+		logging.From(ctx).Warn("triage prompt guidance lookup failed; continuing without",
 			slog.String("workspace_id", string(ws)))
-		def := slotDefs[model.PromptIDTriage]
-		return executeTemplate(string(model.PromptIDTriage), def.defaultSource, in)
+		guidance = ""
 	}
-	rendered, renderErr := executeTemplate(string(model.PromptIDTriage), content, in)
-	if renderErr == nil {
-		return rendered, nil
-	}
-	if version == 0 {
-		// The embedded default failed — that is a programming error, not a
-		// user override issue. Surface it.
-		return "", goerr.Wrap(renderErr, "execute embedded triage template")
-	}
-	// Override is broken at runtime. Log + Sentry, then fall back so triage
-	// keeps working with the embedded default.
-	errutil.Handle(ctx,
-		goerr.Wrap(renderErr, "broken triage prompt override; falling back to default",
-			goerr.V("workspace_id", string(ws)),
-			goerr.V("prompt_version", version)))
-	logging.From(ctx).Warn("triage prompt override execution failed; using default",
-		slog.String("workspace_id", string(ws)),
-		slog.Int("prompt_version", version))
-	def := slotDefs[model.PromptIDTriage]
-	return executeTemplate(string(model.PromptIDTriage), def.defaultSource, in)
-}
-
-// validateTemplate parses content with missingkey=error and Executes it
-// against every registered probe for id. Any failure is wrapped with
-// ErrInvalidTemplate and the underlying message is exposed via goerr.V so
-// the controller can include it in the 422 response.
-func validateTemplate(id model.PromptID, content string) error {
-	def, ok := slotDefs[id]
-	if !ok {
-		return goerr.New("unknown prompt id", goerr.V("prompt_id", string(id)))
-	}
-	tmpl, err := template.New(string(id)).Option("missingkey=error").Parse(content)
-	if err != nil {
-		return goerr.Wrap(ErrInvalidTemplate, "parse failed",
-			goerr.V("reason", err.Error()))
-	}
-	for i, probe := range def.probes {
-		if err := tmpl.Execute(io.Discard, probe); err != nil {
-			return goerr.Wrap(ErrInvalidTemplate, "execute failed",
-				goerr.V("reason", err.Error()),
-				goerr.V("probe_index", i))
-		}
-	}
-	return nil
-}
-
-func executeTemplate(name, content string, input any) (string, error) {
-	tmpl, err := template.New(name).Option("missingkey=error").Parse(content)
-	if err != nil {
-		return "", goerr.Wrap(err, "parse template", goerr.V("name", name))
-	}
-	var buf strings.Builder
-	if err := tmpl.Execute(&buf, input); err != nil {
-		return "", goerr.Wrap(err, "execute template", goerr.V("name", name))
-	}
-	return buf.String(), nil
-}
-
-// InvalidTemplateReason extracts a human-readable reason from an
-// ErrInvalidTemplate error chain, or returns "" if not present.
-func InvalidTemplateReason(err error) string {
-	if !errors.Is(err, ErrInvalidTemplate) {
-		return ""
-	}
-	v, ok := goerr.Values(err)["reason"]
-	if !ok {
-		return ""
-	}
-	if s, ok := v.(string); ok {
-		return s
-	}
-	return fmt.Sprint(v)
+	in.UserGuidance = strings.TrimSpace(guidance)
+	return RenderTriagePlan(in)
 }

@@ -19,21 +19,19 @@ func newUC(t *testing.T) *prompt.UseCase {
 	return prompt.New(memory.New().Prompt())
 }
 
-func TestUseCase_EffectiveReturnsDefaultWhenNoOverride(t *testing.T) {
+func TestUseCase_EffectiveReturnsEmptyWhenNoOverride(t *testing.T) {
 	uc := newUC(t)
 	got, version, err := uc.Effective(context.Background(), "ws-1", model.PromptIDTriage)
 	gt.NoError(t, err)
 	gt.Equal(t, version, 0)
-	if !strings.Contains(got, "{{ .Title }}") {
-		t.Fatalf("default content should still contain the {{ .Title }} action; got:\n%s", got)
-	}
+	gt.Equal(t, got, "")
 }
 
 func TestUseCase_SaveThenEffective(t *testing.T) {
 	uc := newUC(t)
 	ctx := context.Background()
 	ws := types.WorkspaceID("ws-1")
-	const newContent = "Custom triage prompt for {{ .Title }}"
+	const newContent = "Always escalate production outages to the on-call engineer."
 
 	v, err := uc.Save(ctx, ws, model.PromptIDTriage, 1, newContent, prompt.Author{Name: "alice"})
 	gt.NoError(t, err)
@@ -45,33 +43,24 @@ func TestUseCase_SaveThenEffective(t *testing.T) {
 	gt.Equal(t, got, newContent)
 }
 
-func TestUseCase_SaveRejectsParseError(t *testing.T) {
+func TestUseCase_SaveAcceptsAnyText(t *testing.T) {
+	// User content is no longer parsed as a Go template, so previously
+	// invalid syntax like an unclosed action or an unknown field reference
+	// is now stored verbatim.
 	uc := newUC(t)
-	_, err := uc.Save(context.Background(), "ws-1", model.PromptIDTriage, 1,
-		"broken {{ .Title", prompt.Author{Name: "alice"})
-	gt.Error(t, err)
-	gt.True(t, errors.Is(err, prompt.ErrInvalidTemplate))
-	gt.S(t, prompt.InvalidTemplateReason(err)).Contains("unclosed action")
-}
+	ctx := context.Background()
+	ws := types.WorkspaceID("ws-1")
 
-func TestUseCase_SaveRejectsMissingField(t *testing.T) {
-	uc := newUC(t)
-	// Parse passes, but Execute should fail under missingkey=error because
-	// .NonExistent is not a TriagePlanInput field.
-	_, err := uc.Save(context.Background(), "ws-1", model.PromptIDTriage, 1,
-		"hi {{ .NonExistent }}", prompt.Author{Name: "alice"})
-	gt.Error(t, err)
-	gt.True(t, errors.Is(err, prompt.ErrInvalidTemplate))
-	gt.S(t, prompt.InvalidTemplateReason(err)).Contains("NonExistent")
-}
-
-func TestUseCase_SaveRejectsBadRangeTarget(t *testing.T) {
-	uc := newUC(t)
-	// {{ range .Title }} on a string fails Execute.
-	_, err := uc.Save(context.Background(), "ws-1", model.PromptIDTriage, 1,
-		"{{ range .Title }}x{{ end }}", prompt.Author{Name: "alice"})
-	gt.Error(t, err)
-	gt.True(t, errors.Is(err, prompt.ErrInvalidTemplate))
+	for i, content := range []string{
+		"unclosed {{ action",
+		"hi {{ .NonExistent }}",
+		"{{ range .Title }}x{{ end }}",
+		"# Workspace policy\n\nLeading H1 is fine.",
+		"",
+	} {
+		_, err := uc.Save(ctx, ws, model.PromptIDTriage, i+1, content, prompt.Author{Name: "alice"})
+		gt.NoError(t, err)
+	}
 }
 
 func TestUseCase_SaveRejectsStaleVersion(t *testing.T) {
@@ -79,28 +68,15 @@ func TestUseCase_SaveRejectsStaleVersion(t *testing.T) {
 	ctx := context.Background()
 	ws := types.WorkspaceID("ws-1")
 
-	_, err := uc.Save(ctx, ws, model.PromptIDTriage, 1, "first {{ .Title }}", prompt.Author{Name: "alice"})
+	_, err := uc.Save(ctx, ws, model.PromptIDTriage, 1, "first guidance", prompt.Author{Name: "alice"})
 	gt.NoError(t, err)
-	_, err = uc.Save(ctx, ws, model.PromptIDTriage, 2, "second {{ .Title }}", prompt.Author{Name: "alice"})
+	_, err = uc.Save(ctx, ws, model.PromptIDTriage, 2, "second guidance", prompt.Author{Name: "alice"})
 	gt.NoError(t, err)
 
 	// Stale writer thinks the next version is still 2.
-	_, err = uc.Save(ctx, ws, model.PromptIDTriage, 2, "stale {{ .Title }}", prompt.Author{Name: "bob"})
+	_, err = uc.Save(ctx, ws, model.PromptIDTriage, 2, "stale guidance", prompt.Author{Name: "bob"})
 	gt.Error(t, err)
 	gt.True(t, errors.Is(err, interfaces.ErrPromptVersionConflict))
-}
-
-func TestUseCase_SaveDoesNotPersistInvalidContent(t *testing.T) {
-	uc := newUC(t)
-	ctx := context.Background()
-	ws := types.WorkspaceID("ws-1")
-
-	_, err := uc.Save(ctx, ws, model.PromptIDTriage, 1, "broken {{", prompt.Author{Name: "alice"})
-	gt.Error(t, err)
-
-	_, version, err := uc.Effective(ctx, ws, model.PromptIDTriage)
-	gt.NoError(t, err)
-	gt.Equal(t, version, 0) // still the default — invalid content was not stored
 }
 
 func TestUseCase_HistoryAscending(t *testing.T) {
@@ -108,7 +84,7 @@ func TestUseCase_HistoryAscending(t *testing.T) {
 	ctx := context.Background()
 	ws := types.WorkspaceID("ws-1")
 
-	for i, c := range []string{"a {{ .Title }}", "b {{ .Title }}", "c {{ .Title }}"} {
+	for i, c := range []string{"a guidance", "b guidance", "c guidance"} {
 		_, err := uc.Save(ctx, ws, model.PromptIDTriage, i+1, c, prompt.Author{Name: "alice"})
 		gt.NoError(t, err)
 	}
@@ -127,9 +103,9 @@ func TestUseCase_RestoreCopiesContentIntoNewVersion(t *testing.T) {
 	ctx := context.Background()
 	ws := types.WorkspaceID("ws-1")
 
-	_, err := uc.Save(ctx, ws, model.PromptIDTriage, 1, "v1 {{ .Title }}", prompt.Author{Name: "alice"})
+	_, err := uc.Save(ctx, ws, model.PromptIDTriage, 1, "v1 guidance", prompt.Author{Name: "alice"})
 	gt.NoError(t, err)
-	_, err = uc.Save(ctx, ws, model.PromptIDTriage, 2, "v2 {{ .Title }}", prompt.Author{Name: "alice"})
+	_, err = uc.Save(ctx, ws, model.PromptIDTriage, 2, "v2 guidance", prompt.Author{Name: "alice"})
 	gt.NoError(t, err)
 
 	// Restore v1 — caller asks to write v3 (the next available version).
@@ -149,7 +125,7 @@ func TestUseCase_RestoreConflict(t *testing.T) {
 	ctx := context.Background()
 	ws := types.WorkspaceID("ws-1")
 
-	_, err := uc.Save(ctx, ws, model.PromptIDTriage, 1, "v1 {{ .Title }}", prompt.Author{Name: "alice"})
+	_, err := uc.Save(ctx, ws, model.PromptIDTriage, 1, "v1 guidance", prompt.Author{Name: "alice"})
 	gt.NoError(t, err)
 
 	// Stale: caller thinks the next version is still 1, but current is already 1.
@@ -163,7 +139,7 @@ func TestUseCase_RestoreNotFound(t *testing.T) {
 	ctx := context.Background()
 	ws := types.WorkspaceID("ws-1")
 
-	_, err := uc.Save(ctx, ws, model.PromptIDTriage, 1, "v1 {{ .Title }}", prompt.Author{Name: "alice"})
+	_, err := uc.Save(ctx, ws, model.PromptIDTriage, 1, "v1 guidance", prompt.Author{Name: "alice"})
 	gt.NoError(t, err)
 
 	_, err = uc.Restore(ctx, ws, model.PromptIDTriage, 2, 99, prompt.Author{Name: "bob"})
@@ -171,7 +147,7 @@ func TestUseCase_RestoreNotFound(t *testing.T) {
 	gt.True(t, errors.Is(err, interfaces.ErrPromptVersionNotFound))
 }
 
-func TestUseCase_RenderTriagePlanUsesDefault(t *testing.T) {
+func TestUseCase_RenderTriagePlanRendersBaseWithoutOverride(t *testing.T) {
 	uc := newUC(t)
 	got, err := uc.RenderTriagePlan(context.Background(), "ws-1", prompt.TriagePlanInput{
 		Title: "Login fails", Description: "blank page", InitialMessage: "see thread", Reporter: "U1",
@@ -180,30 +156,43 @@ func TestUseCase_RenderTriagePlanUsesDefault(t *testing.T) {
 	gt.S(t, got).Contains("Login fails")
 	gt.S(t, got).Contains("blank page")
 	gt.S(t, got).Contains("U1")
+	if strings.Contains(got, "\n---\n") {
+		t.Errorf("expected no UserGuidance separator when no override exists, got:\n%s", got)
+	}
 }
 
-func TestUseCase_RenderTriagePlanUsesOverride(t *testing.T) {
+func TestUseCase_RenderTriagePlanEmbedsOverride(t *testing.T) {
 	uc := newUC(t)
 	ctx := context.Background()
 	ws := types.WorkspaceID("ws-1")
 
-	_, err := uc.Save(ctx, ws, model.PromptIDTriage, 1,
-		"OVERRIDE {{ .Title }}", prompt.Author{Name: "alice"})
+	const guidance = "Always escalate production outages to the on-call engineer."
+	_, err := uc.Save(ctx, ws, model.PromptIDTriage, 1, guidance, prompt.Author{Name: "alice"})
 	gt.NoError(t, err)
 
 	got, err := uc.RenderTriagePlan(ctx, ws, prompt.TriagePlanInput{Title: "the title"})
 	gt.NoError(t, err)
-	gt.Equal(t, got, "OVERRIDE the title")
+	gt.S(t, got).Contains("the title")
+	gt.S(t, got).Contains(guidance)
+
+	idxSep := strings.Index(got, "\n---\n")
+	idxGuidance := strings.Index(got, guidance)
+	if idxSep < 0 || idxSep > idxGuidance {
+		t.Errorf("expected separator before guidance, got:\n%s", got)
+	}
 }
 
-func TestUseCase_RenderTriagePlanFallsBackOnRepoFailure(t *testing.T) {
+func TestUseCase_RenderTriagePlanContinuesOnRepoFailure(t *testing.T) {
 	// A flapping repository must not take triage down — RenderTriagePlan
-	// should log the failure and fall back to the embedded default.
+	// should log the failure and render the bare base prompt.
 	uc := prompt.New(&boomPromptRepo{})
 
 	got, err := uc.RenderTriagePlan(context.Background(), "ws-1", prompt.TriagePlanInput{Title: "boom test"})
 	gt.NoError(t, err)
 	gt.S(t, got).Contains("boom test")
+	if strings.Contains(got, "\n---\n") {
+		t.Errorf("expected bare base prompt on repo failure, got:\n%s", got)
+	}
 }
 
 // boomPromptRepo is a PromptRepository that always errors on reads. It only
@@ -225,24 +214,3 @@ func (b *boomPromptRepo) List(ctx context.Context, ws types.WorkspaceID, id mode
 }
 
 var errBoom = errors.New("boom")
-
-func TestUseCase_RenderTriagePlanFallsBackOnBrokenOverride(t *testing.T) {
-	// Inject a broken override directly through the repo so we bypass Save's
-	// validation — this simulates an override that worked at save time but
-	// regressed (e.g. slotDefs probe inputs evolved).
-	repo := memory.New().Prompt()
-	uc := prompt.New(repo)
-	ctx := context.Background()
-	ws := types.WorkspaceID("ws-1")
-
-	_, err := repo.Append(ctx, ws, model.PromptIDTriage, &model.PromptVersion{
-		Version: 1,
-		Content: "{{ .Bogus }}",
-	})
-	gt.NoError(t, err)
-
-	// RenderTriagePlan should swallow the error and fall back to the default.
-	got, err := uc.RenderTriagePlan(ctx, ws, prompt.TriagePlanInput{Title: "fallback test"})
-	gt.NoError(t, err)
-	gt.S(t, got).Contains("fallback test")
-}

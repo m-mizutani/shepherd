@@ -93,6 +93,56 @@ func TestRenderTriagePlan_OmitsEmptyOptionals(t *testing.T) {
 	if strings.Contains(got, "- Reporter:") {
 		t.Errorf("expected reporter line omitted, got:\n%s", got)
 	}
+	if strings.Contains(got, "\n---\n") {
+		t.Errorf("expected no UserGuidance separator when guidance is empty, got:\n%s", got)
+	}
+}
+
+func TestRenderTriagePlan_AppendsUserGuidanceAfterSeparator(t *testing.T) {
+	got, err := prompt.RenderTriagePlan(prompt.TriagePlanInput{
+		Title:        "Sign-in broken",
+		UserGuidance: "Always escalate production outages to the on-call engineer.",
+	})
+	gt.NoError(t, err)
+	gt.S(t, got).Contains("Sign-in broken")
+	gt.S(t, got).Contains("Always escalate production outages")
+
+	// The separator must precede the user guidance so that it reads as an
+	// independent markdown block, even when the guidance starts with a
+	// heading (see TestRenderTriagePlan_UserGuidanceWithLeadingHeading).
+	idxSep := strings.Index(got, "\n---\n")
+	idxGuidance := strings.Index(got, "Always escalate production outages")
+	if idxSep < 0 {
+		t.Fatalf("expected UserGuidance separator '\\n---\\n' in output, got:\n%s", got)
+	}
+	if idxSep > idxGuidance {
+		t.Errorf("expected separator to precede guidance, got:\n%s", got)
+	}
+}
+
+func TestRenderTriagePlan_UserGuidanceWithLeadingHeading(t *testing.T) {
+	// A user-supplied guidance starting with a Markdown H1 must not collide
+	// with the heading hierarchy of the base template — the separator
+	// inserted before it makes the user block a self-contained document.
+	got, err := prompt.RenderTriagePlan(prompt.TriagePlanInput{
+		Title:        "Bare ticket",
+		UserGuidance: "# Workspace policy\n\nNever auto-assign tickets without manager approval.",
+	})
+	gt.NoError(t, err)
+	gt.S(t, got).Contains("# Workspace policy")
+	gt.S(t, got).Contains("Never auto-assign tickets")
+
+	// The base template's '## Rules' heading must not directly precede the
+	// user's H1 — the separator + blank line gives the H1 room to stand on
+	// its own.
+	if strings.Contains(got, "## Rules\n# Workspace policy") {
+		t.Errorf("user H1 collided with base template heading, got:\n%s", got)
+	}
+	idxSep := strings.Index(got, "\n---\n")
+	idxHeading := strings.Index(got, "# Workspace policy")
+	if idxSep < 0 || idxSep > idxHeading {
+		t.Errorf("expected separator before user H1, got:\n%s", got)
+	}
 }
 
 func TestRenderTriageSubtask_RendersCriteria(t *testing.T) {

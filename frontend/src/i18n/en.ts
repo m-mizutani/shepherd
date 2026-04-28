@@ -263,8 +263,7 @@ export const en: Messages = {
 
   promptsTitle: "Prompts",
   promptsSubtitle:
-    "System prompts Shepherd uses when reasoning about tickets in this workspace. Written in Markdown.",
-  promptsBtnVariableReference: "Variable reference",
+    "Add workspace-specific guidance that Shepherd appends to its base prompts. The base prompts themselves are managed by Shepherd.",
   promptsBtnTestOnTicket: "Test on a ticket",
   promptsSlotTriageLabel: "Triage",
   promptsSlotTriageDescription:
@@ -272,19 +271,21 @@ export const en: Messages = {
   promptsSlotNotConfigured: "Not configured",
   promptsSlotCharsCount: "{count} chars",
   promptsSlotEditedRelative: "edited {when}",
-  promptsEditorTriageHeading: "Triage prompt",
+  promptsEditorTriageHeading: "Triage — additional guidance",
   promptsEditorSubtitleTriage:
-    "Used when a Slack message becomes a new ticket.",
+    "Workspace-specific instructions appended to Shepherd's base triage prompt. Markdown is supported, including `#` headings.",
   promptsEditorBtnHistory: "History",
   promptsEditorBtnTest: "Test on ticket",
   promptsEditorMetaCharsLines: "{chars} chars · {lines} lines · Markdown",
-  promptsEditorVariablesLabel: "Variables",
+  promptsEditorAdditionalGuidanceHint:
+    "Empty is fine — leave this blank to use only Shepherd's base triage prompt.",
+  promptsEditorPlaceholder:
+    "e.g. Always escalate tickets that mention production outages to the on-call engineer.",
   promptsEditorUnsaved: "Unsaved changes",
   promptsEditorClean: "All changes saved",
   promptsEditorBtnDiscard: "Discard",
   promptsEditorBtnSave: "Save",
   promptsEditorBtnSaving: "Saving…",
-  promptsEditorErrorInvalidTemplate: "Template error: {reason}",
   promptsEditorErrorVersionConflict:
     "Someone else just saved version {version}. Reload to see their changes.",
   promptsEditorErrorGeneric: "Failed to save.",

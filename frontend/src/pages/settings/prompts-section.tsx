@@ -63,9 +63,6 @@ export function PromptsSection({ workspaceId }: Props) {
         </div>
         <div className="flex gap-2">
           <Button size="sm" variant="ghost" disabled>
-            <Icon name="book" size={12} /> {t("promptsBtnVariableReference")}
-          </Button>
-          <Button size="sm" variant="ghost" disabled>
             <Icon name="link" size={12} /> {t("promptsBtnTestOnTicket")}
           </Button>
         </div>
@@ -198,8 +195,7 @@ function TriagePromptEditor({ workspaceId }: Props) {
 
   const [draft, setDraft] = useState<string>("");
   const [errorBanner, setErrorBanner] = useState<{
-    kind: "invalid" | "conflict" | "generic";
-    reason?: string;
+    kind: "conflict" | "generic";
     currentVersion?: number;
   } | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -238,10 +234,7 @@ function TriagePromptEditor({ workspaceId }: Props) {
     },
     onError: (err: unknown) => {
       const e = err as { status?: number; error?: unknown };
-      if (e.status === 422) {
-        const body = e.error as { reason?: string } | undefined;
-        setErrorBanner({ kind: "invalid", reason: body?.reason ?? "" });
-      } else if (e.status === 409) {
+      if (e.status === 409) {
         const body = e.error as { currentVersion?: number } | undefined;
         setErrorBanner({
           kind: "conflict",
@@ -304,8 +297,7 @@ function TriagePromptEditor({ workspaceId }: Props) {
           </Button>
         </div>
 
-        <div className="px-3 py-1.5 bg-bg-sunken border-b border-line text-[11px] text-ink-3 flex items-center justify-between">
-          <span>{t("promptsEditorVariablesLabel")}:</span>
+        <div className="px-3 py-1.5 bg-bg-sunken border-b border-line text-[11px] text-ink-3 flex items-center justify-end">
           <span>
             {t("promptsEditorMetaCharsLines", {
               chars: String(charCount),
@@ -314,18 +306,14 @@ function TriagePromptEditor({ workspaceId }: Props) {
           </span>
         </div>
 
-        <CodeArea value={draft} onChange={setDraft} />
+        <CodeArea
+          value={draft}
+          onChange={setDraft}
+          placeholder={t("promptsEditorPlaceholder")}
+        />
 
-        <div className="px-3.5 py-2.5 bg-bg-sunken border-t border-line flex flex-wrap items-center gap-1.5">
-          <span className="text-[11.5px] font-medium text-ink-3 mr-1">
-            {t("promptsEditorVariablesLabel")}:
-          </span>
-          {detail.data.variables.map((v) => (
-            <code
-              key={v}
-              className="text-[11px] px-1.5 py-px bg-bg-elev border border-line rounded-full text-ink-2 font-mono"
-            >{`{{ .${v} }}`}</code>
-          ))}
+        <div className="px-3.5 py-2.5 bg-bg-sunken border-t border-line text-[11.5px] text-ink-3">
+          {t("promptsEditorAdditionalGuidanceHint")}
         </div>
 
         <div className="px-3.5 py-3 bg-bg-elev border-t border-line flex items-center gap-2.5">
@@ -385,8 +373,7 @@ function TriagePromptEditor({ workspaceId }: Props) {
 }
 
 interface ErrorBannerData {
-  kind: "invalid" | "conflict" | "generic";
-  reason?: string;
+  kind: "conflict" | "generic";
   currentVersion?: number;
 }
 
@@ -401,11 +388,7 @@ function ErrorBanner({
 }) {
   const { t } = useTranslation();
   let message = t("promptsEditorErrorGeneric");
-  if (banner.kind === "invalid") {
-    message = t("promptsEditorErrorInvalidTemplate", {
-      reason: banner.reason ?? "",
-    });
-  } else if (banner.kind === "conflict") {
+  if (banner.kind === "conflict") {
     message = t("promptsEditorErrorVersionConflict", {
       version: String(banner.currentVersion ?? 0),
     });
@@ -429,9 +412,11 @@ function ErrorBanner({
 function CodeArea({
   value,
   onChange,
+  placeholder,
 }: {
   value: string;
   onChange: (v: string) => void;
+  placeholder?: string;
 }) {
   const lines = useMemo(() => Math.max(1, value.split("\n").length), [value]);
   return (
@@ -452,6 +437,7 @@ function CodeArea({
       <textarea
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
         spellCheck={false}
         className="flex-1 py-3 px-4 bg-transparent text-ink-2 font-mono text-[12.5px] leading-[1.6] resize-none border-0 outline-none focus:outline-none"
         style={{ minHeight: 540 }}

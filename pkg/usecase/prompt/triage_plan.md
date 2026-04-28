@@ -53,3 +53,9 @@ When you build subtasks for `propose_investigate`:
 - Never call any other tool here — investigation tools belong to child agents launched by `propose_investigate`.
 - Do not invent ids; reuse stable ids that you can refer back to in later turns.
 - Do not omit the `message` argument; it is required.
+{{- if .UserGuidance }}
+
+---
+
+{{ .UserGuidance }}
+{{- end }}

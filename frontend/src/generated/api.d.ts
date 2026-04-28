@@ -425,12 +425,15 @@ export interface components {
         };
         PromptDetail: {
             id: string;
+            /**
+             * @description The workspace-specific additional guidance text the user has saved.
+             *     Empty when no override exists yet (the slot is using the bare base
+             *     prompt managed by shepherd).
+             */
             content: string;
-            /** @description 0 when the embedded default is in force, else the latest stored version. */
+            /** @description 0 when no override exists yet, else the latest stored version. */
             version: number;
             isOverride: boolean;
-            defaultContent: string;
-            variables: string[];
             /** Format: date-time */
             updatedAt?: string | null;
             updatedBy?: components["schemas"]["PromptAuthor"];
@@ -451,11 +454,6 @@ export interface components {
             /** @enum {string} */
             error: "version_conflict";
             currentVersion: number;
-        };
-        PromptTemplateError: {
-            /** @enum {string} */
-            error: "invalid_template";
-            reason: string;
         };
     };
     responses: never;
@@ -1066,15 +1064,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PromptVersionConflict"];
-                };
-            };
-            /** @description Invalid template */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PromptTemplateError"];
                 };
             };
         };

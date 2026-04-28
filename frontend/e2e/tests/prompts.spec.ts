@@ -6,7 +6,7 @@ import { test, expect, type APIRequestContext } from "@playwright/test";
 // API first and asserts deltas relative to that baseline rather than absolute
 // version numbers — this keeps tests independent of execution order.
 //
-// The very first test in this file additionally asserts the embedded-default
+// The very first test in this file additionally asserts the no-override
 // behavior, which is only meaningful before any other prompts test has run.
 // Playwright preserves declaration order within a spec file.
 
@@ -18,8 +18,6 @@ async function getDetail(request: APIRequestContext) {
     content: string;
     version: number;
     isOverride: boolean;
-    defaultContent: string;
-    variables: string[];
   }>;
 }
 
@@ -42,7 +40,7 @@ test.describe("Prompts settings", () => {
     await page.waitForURL("/");
   });
 
-  test("first load shows the embedded default and version 0", async ({
+  test("first load shows an empty editor and version 0", async ({
     page,
     request,
   }) => {
@@ -50,7 +48,7 @@ test.describe("Prompts settings", () => {
     const detail = await getDetail(request);
     test.skip(
       detail.version !== 0,
-      "Default-state assertions require a fresh server (version === 0).",
+      "No-override assertions require a fresh server (version === 0).",
     );
 
     await page.goto("/ws/support/settings/prompts");
@@ -65,15 +63,13 @@ test.describe("Prompts settings", () => {
     await expect(triageCard).toBeVisible();
     await expect(triageCard.getByText("Not configured")).toBeVisible();
 
-    // Effective content equals the embedded default when no override exists.
+    // No override yet: content is empty and isOverride is false. The base
+    // prompt that wraps this content lives in shepherd-managed code and is
+    // not part of the API surface.
     expect(detail.isOverride).toBe(false);
-    expect(detail.content).toBe(detail.defaultContent);
-    expect(detail.content).toContain("{{ .Title }}");
-    expect(detail.variables).toEqual(
-      expect.arrayContaining(["Title", "Description", "Reporter"]),
-    );
+    expect(detail.content).toBe("");
 
-    await expect(page.locator("textarea")).toHaveValue(detail.content);
+    await expect(page.locator("textarea")).toHaveValue("");
   });
 
   test("saving from the editor advances the version by one", async ({
@@ -84,7 +80,7 @@ test.describe("Prompts settings", () => {
 
     await page.goto("/ws/support/settings/prompts");
 
-    const newContent = `# E2E saved at ${Date.now()} for {{ .Title }}\nReporter: {{ .Reporter }}`;
+    const newContent = `# E2E guidance saved at ${Date.now()}\n\nAlways escalate production outages to the on-call engineer.`;
     const textarea = page.locator("textarea");
     await textarea.fill(newContent);
 
@@ -109,36 +105,27 @@ test.describe("Prompts settings", () => {
     expect(latest.updatedBy?.name).toBeTruthy();
   });
 
-  test("invalid template surfaces a 422 reason and does not persist", async ({
+  test("free-form text including go-template-like syntax is stored verbatim", async ({
     page,
     request,
   }) => {
+    // The user content is no longer parsed as a Go template, so what would
+    // previously have been a 422 (e.g. {{ .NonExistent }}) now persists as
+    // plain text.
     const before = await getDetail(request);
 
     await page.goto("/ws/support/settings/prompts");
 
-    // {{ .NonExistent }} parses but fails Execute under missingkey=error.
-    await page.locator("textarea").fill("hi {{ .NonExistent }}");
-    const responsePromise = page.waitForResponse(
-      (res) =>
-        res.url().endsWith("/api/v1/ws/support/prompts/triage") &&
-        res.request().method() === "PUT",
-    );
+    const verbatim = `Use {{ .NonExistent }} as a literal — this is not a template.`;
+    await page.locator("textarea").fill(verbatim);
     await page.getByRole("button", { name: "Save", exact: true }).click();
-
-    const response = await responsePromise;
-    expect(response.status()).toBe(422);
-    const body = await response.json();
-    expect(body.error).toBe("invalid_template");
-    expect(body.reason).toContain("NonExistent");
-
-    const banner = page.getByText(/Template error/);
-    await expect(banner).toBeVisible({ timeout: 5000 });
-    await expect(banner).toContainText("NonExistent");
+    await expect(page.getByText("All changes saved")).toBeVisible({
+      timeout: 5000,
+    });
 
     const after = await getDetail(request);
-    expect(after.version).toBe(before.version);
-    expect(after.content).toBe(before.content);
+    expect(after.version).toBe(before.version + 1);
+    expect(after.content).toBe(verbatim);
   });
 
   test("stale version surfaces a 409 with reload affordance", async ({
@@ -155,7 +142,7 @@ test.describe("Prompts settings", () => {
     // React state.
     await expect(page.locator("textarea")).toHaveValue(baseline.content);
 
-    const winnerContent = `winner-${Date.now()} {{ .Title }}`;
+    const winnerContent = `winner-${Date.now()} guidance`;
     const winnerRes = await request.put(
       "/api/v1/ws/support/prompts/triage",
       {
@@ -172,7 +159,7 @@ test.describe("Prompts settings", () => {
     // version_conflict body), not just the UI banner.
     await page
       .locator("textarea")
-      .fill(`loser-${Date.now()} {{ .Title }}`);
+      .fill(`loser-${Date.now()} guidance`);
     const responsePromise = page.waitForResponse(
       (res) =>
         res.url().endsWith("/api/v1/ws/support/prompts/triage") &&
@@ -228,7 +215,7 @@ test.describe("Prompts settings", () => {
       await expect(pageB.locator("textarea")).toHaveValue(baseline.content);
 
       // User A edits and saves first.
-      const aContent = `userA-${Date.now()} for {{ .Title }}`;
+      const aContent = `userA-${Date.now()} guidance`;
       await pageA.locator("textarea").fill(aContent);
       await pageA.getByRole("button", { name: "Save", exact: true }).click();
       await expect(pageA.getByText("All changes saved")).toBeVisible({
@@ -238,7 +225,7 @@ test.describe("Prompts settings", () => {
       // User B, still on the original baseline, now tries to save. Capture
       // the PUT response to verify the server actually returned 409 with the
       // expected body — not just that the UI happened to render a banner.
-      const bContent = `userB-${Date.now()} for {{ .Title }}`;
+      const bContent = `userB-${Date.now()} guidance`;
       await pageB.locator("textarea").fill(bContent);
       const bResponsePromise = pageB.waitForResponse(
         (res) =>
@@ -277,7 +264,7 @@ test.describe("Prompts settings", () => {
   }) => {
     // Seed two known versions on top of whatever is already there.
     const baseline = await getDetail(request);
-    const restoreTarget = `restore-target-${Date.now()} {{ .Title }}`;
+    const restoreTarget = `restore-target-${Date.now()} guidance`;
     const v1Save = await request.put(
       "/api/v1/ws/support/prompts/triage",
       {
@@ -294,7 +281,7 @@ test.describe("Prompts settings", () => {
       "/api/v1/ws/support/prompts/triage",
       {
         data: {
-          content: `intermediate-${Date.now()} {{ .Title }}`,
+          content: `intermediate-${Date.now()} guidance`,
           version: v1.version + 1,
         },
       },
