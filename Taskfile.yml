@@ -29,7 +29,10 @@ tasks:
     desc: "Build frontend for production"
     dir: frontend
     cmds:
-      - pnpm install --frozen-lockfile
+      # --config.confirm-modules-purge=false keeps `pnpm install` non-interactive
+      # in environments without a TTY (Claude Code sandbox, CI, …) — without it,
+      # pnpm aborts when it wants to confirm a node_modules purge.
+      - pnpm install --frozen-lockfile --config.confirm-modules-purge=false
       - pnpm build
 
   build:
@@ -60,6 +63,10 @@ tasks:
 
   test:e2e:
     desc: "Run Playwright E2E tests"
+    # build:frontend populates frontend/dist/ before the webServer starts.
+    # Without this, the Go binary's go:embed of frontend/dist/ ships an empty
+    # SPA and every UI test times out waiting for elements that never render.
+    deps: [build:frontend]
     dir: frontend/e2e
     cmds:
       # --config.confirm-modules-purge=false keeps `pnpm install` non-interactive
