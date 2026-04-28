@@ -264,8 +264,7 @@ export const ja: Messages = {
 
   promptsTitle: "プロンプト",
   promptsSubtitle:
-    "このワークスペースで Shepherd がチケット処理に使うシステムプロンプト。Markdown で記述します。",
-  promptsBtnVariableReference: "変数リファレンス",
+    "Shepherd の基本プロンプトに、このワークスペース固有の追加指示を加えられます。基本プロンプト自体は Shepherd 側で管理されています。",
   promptsBtnTestOnTicket: "チケットで試す",
   promptsSlotTriageLabel: "Triage",
   promptsSlotTriageDescription:
@@ -273,19 +272,21 @@ export const ja: Messages = {
   promptsSlotNotConfigured: "未設定",
   promptsSlotCharsCount: "{count} 文字",
   promptsSlotEditedRelative: "{when} に更新",
-  promptsEditorTriageHeading: "Triage プロンプト",
+  promptsEditorTriageHeading: "Triage — 追加指示",
   promptsEditorSubtitleTriage:
-    "Slack メッセージから新規チケットが作成されたときに利用されます。",
+    "Shepherd が triage で使う基本プロンプトに追記される、ワークスペース固有の指示です。Markdown が利用でき、`#` から始まる見出しも問題ありません。",
   promptsEditorBtnHistory: "履歴",
   promptsEditorBtnTest: "チケットで試す",
   promptsEditorMetaCharsLines: "{chars} 文字 · {lines} 行 · Markdown",
-  promptsEditorVariablesLabel: "変数",
+  promptsEditorAdditionalGuidanceHint:
+    "空欄でも構いません。何も書かなければ、Shepherd の基本 triage プロンプトだけが使われます。",
+  promptsEditorPlaceholder:
+    "例: 本番障害に言及するチケットは必ずオンコール担当者にエスカレーションしてください。",
   promptsEditorUnsaved: "未保存の変更があります",
   promptsEditorClean: "保存済みです",
   promptsEditorBtnDiscard: "破棄",
   promptsEditorBtnSave: "保存",
   promptsEditorBtnSaving: "保存中…",
-  promptsEditorErrorInvalidTemplate: "テンプレートエラー: {reason}",
   promptsEditorErrorVersionConflict:
     "他のユーザーがバージョン {version} を保存しました。リロードして最新を取得してください。",
   promptsEditorErrorGeneric: "保存に失敗しました。",

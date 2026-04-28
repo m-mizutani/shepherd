@@ -67,11 +67,18 @@ func RenderMention(in MentionInput) (string, error) {
 // the static ticket context that does not change between turns. Per-turn
 // observations (investigation results, reporter answers) are appended to the
 // gollem agent history as user messages instead.
+//
+// UserGuidance is the workspace-specific additional instruction text the user
+// edited via the prompts UI. It is treated as opaque markdown — never parsed
+// as a Go template — and embedded into the base template as a separate block
+// so that user content starting with a markdown heading does not collide with
+// the base template's heading hierarchy.
 type TriagePlanInput struct {
 	Title          string
 	Description    string
 	InitialMessage string
 	Reporter       string
+	UserGuidance   string
 }
 
 // TriageSubtaskInput is the data for the triage subtask system prompt. It is

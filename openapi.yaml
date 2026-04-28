@@ -392,12 +392,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PromptVersionConflict"
-        "422":
-          description: Invalid template
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/PromptTemplateError"
 
   /api/v1/ws/{workspaceId}/prompts/{promptId}/history:
     get:
@@ -815,17 +809,15 @@ components:
           type: string
         content:
           type: string
+          description: |
+            The workspace-specific additional guidance text the user has saved.
+            Empty when no override exists yet (the slot is using the bare base
+            prompt managed by shepherd).
         version:
           type: integer
-          description: 0 when the embedded default is in force, else the latest stored version.
+          description: 0 when no override exists yet, else the latest stored version.
         isOverride:
           type: boolean
-        defaultContent:
-          type: string
-        variables:
-          type: array
-          items:
-            type: string
         updatedAt:
           type: string
           format: date-time
@@ -833,7 +825,7 @@ components:
         updatedBy:
           $ref: "#/components/schemas/PromptAuthor"
           nullable: true
-      required: [id, content, version, isOverride, defaultContent, variables]
+      required: [id, content, version, isOverride]
 
     PromptVersion:
       type: object
@@ -870,13 +862,3 @@ components:
         currentVersion:
           type: integer
       required: [error, currentVersion]
-
-    PromptTemplateError:
-      type: object
-      properties:
-        error:
-          type: string
-          enum: [invalid_template]
-        reason:
-          type: string
-      required: [error, reason]

@@ -35,15 +35,6 @@ type promptSlotMeta struct {
 	Customizable bool
 }
 
-// promptVariables is the fixed list of template variables the UI surfaces in
-// the editor footer. Keep in sync with prompt.TriagePlanInput field names.
-var promptVariables = []string{
-	"Title",
-	"Description",
-	"InitialMessage",
-	"Reporter",
-}
-
 func (h *APIHandler) ListPrompts(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId) {
 	if h.promptUC == nil {
 		errutil.HandleHTTP(r.Context(), w, goerr.New("prompt usecase not configured"), http.StatusServiceUnavailable)
@@ -73,13 +64,6 @@ func (h *APIHandler) ListPrompts(w http.ResponseWriter, r *http.Request, workspa
 				if cur.UpdatedBy != "" {
 					slot.UpdatedBy = toPromptAuthor(cur)
 				}
-			} else {
-				def, err := h.promptUC.Default(model.PromptID(m.ID))
-				if err != nil {
-					handleUseCaseError(r.Context(), w, err)
-					return
-				}
-				slot.Length = len(def)
 			}
 		}
 		out = append(out, slot)
@@ -103,15 +87,8 @@ func (h *APIHandler) GetPrompt(w http.ResponseWriter, r *http.Request, workspace
 		handleUseCaseError(r.Context(), w, err)
 		return
 	}
-	def, err := h.promptUC.Default(id)
-	if err != nil {
-		handleUseCaseError(r.Context(), w, err)
-		return
-	}
 	resp := PromptDetail{
-		Id:             string(id),
-		DefaultContent: def,
-		Variables:      promptVariables,
+		Id: string(id),
 	}
 	if cur != nil {
 		resp.Content = cur.Content
@@ -123,7 +100,7 @@ func (h *APIHandler) GetPrompt(w http.ResponseWriter, r *http.Request, workspace
 			resp.UpdatedBy = toPromptAuthor(cur)
 		}
 	} else {
-		resp.Content = def
+		resp.Content = ""
 		resp.Version = 0
 		resp.IsOverride = false
 	}
@@ -265,12 +242,6 @@ func toPromptVersionResponse(v *model.PromptVersion, current bool) PromptVersion
 func writePromptError(ctx context.Context, w http.ResponseWriter, err error,
 	ws types.WorkspaceID, id model.PromptID, uc *prompt.UseCase) {
 	switch {
-	case errors.Is(err, prompt.ErrInvalidTemplate):
-		body := PromptTemplateError{
-			Error:  InvalidTemplate,
-			Reason: prompt.InvalidTemplateReason(err),
-		}
-		writeJSON(ctx, w, http.StatusUnprocessableEntity, body)
 	case errors.Is(err, interfaces.ErrPromptVersionConflict):
 		current := 0
 		if uc != nil {
