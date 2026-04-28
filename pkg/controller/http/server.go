@@ -12,15 +12,17 @@ import (
 	"github.com/m-mizutani/shepherd/pkg/domain/model"
 	"github.com/m-mizutani/shepherd/pkg/tool"
 	"github.com/m-mizutani/shepherd/pkg/usecase"
+	"github.com/m-mizutani/shepherd/pkg/usecase/prompt"
 	"github.com/m-mizutani/shepherd/pkg/usecase/source"
 	"github.com/m-mizutani/shepherd/pkg/utils/safe"
 )
 
 type Server struct {
-	mux       *chi.Mux
-	slackCfg  *SlackConfig
-	sourceUC  *source.UseCase
-	catalog   *tool.Catalog
+	mux      *chi.Mux
+	slackCfg *SlackConfig
+	sourceUC *source.UseCase
+	catalog  *tool.Catalog
+	promptUC *prompt.UseCase
 }
 
 type ServerOption func(*Server)
@@ -31,6 +33,13 @@ func WithSource(sourceUC *source.UseCase, catalog *tool.Catalog) ServerOption {
 	return func(s *Server) {
 		s.sourceUC = sourceUC
 		s.catalog = catalog
+	}
+}
+
+// WithPrompt wires the Prompt management endpoints.
+func WithPrompt(promptUC *prompt.UseCase) ServerOption {
+	return func(s *Server) {
+		s.promptUC = promptUC
 	}
 }
 
@@ -75,7 +84,7 @@ func New(registry *model.WorkspaceRegistry, repo interfaces.Repository, authUC u
 		notifier = s.slackCfg.Notifier
 		slackUC = s.slackCfg.SlackUC
 	}
-	apiHandler := NewAPIHandler(registry, repo, notifier, slackUC, s.sourceUC, s.catalog)
+	apiHandler := NewAPIHandler(registry, repo, notifier, slackUC, s.sourceUC, s.catalog, s.promptUC)
 	s.mux.Group(func(r chi.Router) {
 		r.Use(authMiddleware(authUC))
 		HandlerFromMux(apiHandler, r)

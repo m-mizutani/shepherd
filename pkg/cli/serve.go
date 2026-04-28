@@ -20,6 +20,7 @@ import (
 	tslack "github.com/m-mizutani/shepherd/pkg/tool/slack"
 	"github.com/m-mizutani/shepherd/pkg/tool/ticket"
 	usecaseroot "github.com/m-mizutani/shepherd/pkg/usecase"
+	"github.com/m-mizutani/shepherd/pkg/usecase/prompt"
 	"github.com/m-mizutani/shepherd/pkg/usecase/source"
 	"github.com/m-mizutani/shepherd/pkg/usecase/triage"
 	"github.com/m-mizutani/shepherd/pkg/utils/async"
@@ -210,10 +211,12 @@ func cmdServe() *cli.Command {
 			// register it with both the SlackUseCase (Entry-1: ticket
 			// creation trigger) and the HTTP interactions endpoint (Entry-2:
 			// reporter submit click).
+			promptUC := prompt.New(repo.Prompt())
+
 			var triageUC *triage.UseCase
 			if slackUC != nil {
 				triageExec := triage.NewPlanExecutor(
-					repo, historyRepo, llmClient, slackClient, catalog,
+					repo, historyRepo, llmClient, slackClient, catalog, promptUC,
 					triage.Config{IterationCap: triageIterationCap},
 				)
 				triageUC = triage.NewUseCase(triageExec, &triage.RegistryResolver{Registry: registry})
@@ -234,6 +237,7 @@ func cmdServe() *cli.Command {
 
 			sourceUC := source.New(repo.Source(), notionFactory.Client(), time.Now)
 			serverOpts = append(serverOpts, httpController.WithSource(sourceUC, catalog))
+			serverOpts = append(serverOpts, httpController.WithPrompt(promptUC))
 
 			httpServer := httpController.New(registry, repo, authUC, serverOpts...)
 

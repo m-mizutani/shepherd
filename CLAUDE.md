@@ -90,6 +90,10 @@ Whenever you add, modify, or move user-facing string literals, you MUST route th
 
 If you find a hardcoded user-facing string while editing nearby code, take the opportunity to convert it — leaving them mixed defeats the purpose of the i18n layer.
 
+## Frontend E2E (CRITICAL)
+
+Any user-visible frontend change — new page, section, dialog, control, or flow — MUST be covered by a Playwright E2E test in `frontend/e2e/tests/`, and `task test:e2e` MUST pass before declaring the task done. Type-check and Go unit tests are not a substitute: they verify code shape, not that the user can actually click through the feature. Detailed conventions live in `.claude/rules/testing.md` under "Frontend E2E tests (Playwright)".
+
 ## Project Structure
 
 - `pkg/cli/` — CLI commands (serve, migrate, validate)

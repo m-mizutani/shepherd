@@ -13,6 +13,7 @@ import { useTranslation } from "../i18n";
 import type { MsgKey } from "../i18n/keys";
 import { SourcesSection } from "./settings/sources-section";
 import { ToolsSection } from "./settings/tools-section";
+import { PromptsSection } from "./settings/prompts-section";
 
 type NavGroup = "workspace" | "integration";
 
@@ -27,6 +28,7 @@ const NAV_ITEMS: {
   { id: "fields", labelKey: "settingsNavFields", icon: "filter", group: "workspace" },
   { id: "ticket-config", labelKey: "settingsNavTicketConfig", icon: "inbox", group: "workspace" },
   { id: "labels", labelKey: "settingsNavLabels", icon: "book", group: "workspace" },
+  { id: "prompts", labelKey: "settingsNavPrompts", icon: "paw", group: "workspace" },
   { id: "sources", labelKey: "settingsNavSources", icon: "link", group: "integration" },
   { id: "tools", labelKey: "settingsNavTools", icon: "settings", group: "integration" },
 ];
@@ -125,6 +127,10 @@ export default function WorkspaceSettingsPage() {
 
           {active === "tools" && workspaceId && (
             <ToolsSection workspaceId={workspaceId} />
+          )}
+
+          {active === "prompts" && workspaceId && (
+            <PromptsSection workspaceId={workspaceId} />
           )}
 
           {data && active === "general" && (

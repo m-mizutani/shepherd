@@ -324,6 +324,141 @@ paths:
         "204":
           description: No Content
 
+  /api/v1/ws/{workspaceId}/prompts:
+    get:
+      operationId: listPrompts
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  prompts:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/PromptSlot"
+                required: [prompts]
+
+  /api/v1/ws/{workspaceId}/prompts/{promptId}:
+    get:
+      operationId: getPrompt
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/PromptId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PromptDetail"
+        "404":
+          description: Unknown promptId
+    put:
+      operationId: savePrompt
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/PromptId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                content:
+                  type: string
+                version:
+                  type: integer
+                  minimum: 1
+                  description: The version number the caller is writing. Must equal current+1 (or 1 when no override exists yet); otherwise 409 Conflict.
+              required: [content, version]
+      responses:
+        "200":
+          description: Saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PromptVersion"
+        "404":
+          description: Unknown promptId
+        "409":
+          description: Version conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PromptVersionConflict"
+        "422":
+          description: Invalid template
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PromptTemplateError"
+
+  /api/v1/ws/{workspaceId}/prompts/{promptId}/history:
+    get:
+      operationId: listPromptHistory
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/PromptId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  versions:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/PromptVersion"
+                required: [versions]
+        "404":
+          description: Unknown promptId
+
+  /api/v1/ws/{workspaceId}/prompts/{promptId}/restore:
+    post:
+      operationId: restorePrompt
+      parameters:
+        - $ref: "#/components/parameters/WorkspaceId"
+        - $ref: "#/components/parameters/PromptId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                targetVersion:
+                  type: integer
+                  minimum: 1
+                  description: The version to restore from.
+                version:
+                  type: integer
+                  minimum: 1
+                  description: The new version number to write the restored content as. Must equal current+1.
+              required: [targetVersion, version]
+      responses:
+        "200":
+          description: Restored as a new version
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PromptVersion"
+        "404":
+          description: Unknown promptId or targetVersion
+        "409":
+          description: Version conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PromptVersionConflict"
+
   /api/v1/ws/{workspaceId}/tickets/{ticketId}/comments:
     get:
       operationId: listComments
@@ -356,6 +491,12 @@ components:
         type: string
     TicketId:
       name: ticketId
+      in: path
+      required: true
+      schema:
+        type: string
+    PromptId:
+      name: promptId
       in: path
       required: true
       schema:
@@ -636,3 +777,106 @@ components:
           type: string
           enum: [provider_unavailable, workspace_disabled, gate_blocked]
       required: [providerId, available, defaultEnabled, enabled]
+
+    PromptSlot:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Stable identifier (e.g. "triage").
+        label:
+          type: string
+        description:
+          type: string
+        customizable:
+          type: boolean
+          description: false for slots that are placeholders only.
+        configured:
+          type: boolean
+          description: true when at least one override version exists.
+        version:
+          type: integer
+          description: Current version (0 when no override exists yet).
+        length:
+          type: integer
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+        updatedBy:
+          $ref: "#/components/schemas/PromptAuthor"
+          nullable: true
+      required: [id, label, description, customizable, configured, version, length]
+
+    PromptDetail:
+      type: object
+      properties:
+        id:
+          type: string
+        content:
+          type: string
+        version:
+          type: integer
+          description: 0 when the embedded default is in force, else the latest stored version.
+        isOverride:
+          type: boolean
+        defaultContent:
+          type: string
+        variables:
+          type: array
+          items:
+            type: string
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+        updatedBy:
+          $ref: "#/components/schemas/PromptAuthor"
+          nullable: true
+      required: [id, content, version, isOverride, defaultContent, variables]
+
+    PromptVersion:
+      type: object
+      properties:
+        version:
+          type: integer
+        content:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+        current:
+          type: boolean
+        updatedBy:
+          $ref: "#/components/schemas/PromptAuthor"
+          nullable: true
+      required: [version, content, updatedAt, current]
+
+    PromptAuthor:
+      type: object
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+      required: [name]
+
+    PromptVersionConflict:
+      type: object
+      properties:
+        error:
+          type: string
+          enum: [version_conflict]
+        currentVersion:
+          type: integer
+      required: [error, currentVersion]
+
+    PromptTemplateError:
+      type: object
+      properties:
+        error:
+          type: string
+          enum: [invalid_template]
+        reason:
+          type: string
+      required: [error, reason]

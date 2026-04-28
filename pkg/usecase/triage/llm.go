@@ -21,12 +21,19 @@ import (
 // agent.Execute's *ExecuteResponse. No tools, no agent-loop side-channels,
 // no sentinel errors — the planner's output IS the agent's return value.
 func (e *PlanExecutor) llmPlan(ctx context.Context, ticket *model.Ticket) (*model.TriagePlan, error) {
-	systemPrompt, err := prompt.RenderTriagePlan(prompt.TriagePlanInput{
+	in := prompt.TriagePlanInput{
 		Title:          ticket.Title,
 		Description:    ticket.Description,
 		InitialMessage: ticket.InitialMessage,
 		Reporter:       string(ticket.ReporterSlackUserID),
-	})
+	}
+	var systemPrompt string
+	var err error
+	if e.promptUC != nil {
+		systemPrompt, err = e.promptUC.RenderTriagePlan(ctx, ticket.WorkspaceID, in)
+	} else {
+		systemPrompt, err = prompt.RenderTriagePlan(in)
+	}
 	if err != nil {
 		return nil, goerr.Wrap(err, "render triage_plan prompt")
 	}

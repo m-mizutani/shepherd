@@ -43,6 +43,16 @@ const (
 	Page     NotionSourceObjectType = "page"
 )
 
+// Defines values for PromptTemplateErrorError.
+const (
+	InvalidTemplate PromptTemplateErrorError = "invalid_template"
+)
+
+// Defines values for PromptVersionConflictError.
+const (
+	VersionConflict PromptVersionConflictError = "version_conflict"
+)
+
 // Defines values for SourceProvider.
 const (
 	SourceProviderNotion SourceProvider = "notion"
@@ -126,6 +136,73 @@ type NotionSource struct {
 
 // NotionSourceObjectType defines model for NotionSource.ObjectType.
 type NotionSourceObjectType string
+
+// PromptAuthor defines model for PromptAuthor.
+type PromptAuthor struct {
+	Email *string `json:"email,omitempty"`
+	Name  string  `json:"name"`
+}
+
+// PromptDetail defines model for PromptDetail.
+type PromptDetail struct {
+	Content        string        `json:"content"`
+	DefaultContent string        `json:"defaultContent"`
+	Id             string        `json:"id"`
+	IsOverride     bool          `json:"isOverride"`
+	UpdatedAt      *time.Time    `json:"updatedAt"`
+	UpdatedBy      *PromptAuthor `json:"updatedBy,omitempty"`
+	Variables      []string      `json:"variables"`
+
+	// Version 0 when the embedded default is in force, else the latest stored version.
+	Version int `json:"version"`
+}
+
+// PromptSlot defines model for PromptSlot.
+type PromptSlot struct {
+	// Configured true when at least one override version exists.
+	Configured bool `json:"configured"`
+
+	// Customizable false for slots that are placeholders only.
+	Customizable bool   `json:"customizable"`
+	Description  string `json:"description"`
+
+	// Id Stable identifier (e.g. "triage").
+	Id        string        `json:"id"`
+	Label     string        `json:"label"`
+	Length    int           `json:"length"`
+	UpdatedAt *time.Time    `json:"updatedAt"`
+	UpdatedBy *PromptAuthor `json:"updatedBy,omitempty"`
+
+	// Version Current version (0 when no override exists yet).
+	Version int `json:"version"`
+}
+
+// PromptTemplateError defines model for PromptTemplateError.
+type PromptTemplateError struct {
+	Error  PromptTemplateErrorError `json:"error"`
+	Reason string                   `json:"reason"`
+}
+
+// PromptTemplateErrorError defines model for PromptTemplateError.Error.
+type PromptTemplateErrorError string
+
+// PromptVersion defines model for PromptVersion.
+type PromptVersion struct {
+	Content   string        `json:"content"`
+	Current   bool          `json:"current"`
+	UpdatedAt time.Time     `json:"updatedAt"`
+	UpdatedBy *PromptAuthor `json:"updatedBy,omitempty"`
+	Version   int           `json:"version"`
+}
+
+// PromptVersionConflict defines model for PromptVersionConflict.
+type PromptVersionConflict struct {
+	CurrentVersion int                        `json:"currentVersion"`
+	Error          PromptVersionConflictError `json:"error"`
+}
+
+// PromptVersionConflictError defines model for PromptVersionConflict.Error.
+type PromptVersionConflictError string
 
 // SlackUserInfo defines model for SlackUserInfo.
 type SlackUserInfo struct {
@@ -220,11 +297,31 @@ type WorkspaceConfig struct {
 	TicketConfig TicketConfig      `json:"ticketConfig"`
 }
 
+// PromptId defines model for PromptId.
+type PromptId = string
+
 // TicketId defines model for TicketId.
 type TicketId = string
 
 // WorkspaceId defines model for WorkspaceId.
 type WorkspaceId = string
+
+// SavePromptJSONBody defines parameters for SavePrompt.
+type SavePromptJSONBody struct {
+	Content string `json:"content"`
+
+	// Version The version number the caller is writing. Must equal current+1 (or 1 when no override exists yet); otherwise 409 Conflict.
+	Version int `json:"version"`
+}
+
+// RestorePromptJSONBody defines parameters for RestorePrompt.
+type RestorePromptJSONBody struct {
+	// TargetVersion The version to restore from.
+	TargetVersion int `json:"targetVersion"`
+
+	// Version The new version number to write the restored content as. Must equal current+1.
+	Version int `json:"version"`
+}
 
 // ListTicketsParams defines parameters for ListTickets.
 type ListTicketsParams struct {
@@ -236,6 +333,12 @@ type ListTicketsParams struct {
 type SetToolEnabledJSONBody struct {
 	Enabled bool `json:"enabled"`
 }
+
+// SavePromptJSONRequestBody defines body for SavePrompt for application/json ContentType.
+type SavePromptJSONRequestBody SavePromptJSONBody
+
+// RestorePromptJSONRequestBody defines body for RestorePrompt for application/json ContentType.
+type RestorePromptJSONRequestBody RestorePromptJSONBody
 
 // CreateSourceJSONRequestBody defines body for CreateSource for application/json ContentType.
 type CreateSourceJSONRequestBody = CreateSourceRequest
@@ -266,6 +369,21 @@ type ServerInterface interface {
 
 	// (GET /api/v1/ws/{workspaceId}/config)
 	GetWorkspaceConfig(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId)
+
+	// (GET /api/v1/ws/{workspaceId}/prompts)
+	ListPrompts(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId)
+
+	// (GET /api/v1/ws/{workspaceId}/prompts/{promptId})
+	GetPrompt(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId, promptId PromptId)
+
+	// (PUT /api/v1/ws/{workspaceId}/prompts/{promptId})
+	SavePrompt(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId, promptId PromptId)
+
+	// (GET /api/v1/ws/{workspaceId}/prompts/{promptId}/history)
+	ListPromptHistory(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId, promptId PromptId)
+
+	// (POST /api/v1/ws/{workspaceId}/prompts/{promptId}/restore)
+	RestorePrompt(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId, promptId PromptId)
 
 	// (GET /api/v1/ws/{workspaceId}/slack/users)
 	ListSlackUsers(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId)
@@ -331,6 +449,31 @@ func (_ Unimplemented) GetWorkspace(w http.ResponseWriter, r *http.Request, work
 
 // (GET /api/v1/ws/{workspaceId}/config)
 func (_ Unimplemented) GetWorkspaceConfig(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /api/v1/ws/{workspaceId}/prompts)
+func (_ Unimplemented) ListPrompts(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /api/v1/ws/{workspaceId}/prompts/{promptId})
+func (_ Unimplemented) GetPrompt(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId, promptId PromptId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (PUT /api/v1/ws/{workspaceId}/prompts/{promptId})
+func (_ Unimplemented) SavePrompt(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId, promptId PromptId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /api/v1/ws/{workspaceId}/prompts/{promptId}/history)
+func (_ Unimplemented) ListPromptHistory(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId, promptId PromptId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /api/v1/ws/{workspaceId}/prompts/{promptId}/restore)
+func (_ Unimplemented) RestorePrompt(w http.ResponseWriter, r *http.Request, workspaceId WorkspaceId, promptId PromptId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -482,6 +625,167 @@ func (siw *ServerInterfaceWrapper) GetWorkspaceConfig(w http.ResponseWriter, r *
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetWorkspaceConfig(w, r, workspaceId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListPrompts operation middleware
+func (siw *ServerInterfaceWrapper) ListPrompts(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "workspaceId" -------------
+	var workspaceId WorkspaceId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "workspaceId", chi.URLParam(r, "workspaceId"), &workspaceId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "workspaceId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListPrompts(w, r, workspaceId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetPrompt operation middleware
+func (siw *ServerInterfaceWrapper) GetPrompt(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "workspaceId" -------------
+	var workspaceId WorkspaceId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "workspaceId", chi.URLParam(r, "workspaceId"), &workspaceId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "workspaceId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "promptId" -------------
+	var promptId PromptId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "promptId", chi.URLParam(r, "promptId"), &promptId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "promptId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetPrompt(w, r, workspaceId, promptId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SavePrompt operation middleware
+func (siw *ServerInterfaceWrapper) SavePrompt(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "workspaceId" -------------
+	var workspaceId WorkspaceId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "workspaceId", chi.URLParam(r, "workspaceId"), &workspaceId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "workspaceId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "promptId" -------------
+	var promptId PromptId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "promptId", chi.URLParam(r, "promptId"), &promptId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "promptId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SavePrompt(w, r, workspaceId, promptId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListPromptHistory operation middleware
+func (siw *ServerInterfaceWrapper) ListPromptHistory(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "workspaceId" -------------
+	var workspaceId WorkspaceId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "workspaceId", chi.URLParam(r, "workspaceId"), &workspaceId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "workspaceId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "promptId" -------------
+	var promptId PromptId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "promptId", chi.URLParam(r, "promptId"), &promptId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "promptId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListPromptHistory(w, r, workspaceId, promptId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RestorePrompt operation middleware
+func (siw *ServerInterfaceWrapper) RestorePrompt(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "workspaceId" -------------
+	var workspaceId WorkspaceId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "workspaceId", chi.URLParam(r, "workspaceId"), &workspaceId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "workspaceId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "promptId" -------------
+	var promptId PromptId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "promptId", chi.URLParam(r, "promptId"), &promptId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "promptId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RestorePrompt(w, r, workspaceId, promptId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1058,6 +1362,21 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/api/v1/ws/{workspaceId}/config", wrapper.GetWorkspaceConfig)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/ws/{workspaceId}/prompts", wrapper.ListPrompts)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/ws/{workspaceId}/prompts/{promptId}", wrapper.GetPrompt)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/api/v1/ws/{workspaceId}/prompts/{promptId}", wrapper.SavePrompt)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/ws/{workspaceId}/prompts/{promptId}/history", wrapper.ListPromptHistory)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/ws/{workspaceId}/prompts/{promptId}/restore", wrapper.RestorePrompt)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/ws/{workspaceId}/slack/users", wrapper.ListSlackUsers)
 	})
 	r.Group(func(r chi.Router) {
@@ -1106,35 +1425,47 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"H4sIAAAAAAAC/+RaW2/bOBb+KwF3H5XI3RYLrN/apN0JpmiLsTvzUBQFLZ3YbCRRIamkGcP/fcCLqBup",
-	"i6OkGUxfGpuHh+d85056jyKa5jSDTHC03KMcM5yCAKY+rUl0DeIyln+TDC1RjsUOBSjDKaAlEuVygBjc",
-	"FIRBjJaCFRAgHu0gxXKfuM8lLReMZFt0OAToD8queY4j8DK+q1FM4X0oF5X05zRNIRNKLUZzYIKAWtjQ",
-	"+N6xPUARAywgfq32XFGWYoGWKMYCTgVJAQXdLSR2cuIJjq4/c2CXsRuESqkvkkdzR6BFrAv01Z5NN98h",
-	"EvKQc7W6ogWL4De4KYA7lI2BR4zkgtDMKWnO6C2JgclFyIpUCpRRRf7VoW/BkmGFLE9N75ddO5hXdsw5",
-	"2WYAl26Qh1S7IpDEihERkKo//s3gCi3Rv8LK7UPjMuE7Sf47TgqQmw03zBi+VxYVWBTcI4kgIoFhXDSZ",
-	"C463mSDi/j3eQMKn21AH4sMkUxxK+ia2LoEVWBdwRTJSijVNZk/g6AzgWKCK1URrftTnO8xZKW/P2lCa",
-	"AK5RjzhgLQmd8awUMZxqy14sP+ZuHCOaUDYFwRQEjrFQCRLHsTIPTj7VmOo02hHDA71XOa8qa4NemU4E",
-	"/JCulRXpRuUEDokkD1BaJIKc2o8FV8v6W/NBJt9OGqmUrcVsBzkV/q6ADdCP0y09NV/K//iZYnR5UV87",
-	"JWlOmU5Lsjwt0ZaIXbE5i2gapqcp+bMQOCMh30G+AxaH+fU2jGmKSRYqpgq7WyNcG8dSupLCheYHlYd1",
-	"gu/qp+k8GUkvti2R4y1oUPEGc3BC6ssYI3N/7eCgEtFfCFa27mVXtKskpJgkU9yfpHgLn1kyJbtMcnGf",
-	"OY5oHsyWN/dHlTdfBqXljr7s1XCt6W3AXbOHG4Fns6erdQj9Pc5Kld0LqciDMyPh5wnlvpzvrzzM4GJW",
-	"SCZgC6w37WvZyr21o106rm35ntT+HOFwT9oxeazAQGZVYKveFllWiZsP0g9rupFM/PdVpZc1hOmez3c4",
-	"yyC57GnJ1zsGOF5zN8UxLV6AijyeZgdn+6+1rRowK4y1St3i9VP9LnVOsyuydUSO8sWVOaFp767iLbPG",
-	"cIWLRKz8YLX0a28IOuc7NaA0kRSOTItvMUnwpmGOWiCb895mksQT7NC3WCanS58DY67jx5ZVs+FbkVWy",
-	"1VLet5hwfV6AtljAt01Co+tGNhiYpBRsdd4tJSuNXFh+Vr7yoEGxY9P+8UCf+A8Y7zqa29uNrr7TRp5J",
-	"TYk91Rfyx4BVG+8ciCV2WO1j1BhsLc4wXpKqAXDIIFppro9RIyW20bVitXjWkq/Rt4u+5EVM82o8Ba3M",
-	"THDy+tOlbPGBceXGaHH24myh51nIcE7QEr08W5y9lD0RFjsFR4hzEt6+CHeAEzl37NFWtwfSoFjaQ/op",
-	"+j+IXzSF1IXnNDO4/mex0P1RJsz9F87zhERqa/jdJK/qGq3pKRqKYYc0dG48GrGLPv4qvz0EVrM77tXq",
-	"PeHCejOfV7W7iu9Y96vCueN+LTxqzI/EJNzXmuRDn90rqYLGle0XtzIVSVi/fD18fSC6I4FzKx+gV4tX",
-	"ncIjZ96Td7TI4gF4wshG/SBKNpifO1Y2Oz0KYqoDDgtubve94Wc7c/5zIWsGr5V7XNloXCsMxa7mPTZs",
-	"Z7RDuC/UBNQb7U1dHmSSwPneUpTPDuOfWh4zHFq2eyQjqG54IBAMzTOKgprY4+LA3vD0BkDJdnzlClBO",
-	"uQO3+qPUDMCp0eGNebCbxbtcr2aHJh7S+Q8ds72Yz8GNUbrYauFi7d6Lrnu/wfGJFVrS/K9LI4tIQrTt",
-	"RkRAuNd/mCQUQwJ66G7a9UJ9P4dd3TmoFOKBWciZEk7OjdVGZQ3ViUe7LgT1Mfp5QTB/lLiuDEZFyeIJ",
-	"omSO/K/HvP78vzY0s9j6pgB2XzN2dR3W82MJ9157m+zYa++xZi48NbxGFR5zqT1UeEq2c/Ze/aVpXT51",
-	"P9fS1Lw1e+LSVJptoDTNEHnhvvz90Ii6M4fRgkFy+3uncYVFixaPdUpfe//zdVs8gftMCN6+6vtTwHqs",
-	"8npEpD8nU00LcilDWv7O0Ftyz0uiv004tB+lKyVH1cnyV4pDhdIyfqpbCkFpMtAeUZqsQAiSbZ/VjGwl",
-	"H9eo2IfGwV5F8Z3lclejG+6r9z1VBPPCAfUKFNLVU9/sg0fjlfFJRo/Wj3z8r7EtE/hfOcckz4HhUP37",
-	"KwAA//+GRtRwEi0AAA==",
+	"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",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

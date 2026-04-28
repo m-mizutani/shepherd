@@ -12,6 +12,7 @@ import (
 	"github.com/m-mizutani/shepherd/pkg/domain/types"
 	slackService "github.com/m-mizutani/shepherd/pkg/service/slack"
 	"github.com/m-mizutani/shepherd/pkg/tool"
+	"github.com/m-mizutani/shepherd/pkg/usecase/prompt"
 	"github.com/m-mizutani/shepherd/pkg/utils/logging"
 )
 
@@ -35,6 +36,7 @@ type PlanExecutor struct {
 	llm         gollem.LLMClient
 	slack       SlackTriageClient
 	catalog     *tool.Catalog
+	promptUC    *prompt.UseCase
 	cfg         Config
 }
 
@@ -48,9 +50,11 @@ type SlackTriageClient interface {
 }
 
 // NewPlanExecutor wires the executor with its dependencies. All fields are
-// required.
+// required. promptUC may be nil in tests that don't exercise the planner
+// rendering path; in that case llmPlan falls back to the embedded default.
 func NewPlanExecutor(repo interfaces.Repository, historyRepo gollem.HistoryRepository,
-	llm gollem.LLMClient, slack SlackTriageClient, catalog *tool.Catalog, cfg Config) *PlanExecutor {
+	llm gollem.LLMClient, slack SlackTriageClient, catalog *tool.Catalog,
+	promptUC *prompt.UseCase, cfg Config) *PlanExecutor {
 	if cfg.IterationCap <= 0 {
 		cfg.IterationCap = defaultConfig().IterationCap
 	}
@@ -60,6 +64,7 @@ func NewPlanExecutor(repo interfaces.Repository, historyRepo gollem.HistoryRepos
 		llm:         llm,
 		slack:       slack,
 		catalog:     catalog,
+		promptUC:    promptUC,
 		cfg:         cfg,
 	}
 }

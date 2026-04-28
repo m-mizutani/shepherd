@@ -16,6 +16,7 @@ type Repository struct {
 	ticketHistory *ticketHistoryRepository
 	source        *sourceRepository
 	toolSettings  *toolSettingsRepository
+	prompt        *promptRepository
 }
 
 func New(ctx context.Context, projectID, databaseID string) (*Repository, error) {
@@ -41,6 +42,7 @@ func New(ctx context.Context, projectID, databaseID string) (*Repository, error)
 		ticketHistory: &ticketHistoryRepository{client: client},
 		source:        &sourceRepository{client: client},
 		toolSettings:  &toolSettingsRepository{client: client},
+		prompt:        &promptRepository{client: client},
 	}, nil
 }
 
@@ -62,6 +64,10 @@ func (r *Repository) Source() interfaces.SourceRepository {
 
 func (r *Repository) ToolSettings() interfaces.ToolSettingsRepository {
 	return r.toolSettings
+}
+
+func (r *Repository) Prompt() interfaces.PromptRepository {
+	return r.prompt
 }
 
 func (r *Repository) PutToken(ctx context.Context, token *auth.Token) error {
