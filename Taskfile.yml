@@ -62,6 +62,9 @@ tasks:
     desc: "Run Playwright E2E tests"
     dir: frontend/e2e
     cmds:
-      - pnpm install --frozen-lockfile
+      # --config.confirm-modules-purge=false keeps `pnpm install` non-interactive
+      # in environments without a TTY (Claude Code sandbox, CI, …) — without it,
+      # pnpm aborts when it wants to confirm a node_modules purge.
+      - pnpm install --frozen-lockfile --config.confirm-modules-purge=false
       - pnpm exec playwright install --with-deps chromium
       - pnpm exec playwright test
