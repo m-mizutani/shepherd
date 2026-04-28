@@ -59,28 +59,27 @@ func (h *APIHandler) ListPrompts(w http.ResponseWriter, r *http.Request, workspa
 			Customizable: m.Customizable,
 		}
 		if m.Customizable {
-			content, version, err := h.promptUC.Effective(r.Context(), ws, model.PromptID(m.ID))
+			cur, err := h.promptUC.Current(r.Context(), ws, model.PromptID(m.ID))
 			if err != nil {
 				handleUseCaseError(r.Context(), w, err)
 				return
 			}
-			slot.Length = len(content)
-			slot.Version = version
-			slot.Configured = version > 0
-			if version > 0 {
-				cur, err := h.promptUC.History(r.Context(), ws, model.PromptID(m.ID))
+			if cur != nil {
+				slot.Length = len(cur.Content)
+				slot.Version = cur.Version
+				slot.Configured = true
+				at := cur.UpdatedAt
+				slot.UpdatedAt = &at
+				if cur.UpdatedBy != "" {
+					slot.UpdatedBy = toPromptAuthor(cur)
+				}
+			} else {
+				def, err := h.promptUC.Default(model.PromptID(m.ID))
 				if err != nil {
 					handleUseCaseError(r.Context(), w, err)
 					return
 				}
-				if len(cur) > 0 {
-					last := cur[len(cur)-1]
-					at := last.UpdatedAt
-					slot.UpdatedAt = &at
-					if last.UpdatedBy != "" {
-						slot.UpdatedBy = toPromptAuthor(last)
-					}
-				}
+				slot.Length = len(def)
 			}
 		}
 		out = append(out, slot)
@@ -99,7 +98,7 @@ func (h *APIHandler) GetPrompt(w http.ResponseWriter, r *http.Request, workspace
 		return
 	}
 	ws := types.WorkspaceID(workspaceId)
-	content, version, err := h.promptUC.Effective(r.Context(), ws, id)
+	cur, err := h.promptUC.Current(r.Context(), ws, id)
 	if err != nil {
 		handleUseCaseError(r.Context(), w, err)
 		return
@@ -111,26 +110,22 @@ func (h *APIHandler) GetPrompt(w http.ResponseWriter, r *http.Request, workspace
 	}
 	resp := PromptDetail{
 		Id:             string(id),
-		Content:        content,
-		Version:        version,
-		IsOverride:     version > 0,
 		DefaultContent: def,
 		Variables:      promptVariables,
 	}
-	if version > 0 {
-		hist, err := h.promptUC.History(r.Context(), ws, id)
-		if err != nil {
-			handleUseCaseError(r.Context(), w, err)
-			return
+	if cur != nil {
+		resp.Content = cur.Content
+		resp.Version = cur.Version
+		resp.IsOverride = true
+		at := cur.UpdatedAt
+		resp.UpdatedAt = &at
+		if cur.UpdatedBy != "" {
+			resp.UpdatedBy = toPromptAuthor(cur)
 		}
-		if len(hist) > 0 {
-			last := hist[len(hist)-1]
-			at := last.UpdatedAt
-			resp.UpdatedAt = &at
-			if last.UpdatedBy != "" {
-				resp.UpdatedBy = toPromptAuthor(last)
-			}
-		}
+	} else {
+		resp.Content = def
+		resp.Version = 0
+		resp.IsOverride = false
 	}
 	writeJSON(r.Context(), w, http.StatusOK, resp)
 }

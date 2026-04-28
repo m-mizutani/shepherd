@@ -78,19 +78,35 @@ func (u *UseCase) Effective(ctx context.Context, ws types.WorkspaceID, id model.
 	if !ok {
 		return "", 0, goerr.New("unknown prompt id", goerr.V("prompt_id", string(id)))
 	}
-	if u.repo == nil {
-		return def.defaultSource, 0, nil
-	}
-	cur, err := u.repo.GetCurrent(ctx, ws, id)
+	cur, err := u.Current(ctx, ws, id)
 	if err != nil {
-		return "", 0, goerr.Wrap(err, "load current prompt override",
-			goerr.V("workspace_id", string(ws)),
-			goerr.V("prompt_id", string(id)))
+		return "", 0, err
 	}
 	if cur == nil {
 		return def.defaultSource, 0, nil
 	}
 	return cur.Content, cur.Version, nil
+}
+
+// Current returns the latest stored override for (ws, id), or (nil, nil)
+// when no override has been saved yet. This is a single point read against
+// the repository's GetCurrent — controllers needing the latest version's
+// metadata (updatedAt, updatedBy, length) should call this instead of
+// fetching the full History list.
+func (u *UseCase) Current(ctx context.Context, ws types.WorkspaceID, id model.PromptID) (*model.PromptVersion, error) {
+	if _, ok := slotDefs[id]; !ok {
+		return nil, goerr.New("unknown prompt id", goerr.V("prompt_id", string(id)))
+	}
+	if u.repo == nil {
+		return nil, nil
+	}
+	cur, err := u.repo.GetCurrent(ctx, ws, id)
+	if err != nil {
+		return nil, goerr.Wrap(err, "load current prompt override",
+			goerr.V("workspace_id", string(ws)),
+			goerr.V("prompt_id", string(id)))
+	}
+	return cur, nil
 }
 
 // Default returns the embedded default content for id (used by the UI to
@@ -173,13 +189,23 @@ func (u *UseCase) Restore(ctx context.Context, ws types.WorkspaceID, id model.Pr
 }
 
 // RenderTriagePlan looks up the effective triage prompt for ws and executes
-// it against the supplied input. If override execution fails at runtime, it
-// logs and falls back to the embedded default so a broken override never
-// stops triage entirely.
+// it against the supplied input. Triage must keep working even if the
+// override is broken or the repository is unreachable, so failures from
+// either lookup or override execution log and fall back to the embedded
+// default for that turn.
 func (u *UseCase) RenderTriagePlan(ctx context.Context, ws types.WorkspaceID, in TriagePlanInput) (string, error) {
 	content, version, err := u.Effective(ctx, ws, model.PromptIDTriage)
 	if err != nil {
-		return "", err
+		// Repository unreachable / decode error / etc. Log + Sentry then
+		// fall back to the embedded default so a flapping data layer does
+		// not also take triage down.
+		errutil.Handle(ctx,
+			goerr.Wrap(err, "load effective triage prompt failed; falling back to default",
+				goerr.V("workspace_id", string(ws))))
+		logging.From(ctx).Warn("triage prompt lookup failed; using default",
+			slog.String("workspace_id", string(ws)))
+		def := slotDefs[model.PromptIDTriage]
+		return executeTemplate(string(model.PromptIDTriage), def.defaultSource, in)
 	}
 	rendered, renderErr := executeTemplate(string(model.PromptIDTriage), content, in)
 	if renderErr == nil {

@@ -196,6 +196,36 @@ func TestUseCase_RenderTriagePlanUsesOverride(t *testing.T) {
 	gt.Equal(t, got, "OVERRIDE the title")
 }
 
+func TestUseCase_RenderTriagePlanFallsBackOnRepoFailure(t *testing.T) {
+	// A flapping repository must not take triage down — RenderTriagePlan
+	// should log the failure and fall back to the embedded default.
+	uc := prompt.New(&boomPromptRepo{})
+
+	got, err := uc.RenderTriagePlan(context.Background(), "ws-1", prompt.TriagePlanInput{Title: "boom test"})
+	gt.NoError(t, err)
+	gt.S(t, got).Contains("boom test")
+}
+
+// boomPromptRepo is a PromptRepository that always errors on reads. It only
+// implements GetCurrent (the path RenderTriagePlan exercises); the other
+// methods would never be hit by this test.
+type boomPromptRepo struct{}
+
+func (b *boomPromptRepo) Append(ctx context.Context, ws types.WorkspaceID, id model.PromptID, draft *model.PromptVersion) (*model.PromptVersion, error) {
+	return nil, errBoom
+}
+func (b *boomPromptRepo) GetCurrent(ctx context.Context, ws types.WorkspaceID, id model.PromptID) (*model.PromptVersion, error) {
+	return nil, errBoom
+}
+func (b *boomPromptRepo) GetVersion(ctx context.Context, ws types.WorkspaceID, id model.PromptID, version int) (*model.PromptVersion, error) {
+	return nil, errBoom
+}
+func (b *boomPromptRepo) List(ctx context.Context, ws types.WorkspaceID, id model.PromptID) ([]*model.PromptVersion, error) {
+	return nil, errBoom
+}
+
+var errBoom = errors.New("boom")
+
 func TestUseCase_RenderTriagePlanFallsBackOnBrokenOverride(t *testing.T) {
 	// Inject a broken override directly through the repo so we bypass Save's
 	// validation — this simulates an override that worked at save time but
