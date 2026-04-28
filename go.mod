@@ -4,6 +4,7 @@ go 1.26.2
 
 require (
 	cloud.google.com/go/firestore v1.22.0
+	cloud.google.com/go/storage v1.62.1
 	github.com/fatih/color v1.19.0
 	github.com/getkin/kin-openapi v0.131.0
 	github.com/getsentry/sentry-go v0.46.0
@@ -32,7 +33,6 @@ require (
 	cloud.google.com/go/iam v1.9.0 // indirect
 	cloud.google.com/go/longrunning v0.11.0 // indirect
 	cloud.google.com/go/monitoring v1.27.0 // indirect
-	cloud.google.com/go/storage v1.62.1 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.31.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.55.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.55.0 // indirect
