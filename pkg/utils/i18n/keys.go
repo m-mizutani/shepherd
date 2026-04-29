@@ -46,7 +46,8 @@ const (
 	MsgTriageFailedRetryButton MsgKey = "triage_failed_retry_button"
 	MsgTriageRetryQueued       MsgKey = "triage_retry_queued"
 
-	// Triage reporter-review flow (gated by [triage] require_review). The
+	// Triage reporter-review flow (default; opt out per workspace via
+	// [triage] auto = true to fall back to immediate finalisation). The
 	// review message carries Edit / Submit / Re-investigate buttons; outcomes
 	// are posted as additional thread messages instead of rewriting the
 	// review message itself.

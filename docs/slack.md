@@ -108,11 +108,11 @@ This endpoint is signed with the same signing secret as `/hooks/slack/event` and
 
 **Permission model.** All three review buttons and both modals are open to any user in the channel — there is no reporter-only restriction. Idempotency falls out of the `Triaged` flag: once a triage is finalised, subsequent button clicks no-op with an ephemeral notice.
 
-**Configuration.** Whether the planner pauses for review (vs. finalising immediately) is controlled per workspace by `[triage] require_review` in the workspace TOML config. The default is `true`. Set to `false` to keep the legacy behaviour where `PlanComplete` finalises the ticket immediately.
+**Configuration.** Whether the planner pauses for review (vs. finalising immediately) is controlled per workspace by `[triage] auto` in the workspace TOML config. The default is `false` (review required). Set to `true` to opt into the legacy behaviour where `PlanComplete` finalises the ticket immediately with no human review step.
 
 ```toml
 [triage]
-require_review = true   # default; set to false to skip the review step
+auto = false   # default; set to true to skip the review step and auto-finalise
 ```
 
 **State model.** The review flow does not introduce a `PendingTriage` field on the ticket. The "current proposal" is the latest assistant `PlanComplete` in the planner's gollem history; the "review pending" state is `Triaged == false` while that latest plan is a `PlanComplete`. Edit submissions feed the edited values directly into `FinalizeTriage` — there is no intermediate "edited but unsubmitted" snapshot to reconcile.

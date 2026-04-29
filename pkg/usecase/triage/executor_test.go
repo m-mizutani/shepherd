@@ -118,7 +118,12 @@ func TestExecutorRun_LLMProposesComplete_FinalizesTriage(t *testing.T) {
 		},
 	}
 
-	_, exec, repo, _, slack := newRig(t, llm)
+	// auto = true opts the workspace into the legacy fast-path: PlanComplete
+	// finalises immediately and posts the hand-off, no reporter review.
+	_, _, repo, hist, slack := newRig(t, llm)
+	exec := triage.NewPlanExecutor(repo, hist, llm, slack, nil, nil,
+		&fakeWorkspaceLookup{auto: map[types.WorkspaceID]bool{tWS: true}},
+		triage.Config{IterationCap: 5})
 	ticket := mustCreateTicket(t, repo, false)
 
 	gt.NoError(t, exec.RunForTest(context.Background(), tWS, ticket.ID))
@@ -218,21 +223,21 @@ func (e *simpleErr) Error() string { return e.msg }
 
 // fakeWorkspaceLookup provides a minimal triage.WorkspaceLookup for tests.
 type fakeWorkspaceLookup struct {
-	require map[types.WorkspaceID]bool
+	auto map[types.WorkspaceID]bool
 }
 
-func (f *fakeWorkspaceLookup) RequireTriageReview(ws types.WorkspaceID) bool {
+func (f *fakeWorkspaceLookup) AutoTriage(ws types.WorkspaceID) bool {
 	if f == nil {
 		return false
 	}
-	return f.require[ws]
+	return f.auto[ws]
 }
 
-// TestExecutorRun_LLMProposesComplete_RequireReview_PostsReviewWithoutFinalize
-// covers the new review-gated PlanComplete path: when the workspace has
-// RequireTriageReview=true, the executor must NOT mark Triaged=true and must
+// TestExecutorRun_LLMProposesComplete_DefaultRequiresReview_PostsReviewWithoutFinalize
+// covers the default PlanComplete path: when the workspace does not opt into
+// `[triage] auto = true`, the executor must NOT mark Triaged=true and must
 // post the review message (with the 3 buttons) instead of the legacy hand-off.
-func TestExecutorRun_LLMProposesComplete_RequireReview_PostsReviewWithoutFinalize(t *testing.T) {
+func TestExecutorRun_LLMProposesComplete_DefaultRequiresReview_PostsReviewWithoutFinalize(t *testing.T) {
 	session := newPlanSessionMock(t, []string{completePlanJSON})
 	llm := &mock.LLMClientMock{
 		NewSessionFunc: func(_ context.Context, _ ...gollem.SessionOption) (gollem.Session, error) {
@@ -240,12 +245,12 @@ func TestExecutorRun_LLMProposesComplete_RequireReview_PostsReviewWithoutFinaliz
 		},
 	}
 
-	// Build a rig but swap in a non-nil WorkspaceLookup so PlanComplete enters
-	// the review path.
+	// Build a rig with a lookup that leaves AutoTriage=false (default), so
+	// PlanComplete parks on the review buttons.
 	uc, _, repo, hist, slack := newRig(t, llm)
 	_ = uc
 	exec := triage.NewPlanExecutor(repo, hist, llm, slack, nil, nil,
-		&fakeWorkspaceLookup{require: map[types.WorkspaceID]bool{tWS: true}},
+		&fakeWorkspaceLookup{auto: map[types.WorkspaceID]bool{}},
 		triage.Config{IterationCap: 5})
 
 	ticket := mustCreateTicket(t, repo, false)

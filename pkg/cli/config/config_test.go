@@ -269,32 +269,32 @@ func TestBuildRegistry(t *testing.T) {
 	gt.S(t, string(entry.SlackChannelID)).Equal("C0123456789")
 }
 
-func TestLoadWorkspaceConfigs_TriageRequireReview_DefaultsTrue(t *testing.T) {
+func TestLoadWorkspaceConfigs_TriageAuto_DefaultsFalse(t *testing.T) {
 	dir := t.TempDir()
 	path := writeToml(t, dir, "ws.toml", validTOML)
 	configs := gt.R1(config.LoadWorkspaceConfigs([]string{path})).NoError(t)
-	gt.B(t, configs[0].RequireTriageReview).True()
+	gt.B(t, configs[0].AutoTriage).False()
 }
 
-func TestLoadWorkspaceConfigs_TriageRequireReview_ExplicitFalse(t *testing.T) {
+func TestLoadWorkspaceConfigs_TriageAuto_ExplicitTrue(t *testing.T) {
 	dir := t.TempDir()
-	tomlBody := validTOML + "\n[triage]\nrequire_review = false\n"
+	tomlBody := validTOML + "\n[triage]\nauto = true\n"
 	path := writeToml(t, dir, "ws.toml", tomlBody)
 	configs := gt.R1(config.LoadWorkspaceConfigs([]string{path})).NoError(t)
-	gt.B(t, configs[0].RequireTriageReview).False()
+	gt.B(t, configs[0].AutoTriage).True()
 }
 
-func TestLoadWorkspaceConfigs_TriageRequireReview_ExplicitTrue(t *testing.T) {
+func TestLoadWorkspaceConfigs_TriageAuto_ExplicitFalse(t *testing.T) {
 	dir := t.TempDir()
-	tomlBody := validTOML + "\n[triage]\nrequire_review = true\n"
+	tomlBody := validTOML + "\n[triage]\nauto = false\n"
 	path := writeToml(t, dir, "ws.toml", tomlBody)
 	configs := gt.R1(config.LoadWorkspaceConfigs([]string{path})).NoError(t)
-	gt.B(t, configs[0].RequireTriageReview).True()
+	gt.B(t, configs[0].AutoTriage).False()
 }
 
-func TestBuildRegistry_PropagatesRequireTriageReview(t *testing.T) {
+func TestBuildRegistry_PropagatesAutoTriage(t *testing.T) {
 	dir := t.TempDir()
-	tomlBody := validTOML + "\n[triage]\nrequire_review = false\n"
+	tomlBody := validTOML + "\n[triage]\nauto = true\n"
 	writeToml(t, dir, "ws.toml", tomlBody)
 
 	configs := gt.R1(config.LoadWorkspaceConfigs([]string{dir})).NoError(t)
@@ -302,5 +302,5 @@ func TestBuildRegistry_PropagatesRequireTriageReview(t *testing.T) {
 	registry := gt.R1(config.BuildRegistry(ctx, configs, nil)).NoError(t)
 	entry, ok := registry.Get(types.WorkspaceID("test-ws"))
 	gt.B(t, ok).True()
-	gt.B(t, entry.RequireTriageReview).False()
+	gt.B(t, entry.AutoTriage).True()
 }

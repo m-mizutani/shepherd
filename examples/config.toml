@@ -7,11 +7,12 @@ default_status = "open"
 closed_statuses = ["resolved", "closed"]
 
 [triage]
-# When true (default), the planner's PlanComplete proposal is parked behind
+# When false (default), the planner's PlanComplete proposal is parked behind
 # Edit / Submit / Re-investigate buttons in Slack and the ticket is only
-# finalised after a human submits. Set to false to keep the legacy fast path
-# that finalises immediately when the planner converges.
-require_review = true
+# finalised after a human submits. Set to true to opt into the legacy fast
+# path that finalises immediately when the planner converges (no human
+# review).
+auto = false
 
 [slack]
 channel = "C0123456789"
