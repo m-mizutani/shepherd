@@ -217,6 +217,7 @@ func cmdServe() *cli.Command {
 			if slackUC != nil {
 				triageExec := triage.NewPlanExecutor(
 					repo, historyRepo, llmClient, slackClient, catalog, promptUC,
+					&triage.RegistryWorkspaceLookup{Registry: registry},
 					triage.Config{IterationCap: triageIterationCap},
 				)
 				triageUC = triage.NewUseCase(triageExec, &triage.RegistryResolver{Registry: registry})

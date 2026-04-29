@@ -27,12 +27,20 @@ import (
 // fakeTriageSlack records every Slack call the triage executor makes through
 // SlackTriageClient so tests can assert exact ordering / payloads.
 type fakeTriageSlack struct {
-	mu       sync.Mutex
-	posts    []postCall
-	updates  []updateCall
-	replies  []replyCall
-	postErr  error
+	mu        sync.Mutex
+	posts     []postCall
+	updates   []updateCall
+	replies   []replyCall
+	views     []viewCall
+	postErr   error
 	updateErr error
+	viewErr   error
+}
+
+type viewCall struct {
+	triggerID  string
+	callbackID string
+	view       slackgo.ModalViewRequest
 }
 
 type postCall struct {
@@ -80,6 +88,16 @@ func (f *fakeTriageSlack) ReplyThread(_ context.Context, channel, threadTS, text
 
 func (f *fakeTriageSlack) PostEphemeral(_ context.Context, _, _, _ string) error { return nil }
 
+func (f *fakeTriageSlack) OpenView(_ context.Context, triggerID string, view slackgo.ModalViewRequest) (*slackgo.ViewResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.viewErr != nil {
+		return nil, f.viewErr
+	}
+	f.views = append(f.views, viewCall{triggerID: triggerID, callbackID: view.CallbackID, view: view})
+	return &slackgo.ViewResponse{}, nil
+}
+
 const (
 	tWS      = types.WorkspaceID("ws-tri")
 	tChannel = "C-triage"
@@ -98,7 +116,7 @@ func newRig(t *testing.T, llm gollem.LLMClient) (*triage.UseCase, *triage.PlanEx
 	slack := &fakeTriageSlack{}
 	catalog := tool.NewCatalog(nil, repo.ToolSettings())
 	promptUC := prompt.New(repo.Prompt())
-	exec := triage.NewPlanExecutor(repo, hist, llm, slack, catalog, promptUC, triage.Config{IterationCap: 5})
+	exec := triage.NewPlanExecutor(repo, hist, llm, slack, catalog, promptUC, nil, triage.Config{IterationCap: 5})
 	uc := triage.NewUseCase(exec, &fakeResolver{ws: tWS, channel: tChannel})
 	return uc, exec, repo, hist, slack
 }
@@ -456,7 +474,7 @@ func TestLifecycle_TicketCreate_Ask_Submit_Complete(t *testing.T) {
 	triageSlack := &fakeTriageSlack{}
 	catalog := tool.NewCatalog(nil, repo.ToolSettings())
 	promptUC := prompt.New(repo.Prompt())
-	exec := triage.NewPlanExecutor(repo, hist, llm, triageSlack, catalog, promptUC, triage.Config{IterationCap: 5})
+	exec := triage.NewPlanExecutor(repo, hist, llm, triageSlack, catalog, promptUC, nil, triage.Config{IterationCap: 5})
 	triageUC := triage.NewUseCase(exec, &fakeResolver{ws: wsID, channel: channel})
 
 	slackUC := usecase.NewSlackUseCase(repo, registry, userSlack, "https://shepherd.example.com", llm, hist, nil)

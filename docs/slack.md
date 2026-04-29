@@ -87,14 +87,35 @@ The triage agent uses Slack Block Kit input blocks plus a Submit button to ask t
 3. Set **Request URL** to: `{SHEPHERD_BASE_URL}/hooks/slack/interaction`
    - Example: `https://shepherd.example.com/hooks/slack/interaction`
 
-This endpoint is signed with the same signing secret as `/hooks/slack/event` and only handles `block_actions` payloads with the following `action_id`s:
+This endpoint is signed with the same signing secret as `/hooks/slack/event` and handles the following Slack interactivity types:
+
+### `block_actions`
 
 | action_id | Purpose |
 |-----------|---------|
 | `triage_submit_answers` | Reporter clicked Submit on the triage question form. Bot reads `state.values` (keyed by `block_id == question.id`), records the answers in agent history, and resumes the planner loop. |
 | `triage_retry` | Reporter clicked the retry button on a failure-recovery message. Bot re-dispatches the planner loop for the ticket. |
+| `triage_review_edit` | Anyone clicked **Edit** on the triage review message. Bot opens the Edit modal synchronously via `views.open` (Slack's `trigger_id` is only valid for ~3 seconds). |
+| `triage_review_submit` | Anyone clicked **Submit** on the triage review message. Bot finalises the planner's latest `PlanComplete` proposal as-is, posts a follow-up "Submitted" message into the thread mentioning the assignee. The original review message is not rewritten. |
+| `triage_review_reinvestigate` | Anyone clicked **Re-investigate** on the triage review message. Bot opens the instruction modal synchronously via `views.open`. |
 
-`view_submission` callbacks are not handled — triage uses inline message inputs rather than modals, so no Slack View configuration is required.
+### `view_submission`
+
+| callback_id | Purpose |
+|-------------|---------|
+| `triage_review_edit_modal` | Edit modal submitted. Bot parses summary / assignee / custom-field inputs, persists field values to the ticket, finalises with the edited proposal, and posts the "Submitted" follow-up. Required-field violations come back as `response_action: errors` so the modal stays open. |
+| `triage_review_reinvestigate_modal` | Re-investigate modal submitted. Bot appends the user's instruction to the planner's gollem history as a user-role message, posts a "Re-investigating…" follow-up message into the thread, and re-dispatches the planner. The review message itself is left untouched. |
+
+**Permission model.** All three review buttons and both modals are open to any user in the channel — there is no reporter-only restriction. Idempotency falls out of the `Triaged` flag: once a triage is finalised, subsequent button clicks no-op with an ephemeral notice.
+
+**Configuration.** Whether the planner pauses for review (vs. finalising immediately) is controlled per workspace by `[triage] require_review` in the workspace TOML config. The default is `true`. Set to `false` to keep the legacy behaviour where `PlanComplete` finalises the ticket immediately.
+
+```toml
+[triage]
+require_review = true   # default; set to false to skip the review step
+```
+
+**State model.** The review flow does not introduce a `PendingTriage` field on the ticket. The "current proposal" is the latest assistant `PlanComplete` in the planner's gollem history; the "review pending" state is `Triaged == false` while that latest plan is a `PlanComplete`. Edit submissions feed the edited values directly into `FinalizeTriage` — there is no intermediate "edited but unsubmitted" snapshot to reconcile.
 
 ## 5. Install the App
 

@@ -14,6 +14,7 @@ import (
 	"github.com/m-mizutani/shepherd/pkg/tool"
 	"github.com/m-mizutani/shepherd/pkg/usecase/prompt"
 	"github.com/m-mizutani/shepherd/pkg/utils/logging"
+	slackgo "github.com/slack-go/slack"
 )
 
 // Config holds tunable parameters for the triage executor. Values come from
@@ -37,7 +38,36 @@ type PlanExecutor struct {
 	slack       SlackTriageClient
 	catalog     *tool.Catalog
 	promptUC    *prompt.UseCase
+	lookup      WorkspaceLookup
 	cfg         Config
+}
+
+// WorkspaceLookup exposes the per-workspace triage knobs the executor needs
+// at runtime. Implemented by *RegistryWorkspaceLookup in production; tests
+// pass a stub or nil. When nil, the executor takes the legacy fast path
+// (immediate finalize) on PlanComplete, which is the safe default for tests
+// that pre-date the review flow.
+type WorkspaceLookup interface {
+	RequireTriageReview(ws types.WorkspaceID) bool
+}
+
+// RegistryWorkspaceLookup adapts *model.WorkspaceRegistry to WorkspaceLookup.
+// Production wiring constructs one of these alongside the registry.
+type RegistryWorkspaceLookup struct {
+	Registry *model.WorkspaceRegistry
+}
+
+// RequireTriageReview returns the workspace's RequireTriageReview flag, or
+// false when the workspace is unknown (the safe legacy default).
+func (r *RegistryWorkspaceLookup) RequireTriageReview(ws types.WorkspaceID) bool {
+	if r == nil || r.Registry == nil {
+		return false
+	}
+	entry, ok := r.Registry.Get(ws)
+	if !ok {
+		return false
+	}
+	return entry.RequireTriageReview
 }
 
 // SlackTriageClient is the slim Slack surface the triage usecase actually
@@ -47,14 +77,17 @@ type SlackTriageClient interface {
 	progressSlack
 	ReplyThread(ctx context.Context, channelID, threadTS, text string) error
 	PostEphemeral(ctx context.Context, channelID, userID, text string) error
+	OpenView(ctx context.Context, triggerID string, view slackgo.ModalViewRequest) (*slackgo.ViewResponse, error)
 }
 
 // NewPlanExecutor wires the executor with its dependencies. All fields are
 // required. promptUC may be nil in tests that don't exercise the planner
 // rendering path; in that case llmPlan falls back to the embedded default.
+// lookup may be nil; when nil, PlanComplete takes the legacy immediate
+// finalise path.
 func NewPlanExecutor(repo interfaces.Repository, historyRepo gollem.HistoryRepository,
 	llm gollem.LLMClient, slack SlackTriageClient, catalog *tool.Catalog,
-	promptUC *prompt.UseCase, cfg Config) *PlanExecutor {
+	promptUC *prompt.UseCase, lookup WorkspaceLookup, cfg Config) *PlanExecutor {
 	if cfg.IterationCap <= 0 {
 		cfg.IterationCap = defaultConfig().IterationCap
 	}
@@ -65,6 +98,7 @@ func NewPlanExecutor(repo interfaces.Repository, historyRepo gollem.HistoryRepos
 		slack:       slack,
 		catalog:     catalog,
 		promptUC:    promptUC,
+		lookup:      lookup,
 		cfg:         cfg,
 	}
 }
@@ -153,7 +187,17 @@ func (e *PlanExecutor) run(ctx context.Context, workspaceID types.WorkspaceID, t
 			return nil
 
 		case types.PlanComplete:
-			if err := e.finalizeComplete(ctx, ticket, plan); err != nil {
+			if plan.Complete == nil {
+				return goerr.New("plan kind complete without payload")
+			}
+			if e.lookup != nil && e.lookup.RequireTriageReview(workspaceID) {
+				if err := e.enterReview(ctx, ticket, plan.Complete); err != nil {
+					return goerr.Wrap(err, "enter review")
+				}
+				logger.Info("triage paused: awaiting reporter review")
+				return nil
+			}
+			if err := e.finalizeCompleteAndAnnounce(ctx, ticket, plan.Complete); err != nil {
 				return goerr.Wrap(err, "finalize complete")
 			}
 			logger.Info("triage completed")

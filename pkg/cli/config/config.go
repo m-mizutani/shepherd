@@ -48,6 +48,16 @@ type TicketSection struct {
 	ClosedStatuses []string `toml:"closed_statuses"`
 }
 
+// TriageSection holds knobs that govern the triage flow itself, distinct from
+// the ticket schema controlled by [ticket].
+type TriageSection struct {
+	// RequireReview gates whether a PlanComplete must be confirmed by a human
+	// before it finalises the ticket. nil means the key was not specified in
+	// TOML — Validate normalises that to true (the safe default), so opting
+	// back into the legacy fast path requires an explicit `false`.
+	RequireReview *bool `toml:"require_review"`
+}
+
 type SlackSection struct {
 	Channel string `toml:"channel"`
 }
@@ -83,6 +93,7 @@ type LabelsConfig struct {
 type AppConfig struct {
 	Workspace WorkspaceBaseConfig `toml:"workspace"`
 	Ticket    TicketSection       `toml:"ticket"`
+	Triage    TriageSection       `toml:"triage"`
 	Slack     SlackSection        `toml:"slack"`
 	Statuses  []StatusConfig      `toml:"statuses"`
 	Fields    []FieldConfig       `toml:"fields"`
@@ -90,10 +101,11 @@ type AppConfig struct {
 }
 
 type WorkspaceConfig struct {
-	ID           string
-	Name         string
-	SlackChannel string
-	FieldSchema  *domainConfig.FieldSchema
+	ID                  string
+	Name                string
+	SlackChannel        string
+	FieldSchema         *domainConfig.FieldSchema
+	RequireTriageReview bool
 }
 
 func (a *AppConfig) Validate() error {
@@ -110,6 +122,15 @@ func (a *AppConfig) Validate() error {
 	if a.Slack.Channel == "" {
 		return goerr.Wrap(ErrMissingChannelID, "[slack] channel is required",
 			goerr.V(WorkspaceIDKey, wsID))
+	}
+
+	// Default [triage] require_review to true when omitted. The TOML bool
+	// zero-value would otherwise silently flip every workspace into the
+	// legacy fast path, so we materialise the default here instead of relying
+	// on the zero-value.
+	if a.Triage.RequireReview == nil {
+		t := true
+		a.Triage.RequireReview = &t
 	}
 
 	return nil
@@ -271,10 +292,11 @@ func loadSingleWorkspaceConfig(path string) (*WorkspaceConfig, error) {
 	}
 
 	return &WorkspaceConfig{
-		ID:           appCfg.Workspace.ID,
-		Name:         wsName,
-		SlackChannel: appCfg.Slack.Channel,
-		FieldSchema:  schema,
+		ID:                  appCfg.Workspace.ID,
+		Name:                wsName,
+		SlackChannel:        appCfg.Slack.Channel,
+		FieldSchema:         schema,
+		RequireTriageReview: *appCfg.Triage.RequireReview,
 	}, nil
 }
 
@@ -308,8 +330,9 @@ func BuildRegistry(ctx context.Context, configs []*WorkspaceConfig, resolve Chan
 				ID:   types.WorkspaceID(wc.ID),
 				Name: wc.Name,
 			},
-			FieldSchema:    wc.FieldSchema,
-			SlackChannelID: types.SlackChannelID(channelID),
+			FieldSchema:         wc.FieldSchema,
+			SlackChannelID:      types.SlackChannelID(channelID),
+			RequireTriageReview: wc.RequireTriageReview,
 		})
 		logger.Info("Registered workspace", "id", wc.ID, "name", wc.Name, "channel", channelID)
 	}

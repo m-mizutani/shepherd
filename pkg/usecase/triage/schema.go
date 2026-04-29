@@ -138,9 +138,15 @@ func completeSchema() *gollem.Parameter {
 		Type:        gollem.TypeObject,
 		Description: "Populated when kind=complete. Concludes triage with a hand-off summary.",
 		Properties: map[string]*gollem.Parameter{
+			"title": {
+				Type:        gollem.TypeString,
+				Description: "Short, human-readable ticket title (5-15 words). This is written back to the ticket as ticket.Title and shown as the headline in the Slack hand-off message.",
+				Required:    true,
+				MinLength:   intPtr(1),
+			},
 			"summary": {
 				Type:        gollem.TypeString,
-				Description: "Markdown overview the assignee will see first.",
+				Description: "Markdown overview the assignee will see first. This is written back to the ticket as ticket.Description and shown as the body of the Slack hand-off message.",
 				Required:    true,
 				MinLength:   intPtr(1),
 			},
@@ -166,26 +172,6 @@ func completeSchema() *gollem.Parameter {
 						MinLength:   intPtr(1),
 					},
 				},
-			},
-			"key_findings": {
-				Type:        gollem.TypeArray,
-				Description: "Concise bullet points the assignee should read first.",
-				Items:       &gollem.Parameter{Type: gollem.TypeString},
-			},
-			"next_steps": {
-				Type:        gollem.TypeArray,
-				Description: "Recommended actions for the assignee.",
-				Items:       &gollem.Parameter{Type: gollem.TypeString},
-			},
-			"similar_tickets": {
-				Type:        gollem.TypeArray,
-				Description: "Ticket IDs of related past tickets discovered during investigation.",
-				Items:       &gollem.Parameter{Type: gollem.TypeString},
-			},
-			"answer_summary": {
-				Type:        gollem.TypeObject,
-				Description: "Map of question label -> reporter answer summary.",
-				Properties:  map[string]*gollem.Parameter{},
 			},
 			"suggested_fields": {
 				Type:        gollem.TypeObject,

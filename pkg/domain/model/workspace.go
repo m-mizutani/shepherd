@@ -11,9 +11,10 @@ type Workspace struct {
 }
 
 type WorkspaceEntry struct {
-	Workspace       Workspace
-	FieldSchema     *config.FieldSchema
-	SlackChannelID  types.SlackChannelID
+	Workspace           Workspace
+	FieldSchema         *config.FieldSchema
+	SlackChannelID      types.SlackChannelID
+	RequireTriageReview bool
 }
 
 type WorkspaceRegistry struct {
