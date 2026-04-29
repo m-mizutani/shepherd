@@ -268,3 +268,39 @@ func TestBuildRegistry(t *testing.T) {
 	gt.S(t, entry.Workspace.Name).Equal("Test Workspace")
 	gt.S(t, string(entry.SlackChannelID)).Equal("C0123456789")
 }
+
+func TestLoadWorkspaceConfigs_TriageRequireReview_DefaultsTrue(t *testing.T) {
+	dir := t.TempDir()
+	path := writeToml(t, dir, "ws.toml", validTOML)
+	configs := gt.R1(config.LoadWorkspaceConfigs([]string{path})).NoError(t)
+	gt.B(t, configs[0].RequireTriageReview).True()
+}
+
+func TestLoadWorkspaceConfigs_TriageRequireReview_ExplicitFalse(t *testing.T) {
+	dir := t.TempDir()
+	tomlBody := validTOML + "\n[triage]\nrequire_review = false\n"
+	path := writeToml(t, dir, "ws.toml", tomlBody)
+	configs := gt.R1(config.LoadWorkspaceConfigs([]string{path})).NoError(t)
+	gt.B(t, configs[0].RequireTriageReview).False()
+}
+
+func TestLoadWorkspaceConfigs_TriageRequireReview_ExplicitTrue(t *testing.T) {
+	dir := t.TempDir()
+	tomlBody := validTOML + "\n[triage]\nrequire_review = true\n"
+	path := writeToml(t, dir, "ws.toml", tomlBody)
+	configs := gt.R1(config.LoadWorkspaceConfigs([]string{path})).NoError(t)
+	gt.B(t, configs[0].RequireTriageReview).True()
+}
+
+func TestBuildRegistry_PropagatesRequireTriageReview(t *testing.T) {
+	dir := t.TempDir()
+	tomlBody := validTOML + "\n[triage]\nrequire_review = false\n"
+	writeToml(t, dir, "ws.toml", tomlBody)
+
+	configs := gt.R1(config.LoadWorkspaceConfigs([]string{dir})).NoError(t)
+	ctx := context.Background()
+	registry := gt.R1(config.BuildRegistry(ctx, configs, nil)).NoError(t)
+	entry, ok := registry.Get(types.WorkspaceID("test-ws"))
+	gt.B(t, ok).True()
+	gt.B(t, entry.RequireTriageReview).False()
+}

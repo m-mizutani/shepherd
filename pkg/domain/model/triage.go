@@ -199,14 +199,21 @@ func (a *Answer) IsValid() bool {
 }
 
 // Complete carries the LLM's final triage summary for the assignee.
+//
+// Title and Summary are written back to the ticket as ticket.Title and
+// ticket.Description respectively when triage finalises (or when a human
+// confirms the proposal in the review modal). Existing tests / data may
+// still carry plans without Title; Validate accepts an empty Title for
+// backwards compatibility, in which case finalize leaves ticket.Title alone.
 type Complete struct {
-	Assignee        AssigneeDecision   `json:"assignee"`
-	SuggestedFields map[string]string  `json:"suggested_fields,omitempty"`
-	SimilarTickets  []types.TicketID   `json:"similar_tickets,omitempty"`
-	KeyFindings     []string           `json:"key_findings,omitempty"`
-	AnswerSummary   map[string]string  `json:"answer_summary,omitempty"`
-	Summary         string             `json:"summary"`
-	NextSteps       []string           `json:"next_steps,omitempty"`
+	Assignee        AssigneeDecision  `json:"assignee"`
+	SuggestedFields map[string]string `json:"suggested_fields,omitempty"`
+	SimilarTickets  []types.TicketID  `json:"similar_tickets,omitempty"`
+	KeyFindings     []string          `json:"key_findings,omitempty"`
+	AnswerSummary   map[string]string `json:"answer_summary,omitempty"`
+	Title           string            `json:"title,omitempty"`
+	Summary         string            `json:"summary"`
+	NextSteps       []string          `json:"next_steps,omitempty"`
 }
 
 func (c *Complete) Validate() error {

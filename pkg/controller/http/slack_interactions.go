@@ -3,6 +3,7 @@ package http
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 
@@ -19,11 +20,20 @@ import (
 // TriageInteractionsUC is the slim surface the interactions endpoint needs
 // from the triage usecase. Defined as an interface so tests can substitute
 // a fake without instantiating the full executor. The handler stays free of
-// workspace / ticket resolution — those live behind HandleSubmit /
-// HandleRetry, which take only the raw Slack payload fields.
+// workspace / ticket resolution — every method below takes only raw Slack
+// payload fields and the usecase resolves ticket + workspace internally.
 type TriageInteractionsUC interface {
 	HandleSubmit(ctx context.Context, sub triage.Submission) error
 	HandleRetry(ctx context.Context, ticketID types.TicketID, channelID, messageTS string) error
+
+	// Review flow (new). Open methods are invoked SYNCHRONOUSLY because
+	// Slack's trigger_id has a ~3-second TTL and views.open must be called
+	// before that window closes.
+	HandleReviewEditOpen(ctx context.Context, ticketID types.TicketID, channelID, messageTS, triggerID string) error
+	HandleReviewReinvestigateOpen(ctx context.Context, ticketID types.TicketID, channelID, messageTS, triggerID string) error
+	HandleReviewSubmit(ctx context.Context, ticketID types.TicketID, channelID, messageTS, actorID string) error
+	HandleReviewEditSubmit(ctx context.Context, ticketID types.TicketID, channelID, messageTS, actorID string, state *slackgo.ViewState) (triage.ReviewFieldErrors, error)
+	HandleReviewReinvestigate(ctx context.Context, ticketID types.TicketID, channelID, messageTS, actorID string, state *slackgo.ViewState) error
 }
 
 // slackInteractionsHandler handles Slack Block Kit interactivity callbacks
@@ -56,60 +66,149 @@ func slackInteractionsHandler(uc TriageInteractionsUC) http.HandlerFunc {
 			return
 		}
 
-		// MVP: only block_actions are handled, and only the triage submit
-		// button. Anything else is acknowledged with 200 so Slack stops
-		// retrying without surfacing as an error.
-		if cb.Type != slackgo.InteractionTypeBlockActions {
-			logger.Debug("slack interaction ignored: not block_actions",
+		switch cb.Type {
+		case slackgo.InteractionTypeBlockActions:
+			handleBlockActions(ctx, w, uc, &cb)
+		case slackgo.InteractionTypeViewSubmission:
+			handleViewSubmission(ctx, w, uc, &cb)
+		default:
+			logger.Debug("slack interaction ignored: unsupported type",
 				slog.String("type", string(cb.Type)),
 			)
 			w.WriteHeader(http.StatusOK)
-			return
 		}
+	}
+}
 
-		var triageAction *slackgo.BlockAction
-		for i := range cb.ActionCallback.BlockActions {
-			id := cb.ActionCallback.BlockActions[i].ActionID
-			if id == slackService.TriageSubmitActionID || id == slackService.TriageRetryActionID {
-				triageAction = cb.ActionCallback.BlockActions[i]
-				break
-			}
+func handleBlockActions(ctx context.Context, w http.ResponseWriter, uc TriageInteractionsUC, cb *slackgo.InteractionCallback) {
+	logger := logging.From(ctx)
+
+	var triageAction *slackgo.BlockAction
+	for i := range cb.ActionCallback.BlockActions {
+		id := cb.ActionCallback.BlockActions[i].ActionID
+		switch id {
+		case slackService.TriageSubmitActionID,
+			slackService.TriageRetryActionID,
+			slackService.TriageReviewEditActionID,
+			slackService.TriageReviewSubmitActionID,
+			slackService.TriageReviewReinvestigateActionID:
+			triageAction = cb.ActionCallback.BlockActions[i]
 		}
-		if triageAction == nil {
-			logger.Debug("slack interaction ignored: no triage action")
-			w.WriteHeader(http.StatusOK)
-			return
+		if triageAction != nil {
+			break
 		}
-
-		ticketID := types.TicketID(triageAction.Value)
-		channelID := cb.Channel.ID
-		messageTS := cb.Message.Timestamp
-		actionID := triageAction.ActionID
-		state := cb.BlockActionState
-
-		// Acknowledge Slack immediately. Slack enforces a 3-second deadline
-		// on the interaction response, so the only work we do synchronously
-		// is parsing the payload (which has to happen before we can return —
-		// the body is buffered in the request). Workspace resolution, ticket
-		// loading, history checks, Slack API mutations, and the planner
-		// re-dispatch all live behind HandleSubmit / HandleRetry; we hand
-		// them off to async.Dispatch which provides a detached context,
-		// panic recovery, and Sentry routing.
+	}
+	if triageAction == nil {
+		logger.Debug("slack interaction ignored: no triage action")
 		w.WriteHeader(http.StatusOK)
+		return
+	}
 
+	ticketID := types.TicketID(triageAction.Value)
+	channelID := cb.Channel.ID
+	messageTS := cb.Message.Timestamp
+	triggerID := cb.TriggerID
+	actionID := triageAction.ActionID
+	actorID := cb.User.ID
+	state := cb.BlockActionState
+
+	// Edit / Re-investigate must call OpenView synchronously to honor
+	// Slack's trigger_id deadline (~3s). Submit-style buttons follow the
+	// existing 200-then-async pattern.
+	switch actionID {
+	case slackService.TriageReviewEditActionID:
+		if err := uc.HandleReviewEditOpen(ctx, ticketID, channelID, messageTS, triggerID); err != nil {
+			errutil.Handle(ctx, goerr.Wrap(err, "review edit open"))
+		}
+		w.WriteHeader(http.StatusOK)
+		return
+	case slackService.TriageReviewReinvestigateActionID:
+		if err := uc.HandleReviewReinvestigateOpen(ctx, ticketID, channelID, messageTS, triggerID); err != nil {
+			errutil.Handle(ctx, goerr.Wrap(err, "review reinvestigate open"))
+		}
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+
+	async.Dispatch(ctx, func(ctx context.Context) error {
+		switch actionID {
+		case slackService.TriageSubmitActionID:
+			return uc.HandleSubmit(ctx, triage.Submission{
+				TicketID:  ticketID,
+				ChannelID: channelID,
+				MessageTS: messageTS,
+				State:     state,
+			})
+		case slackService.TriageRetryActionID:
+			return uc.HandleRetry(ctx, ticketID, channelID, messageTS)
+		case slackService.TriageReviewSubmitActionID:
+			return uc.HandleReviewSubmit(ctx, ticketID, channelID, messageTS, actorID)
+		}
+		return nil
+	})
+}
+
+func handleViewSubmission(ctx context.Context, w http.ResponseWriter, uc TriageInteractionsUC, cb *slackgo.InteractionCallback) {
+	logger := logging.From(ctx)
+
+	switch cb.View.CallbackID {
+	case slackService.TriageReviewEditModalCallbackID:
+		meta, err := slackService.DecodeTriageReviewModalMetadata(cb.View.PrivateMetadata)
+		if err != nil {
+			errutil.HandleHTTP(ctx, w, goerr.Wrap(err, "decode edit modal metadata"), http.StatusBadRequest)
+			return
+		}
+		// Edit submit must run inline rather than fire-and-forget because we
+		// might need to return a response_action: errors payload synchronously.
+		state := cb.View.State
+		fieldErrs, err := uc.HandleReviewEditSubmit(ctx, meta.TicketID, meta.ChannelID, meta.MessageTS, cb.User.ID, state)
+		if err != nil && errors.Is(err, triage.ErrReviewFieldRequired) {
+			respondViewErrors(ctx, w, fieldErrs)
+			return
+		}
+		if err != nil {
+			errutil.HandleHTTP(ctx, w, goerr.Wrap(err, "handle review edit submit"), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	case slackService.TriageReviewReinvestigateModalCallbackID:
+		meta, err := slackService.DecodeTriageReviewModalMetadata(cb.View.PrivateMetadata)
+		if err != nil {
+			errutil.HandleHTTP(ctx, w, goerr.Wrap(err, "decode reinvestigate modal metadata"), http.StatusBadRequest)
+			return
+		}
+		// Acknowledge first; the planner re-dispatch and follow-up post are
+		// done asynchronously inside HandleReviewReinvestigate via async.Dispatch.
+		state := cb.View.State
+		actor := cb.User.ID
+		w.WriteHeader(http.StatusOK)
 		async.Dispatch(ctx, func(ctx context.Context) error {
-			switch actionID {
-			case slackService.TriageSubmitActionID:
-				return uc.HandleSubmit(ctx, triage.Submission{
-					TicketID:  ticketID,
-					ChannelID: channelID,
-					MessageTS: messageTS,
-					State:     state,
-				})
-			case slackService.TriageRetryActionID:
-				return uc.HandleRetry(ctx, ticketID, channelID, messageTS)
-			}
-			return nil
+			return uc.HandleReviewReinvestigate(ctx, meta.TicketID, meta.ChannelID, meta.MessageTS, actor, state)
 		})
+	default:
+		logger.Debug("slack view submission ignored: unknown callback",
+			slog.String("callback_id", cb.View.CallbackID),
+		)
+		w.WriteHeader(http.StatusOK)
+	}
+}
+
+// respondViewErrors writes Slack's view_submission `response_action: errors`
+// payload so the modal stays open and renders inline error messages keyed by
+// block_id.
+func respondViewErrors(ctx context.Context, w http.ResponseWriter, fieldErrs triage.ReviewFieldErrors) {
+	body := struct {
+		ResponseAction string            `json:"response_action"`
+		Errors         map[string]string `json:"errors"`
+	}{
+		ResponseAction: "errors",
+		Errors:         fieldErrs,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(&body); err != nil {
+		errutil.Handle(ctx, goerr.Wrap(err, "encode view errors response"))
 	}
 }

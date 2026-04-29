@@ -45,4 +45,35 @@ const (
 	MsgTriageFailedError       MsgKey = "triage_failed_error"
 	MsgTriageFailedRetryButton MsgKey = "triage_failed_retry_button"
 	MsgTriageRetryQueued       MsgKey = "triage_retry_queued"
+
+	// Triage reporter-review flow (gated by [triage] require_review). The
+	// review message carries Edit / Submit / Re-investigate buttons; outcomes
+	// are posted as additional thread messages instead of rewriting the
+	// review message itself.
+	MsgTriageReviewHeader                       MsgKey = "triage_review_header"
+	MsgTriageReviewMentionRequester             MsgKey = "triage_review_mention_requester"
+	MsgTriageReviewBtnEdit                      MsgKey = "triage_review_btn_edit"
+	MsgTriageReviewBtnSubmit                    MsgKey = "triage_review_btn_submit"
+	MsgTriageReviewBtnReinvestigate             MsgKey = "triage_review_btn_reinvestigate"
+	MsgTriageReviewSubmittedHeader              MsgKey = "triage_review_submitted_header"
+	MsgTriageReviewReinvestigatingHeader        MsgKey = "triage_review_reinvestigating_header"
+	MsgTriageReviewActionedSubmittedFooter      MsgKey = "triage_review_actioned_submitted_footer"
+	MsgTriageReviewActionedReinvestigateFooter  MsgKey = "triage_review_actioned_reinvestigate_footer"
+	MsgTriageReviewHandoffFallback              MsgKey = "triage_review_handoff_fallback"
+	MsgTriageReviewReinvestigatingInstruction   MsgKey = "triage_review_reinvestigating_instruction"
+	MsgTriageReviewMentionAssignee              MsgKey = "triage_review_mention_assignee"
+	MsgTriageReviewAlreadyFinalized             MsgKey = "triage_review_already_finalized"
+	MsgTriageReviewMissingProposal              MsgKey = "triage_review_missing_proposal"
+	MsgTriageReviewEditModalTitle               MsgKey = "triage_review_edit_modal_title"
+	MsgTriageReviewEditTitleLabel               MsgKey = "triage_review_edit_title_label"
+	MsgTriageReviewEditSummaryLabel             MsgKey = "triage_review_edit_summary_label"
+	MsgTriageReviewEditAssigneeLabel            MsgKey = "triage_review_edit_assignee_label"
+	MsgTriageReviewEditFieldsHeader             MsgKey = "triage_review_edit_fields_header"
+	MsgTriageReviewEditModalSubmit              MsgKey = "triage_review_edit_modal_submit"
+	MsgTriageReviewEditModalClose               MsgKey = "triage_review_edit_modal_close"
+	MsgTriageReviewReinvestigateModalTitle      MsgKey = "triage_review_reinvestigate_modal_title"
+	MsgTriageReviewReinvestigateInstructionLabel MsgKey = "triage_review_reinvestigate_instruction_label"
+	MsgTriageReviewReinvestigateModalSubmit     MsgKey = "triage_review_reinvestigate_modal_submit"
+	MsgTriageReviewReinvestigateModalClose      MsgKey = "triage_review_reinvestigate_modal_close"
+	MsgTriageReviewFieldRequiredError           MsgKey = "triage_review_field_required_error"
 )

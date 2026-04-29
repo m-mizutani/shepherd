@@ -79,6 +79,22 @@ func (c *Client) UpdateMessage(ctx context.Context, channelID, messageTS string,
 	return nil
 }
 
+// OpenView opens a Slack modal for the user identified by triggerID. Slack
+// enforces a ~3-second deadline on trigger_id usage, so callers MUST invoke
+// OpenView synchronously from the interaction handler before acknowledging
+// the request.
+func (c *Client) OpenView(ctx context.Context, triggerID string, view slackgo.ModalViewRequest) (*slackgo.ViewResponse, error) {
+	resp, err := c.api.OpenViewContext(ctx, triggerID, view)
+	if err != nil {
+		return nil, goerr.Wrap(err, "failed to open slack view",
+			goerr.V("trigger_id", triggerID),
+			goerr.V("callback_id", view.CallbackID),
+			goerr.Tag(errutil.TagSlackError),
+		)
+	}
+	return resp, nil
+}
+
 // PostEphemeral posts a message visible only to the supplied user inside a
 // channel. Used for transient triage error feedback (e.g. "this form is no
 // longer valid") when chat.update is not appropriate.

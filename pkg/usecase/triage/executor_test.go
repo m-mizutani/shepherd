@@ -215,3 +215,56 @@ func goerrNew(msg string) error { return &simpleErr{msg: msg} }
 type simpleErr struct{ msg string }
 
 func (e *simpleErr) Error() string { return e.msg }
+
+// fakeWorkspaceLookup provides a minimal triage.WorkspaceLookup for tests.
+type fakeWorkspaceLookup struct {
+	require map[types.WorkspaceID]bool
+}
+
+func (f *fakeWorkspaceLookup) RequireTriageReview(ws types.WorkspaceID) bool {
+	if f == nil {
+		return false
+	}
+	return f.require[ws]
+}
+
+// TestExecutorRun_LLMProposesComplete_RequireReview_PostsReviewWithoutFinalize
+// covers the new review-gated PlanComplete path: when the workspace has
+// RequireTriageReview=true, the executor must NOT mark Triaged=true and must
+// post the review message (with the 3 buttons) instead of the legacy hand-off.
+func TestExecutorRun_LLMProposesComplete_RequireReview_PostsReviewWithoutFinalize(t *testing.T) {
+	session := newPlanSessionMock(t, []string{completePlanJSON})
+	llm := &mock.LLMClientMock{
+		NewSessionFunc: func(_ context.Context, _ ...gollem.SessionOption) (gollem.Session, error) {
+			return session, nil
+		},
+	}
+
+	// Build a rig but swap in a non-nil WorkspaceLookup so PlanComplete enters
+	// the review path.
+	uc, _, repo, hist, slack := newRig(t, llm)
+	_ = uc
+	exec := triage.NewPlanExecutor(repo, hist, llm, slack, nil, nil,
+		&fakeWorkspaceLookup{require: map[types.WorkspaceID]bool{tWS: true}},
+		triage.Config{IterationCap: 5})
+
+	ticket := mustCreateTicket(t, repo, false)
+	gt.NoError(t, exec.RunForTest(context.Background(), tWS, ticket.ID))
+
+	// Ticket must NOT be triaged yet — review pause leaves Triaged=false.
+	got := gt.R1(repo.Ticket().Get(context.Background(), tWS, ticket.ID)).NoError(t)
+	gt.False(t, got.Triaged)
+
+	// Slack: exactly one post — the review message — with the 3-button
+	// triage_review_actions block. No update calls (per spec, review messages
+	// are never rewritten).
+	gt.A(t, slack.posts).Length(1)
+	gt.A(t, slack.updates).Length(0)
+	var sawReviewActions bool
+	for _, b := range slack.posts[0].blocks {
+		if ab, ok := b.(*slackgo.ActionBlock); ok && ab.BlockID == "triage_review_actions" {
+			sawReviewActions = true
+		}
+	}
+	gt.True(t, sawReviewActions)
+}

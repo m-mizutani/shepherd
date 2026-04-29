@@ -2,7 +2,6 @@ package slack
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"github.com/m-mizutani/shepherd/pkg/domain/model"
@@ -316,6 +315,15 @@ func BuildCompleteBlocks(ctx context.Context, comp *model.Complete) []slackgo.Bl
 		)),
 	}
 
+	if strings.TrimSpace(comp.Title) != "" {
+		blocks = append(blocks, slackgo.NewSectionBlock(
+			slackgo.NewTextBlockObject(slackgo.MarkdownType,
+				"*"+escapeMrkdwn(comp.Title)+"*",
+				false, false),
+			nil, nil,
+		))
+	}
+
 	switch comp.Assignee.Kind {
 	case types.AssigneeAssigned:
 		if comp.Assignee.UserID != nil {
@@ -347,26 +355,6 @@ func BuildCompleteBlocks(ctx context.Context, comp *model.Complete) []slackgo.Bl
 	if comp.Summary != "" {
 		blocks = append(blocks,
 			sectionLabeled(loc.T(i18n.MsgTriageCompleteSectionSummary), comp.Summary),
-		)
-	}
-	if len(comp.KeyFindings) > 0 {
-		blocks = append(blocks,
-			sectionLabeled(loc.T(i18n.MsgTriageCompleteSectionFindings), bulletList(comp.KeyFindings)),
-		)
-	}
-	if len(comp.AnswerSummary) > 0 {
-		blocks = append(blocks,
-			sectionLabeled(loc.T(i18n.MsgTriageCompleteSectionAnswers), formatAnswerSummary(comp.AnswerSummary)),
-		)
-	}
-	if len(comp.SimilarTickets) > 0 {
-		blocks = append(blocks,
-			sectionLabeled(loc.T(i18n.MsgTriageCompleteSectionSimilar), formatTicketIDs(comp.SimilarTickets)),
-		)
-	}
-	if len(comp.NextSteps) > 0 {
-		blocks = append(blocks,
-			sectionLabeled(loc.T(i18n.MsgTriageCompleteSectionNextSteps), bulletList(comp.NextSteps)),
 		)
 	}
 	return blocks
@@ -440,46 +428,6 @@ func sectionLabeled(label, body string) slackgo.Block {
 	)
 }
 
-func bulletList(items []string) string {
-	var b strings.Builder
-	for i, item := range items {
-		if i > 0 {
-			b.WriteString("\n")
-		}
-		b.WriteString("• ")
-		b.WriteString(escapeMrkdwn(item))
-	}
-	return b.String()
-}
-
-func formatAnswerSummary(m map[string]string) string {
-	if len(m) == 0 {
-		return ""
-	}
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	// Stable order helps snapshot tests and human readability.
-	sortStrings(keys)
-	var b strings.Builder
-	for i, k := range keys {
-		if i > 0 {
-			b.WriteString("\n")
-		}
-		fmt.Fprintf(&b, "• *%s* — %s", escapeMrkdwn(k), escapeMrkdwn(m[k]))
-	}
-	return b.String()
-}
-
-func formatTicketIDs(ids []types.TicketID) string {
-	parts := make([]string, 0, len(ids))
-	for _, id := range ids {
-		parts = append(parts, "`"+escapeMrkdwn(string(id))+"`")
-	}
-	return strings.Join(parts, ", ")
-}
-
 // escapeMrkdwn escapes Slack mrkdwn metacharacters so user-supplied content
 // (LLM output, ticket text) cannot interfere with formatting.
 func escapeMrkdwn(s string) string {
@@ -487,15 +435,4 @@ func escapeMrkdwn(s string) string {
 	s = strings.ReplaceAll(s, "<", "&lt;")
 	s = strings.ReplaceAll(s, ">", "&gt;")
 	return s
-}
-
-func sortStrings(s []string) {
-	// Tiny insertion sort to avoid pulling sort just for tests; n is small.
-	for i := 1; i < len(s); i++ {
-		j := i
-		for j > 0 && s[j] < s[j-1] {
-			s[j], s[j-1] = s[j-1], s[j]
-			j--
-		}
-	}
 }
