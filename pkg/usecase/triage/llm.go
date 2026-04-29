@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
-	"regexp"
 	"strings"
+	"time"
 
 	"github.com/m-mizutani/goerr/v2"
 	"github.com/m-mizutani/gollem"
@@ -27,10 +27,12 @@ import (
 // exhausted it bubbles up wrapped through the failure-recovery handler.
 var errInvalidPlan = goerr.New("invalid triage plan")
 
-// dateAutoFillPattern is the ISO 8601 calendar date the schema also enforces;
-// kept in lock-step with autoFillFieldSchema's Pattern so the Go-side
-// validator gives the LLM the same answer the schema does.
-var dateAutoFillPattern = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
+// dateAutoFillLayout is the ISO 8601 calendar date the schema also enforces.
+// time.Parse with this layout rejects both bad shapes (e.g. "2024/01/02")
+// and impossible calendar values (e.g. "2024-02-31"), keeping the Go-side
+// validator stricter than a pure regex while staying in lock-step with
+// autoFillFieldSchema's Pattern.
+const dateAutoFillLayout = "2006-01-02"
 
 // llmPlan executes one planning turn against the LLM and returns the proposed
 // TriagePlan. The agent is run with WithResponseSchema; auto-fill custom
@@ -262,8 +264,11 @@ func validateAutoFillValue(f domainConfig.FieldDefinition, v any) error {
 		}
 	case types.FieldTypeDate:
 		s, ok := v.(string)
-		if !ok || !dateAutoFillPattern.MatchString(s) {
-			return goerr.New("expected YYYY-MM-DD date string", goerr.V("got", fmt.Sprintf("%v", v)))
+		if !ok {
+			return goerr.New("expected YYYY-MM-DD date string", goerr.V("got", fmt.Sprintf("%T", v)))
+		}
+		if _, err := time.Parse(dateAutoFillLayout, s); err != nil {
+			return goerr.New("expected YYYY-MM-DD date string", goerr.V("value", s))
 		}
 	case types.FieldTypeUser:
 		s, ok := v.(string)
