@@ -207,7 +207,7 @@ func (a *Answer) IsValid() bool {
 // backwards compatibility, in which case finalize leaves ticket.Title alone.
 type Complete struct {
 	Assignee        AssigneeDecision  `json:"assignee"`
-	SuggestedFields map[string]string `json:"suggested_fields,omitempty"`
+	SuggestedFields map[string]any    `json:"suggested_fields,omitempty"`
 	SimilarTickets  []types.TicketID  `json:"similar_tickets,omitempty"`
 	KeyFindings     []string          `json:"key_findings,omitempty"`
 	AnswerSummary   map[string]string `json:"answer_summary,omitempty"`

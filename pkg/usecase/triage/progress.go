@@ -21,6 +21,7 @@ type progressMessage struct {
 	channel       types.SlackChannelID
 	threadTS      types.SlackThreadTS
 	headerMessage string
+	ticketRef     slackService.TicketRef
 
 	mu     sync.Mutex
 	tsKnown bool
@@ -38,7 +39,7 @@ type progressSlack interface {
 // newProgressMessage posts the initial progress message in the ticket thread
 // with every subtask shown as queued, and returns a handle that can be used
 // to mutate individual rows as work proceeds.
-func newProgressMessage(ctx context.Context, slack progressSlack, channel types.SlackChannelID, threadTS types.SlackThreadTS, headerMessage string, subtasks []model.Subtask) (*progressMessage, error) {
+func newProgressMessage(ctx context.Context, slack progressSlack, channel types.SlackChannelID, threadTS types.SlackThreadTS, ref slackService.TicketRef, headerMessage string, subtasks []model.Subtask) (*progressMessage, error) {
 	rows := make([]slackService.SubtaskProgress, 0, len(subtasks))
 	for _, st := range subtasks {
 		rows = append(rows, slackService.SubtaskProgress{
@@ -48,7 +49,7 @@ func newProgressMessage(ctx context.Context, slack progressSlack, channel types.
 		})
 	}
 
-	blocks := slackService.BuildProgressBlocks(ctx, headerMessage, rows)
+	blocks := slackService.BuildProgressBlocks(ctx, ref, headerMessage, rows)
 	ts, err := slack.PostThreadBlocks(ctx, string(channel), string(threadTS), blocks)
 	if err != nil {
 		return nil, goerr.Wrap(err, "post initial progress message")
@@ -58,6 +59,7 @@ func newProgressMessage(ctx context.Context, slack progressSlack, channel types.
 		channel:       channel,
 		threadTS:      threadTS,
 		headerMessage: headerMessage,
+		ticketRef:     ref,
 		tsKnown:       true,
 		ts:            ts,
 		rows:          rows,
@@ -119,7 +121,7 @@ func (p *progressMessage) mutate(ctx context.Context, fn func(*slackService.Subt
 		p.mu.Unlock()
 		return
 	}
-	blocks := slackService.BuildProgressBlocks(ctx, p.headerMessage, p.rows)
+	blocks := slackService.BuildProgressBlocks(ctx, p.ticketRef, p.headerMessage, p.rows)
 	channel := string(p.channel)
 	ts := p.ts
 	p.mu.Unlock()

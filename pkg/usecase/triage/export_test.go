@@ -9,12 +9,13 @@ import (
 
 	"github.com/m-mizutani/gollem"
 	"github.com/m-mizutani/shepherd/pkg/domain/model"
+	domainConfig "github.com/m-mizutani/shepherd/pkg/domain/model/config"
 	"github.com/m-mizutani/shepherd/pkg/domain/types"
 )
 
 // TriagePlanSchemaForTest exposes the structured-output schema fed to the
 // LLM via WithResponseSchema, so tests can assert it is valid.
-func TriagePlanSchemaForTest() *gollem.Parameter { return triagePlanSchema() }
+func TriagePlanSchemaForTest() *gollem.Parameter { return triagePlanSchema(nil) }
 
 // DecodePlanFromJSONForTest exposes the JSON-to-TriagePlan decoder used on
 // agent responses; tests use it to verify the round-trip from raw model
@@ -37,6 +38,13 @@ func AppendUserMessageForTest(ctx context.Context, repo gollem.HistoryRepository
 
 func LoadLatestTriagePlanForTest(ctx context.Context, repo gollem.HistoryRepository, ws types.WorkspaceID, id types.TicketID) (*model.TriagePlan, error) {
 	return loadLatestTriagePlan(ctx, repo, ws, id)
+}
+
+// ValidatePlanAutoFillForTest exposes validatePlanAutoFill so external tests
+// can drive the auto-fill validation rules without re-routing through the
+// LLM.
+func ValidatePlanAutoFillForTest(plan *model.TriagePlan, autoFill []domainConfig.FieldDefinition) error {
+	return validatePlanAutoFill(plan, autoFill)
 }
 
 func IsWaitingUserSubmitForTest(ctx context.Context, repo gollem.HistoryRepository, ws types.WorkspaceID, id types.TicketID) (bool, error) {

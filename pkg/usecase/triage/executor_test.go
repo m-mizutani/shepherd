@@ -9,6 +9,7 @@ import (
 	"github.com/m-mizutani/gollem"
 	"github.com/m-mizutani/gollem/mock"
 	"github.com/m-mizutani/gt"
+	domainConfig "github.com/m-mizutani/shepherd/pkg/domain/model/config"
 	"github.com/m-mizutani/shepherd/pkg/domain/types"
 	"github.com/m-mizutani/shepherd/pkg/usecase/triage"
 	slackgo "github.com/slack-go/slack"
@@ -223,7 +224,8 @@ func (e *simpleErr) Error() string { return e.msg }
 
 // fakeWorkspaceLookup provides a minimal triage.WorkspaceLookup for tests.
 type fakeWorkspaceLookup struct {
-	auto map[types.WorkspaceID]bool
+	auto    map[types.WorkspaceID]bool
+	schemas map[types.WorkspaceID]*domainConfig.FieldSchema
 }
 
 func (f *fakeWorkspaceLookup) AutoTriage(ws types.WorkspaceID) bool {
@@ -231,6 +233,13 @@ func (f *fakeWorkspaceLookup) AutoTriage(ws types.WorkspaceID) bool {
 		return false
 	}
 	return f.auto[ws]
+}
+
+func (f *fakeWorkspaceLookup) WorkspaceSchema(ws types.WorkspaceID) *domainConfig.FieldSchema {
+	if f == nil {
+		return nil
+	}
+	return f.schemas[ws]
 }
 
 // TestExecutorRun_LLMProposesComplete_DefaultRequiresReview_PostsReviewWithoutFinalize

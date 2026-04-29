@@ -5,6 +5,10 @@ var ja = map[MsgKey]string{
 	MsgStatusChange:      "ステータス: *{old}* → *{new}*",
 	MsgStatusChangeLabel: "ステータス",
 
+	MsgTicketRefActive:    "🎫 <{url}|チケット #{id}> — {title}",
+	MsgTicketRefInactive:  "<{url}|チケット #{id}> — {title}",
+	MsgTicketRefDismissed: "~<{url}|チケット #{id}> — {title}~",
+
 	MsgTriageProgressHeader:  "triageを進めています: {message}",
 	MsgTriageProgressQueued:  "⏳ {request} — 待機中",
 	MsgTriageProgressRunning: "🔄 {request} — {trace}",
@@ -36,16 +40,16 @@ var ja = map[MsgKey]string{
 	MsgTriageFailedError:       "エラー: `{error}`",
 	MsgTriageFailedRetryButton: "再実行",
 	MsgTriageRetryQueued:       "再実行を受け付けました…",
+	MsgTriagePlanRetrying:      "プランナーの応答が無効だったため、再実行しています…",
 
-	MsgTriageReviewHeader:                        "triage提案 — 内容をご確認ください",
 	MsgTriageReviewMentionRequester:              "<@{user}> 内容をご確認のうえ、*Submit* で確定、*Edit* でタイトル／サマリ／担当者の修正、*Re-investigate* で再調査を指示してください。",
 	MsgTriageReviewBtnEdit:                       "編集",
 	MsgTriageReviewBtnSubmit:                     "提出",
 	MsgTriageReviewBtnReinvestigate:              "再調査",
 	MsgTriageReviewSubmittedHeader:               "提出済み",
 	MsgTriageReviewReinvestigatingHeader:         "再調査中…",
-	MsgTriageReviewActionedSubmittedFooter:       "✅ <@{user}> が提出しました",
-	MsgTriageReviewActionedReinvestigateFooter:   "🔄 <@{user}> が再調査を依頼しました。ここのボタンは無効です。",
+	MsgTriageReviewActionedSubmittedFooter:       "<@{user}> が提出しました",
+	MsgTriageReviewActionedReinvestigateFooter:   "<@{user}> が再調査を依頼しました。ここのボタンは無効です。",
 	MsgTriageReviewHandoffFallback:               "<@{user}> このtriageが確定しました。引き継ぎをお願いします。",
 	MsgTriageReviewReinvestigatingInstruction:    "指示内容: {instruction}",
 	MsgTriageReviewMentionAssignee:               "<@{user}> 引き継ぎをお願いします。",
@@ -63,4 +67,5 @@ var ja = map[MsgKey]string{
 	MsgTriageReviewReinvestigateModalSubmit:      "再調査を開始",
 	MsgTriageReviewReinvestigateModalClose:       "キャンセル",
 	MsgTriageReviewFieldRequiredError:            "この項目は必須です。",
+	MsgTriageReviewFieldSelectPlaceholder:        "選択してください",
 }

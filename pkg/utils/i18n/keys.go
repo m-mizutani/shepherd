@@ -7,6 +7,24 @@ const (
 	MsgStatusChange      MsgKey = "status_change"
 	MsgStatusChangeLabel MsgKey = "status_change_label"
 
+	// Three rendering forms for the ticket reference line, applied at the
+	// top of every ticket-scoped Slack message. The form is chosen by the
+	// message's lifecycle state so a thread reader can tell at a glance
+	// which message represents the ticket's current live state vs.
+	// historical chatter:
+	//   - Active   : the latest live message (e.g. review awaiting click,
+	//                ask form awaiting answer, terminal complete). Rendered
+	//                bold with the 🎫 marker so it stands out.
+	//   - Inactive : historical / transitional messages (progress, hand-off,
+	//                submitted, retry-queued, ask-answered, …). Rendered
+	//                plain so old messages do not compete for attention.
+	//   - Dismissed: the review proposal a user sent back via Re-investigate;
+	//                rendered struck-through so the rejected proposal is
+	//                visibly invalidated.
+	MsgTicketRefActive    MsgKey = "ticket_ref_active"
+	MsgTicketRefInactive  MsgKey = "ticket_ref_inactive"
+	MsgTicketRefDismissed MsgKey = "ticket_ref_dismissed"
+
 	// Triage progress message (one Slack message per Investigate iteration,
 	// holding a context block per subtask).
 	MsgTriageProgressHeader  MsgKey = "triage_progress_header"
@@ -45,13 +63,16 @@ const (
 	MsgTriageFailedError       MsgKey = "triage_failed_error"
 	MsgTriageFailedRetryButton MsgKey = "triage_failed_retry_button"
 	MsgTriageRetryQueued       MsgKey = "triage_retry_queued"
+	// Posted to the ticket thread when the planner's structured response
+	// fails validation and is being re-asked. Intentionally vague — the
+	// detailed error stays in the operator-facing logs only.
+	MsgTriagePlanRetrying MsgKey = "triage_plan_retrying"
 
 	// Triage reporter-review flow (default; opt out per workspace via
 	// [triage] auto = true to fall back to immediate finalisation). The
 	// review message carries Edit / Submit / Re-investigate buttons; outcomes
 	// are posted as additional thread messages instead of rewriting the
 	// review message itself.
-	MsgTriageReviewHeader                       MsgKey = "triage_review_header"
 	MsgTriageReviewMentionRequester             MsgKey = "triage_review_mention_requester"
 	MsgTriageReviewBtnEdit                      MsgKey = "triage_review_btn_edit"
 	MsgTriageReviewBtnSubmit                    MsgKey = "triage_review_btn_submit"
@@ -77,4 +98,5 @@ const (
 	MsgTriageReviewReinvestigateModalSubmit     MsgKey = "triage_review_reinvestigate_modal_submit"
 	MsgTriageReviewReinvestigateModalClose      MsgKey = "triage_review_reinvestigate_modal_close"
 	MsgTriageReviewFieldRequiredError           MsgKey = "triage_review_field_required_error"
+	MsgTriageReviewFieldSelectPlaceholder       MsgKey = "triage_review_field_select_placeholder"
 )

@@ -46,6 +46,47 @@ When you build subtasks for `propose_investigate`:
 - When in doubt, prefer `unassigned`. Misrouting a ticket is worse than letting the team decide.
 - `summary` is the markdown the assignee reads first. Keep it tight.
 - Use `key_findings` (bullets), `next_steps` (bullets), `similar_tickets` (ticket ids), and `answer_summary` (label → reporter answer summary) to give the assignee actionable context.
+{{- if .AutoFillFields }}
+
+### Auto-fill custom fields (required on `propose_complete`)
+
+When you call `propose_complete`, the `suggested_fields` object **must** include an entry for each of the following fields. The map key is the field `id`; the value's shape depends on the field `type` listed below. Pick from the listed option ids verbatim — do **not** invent new ids and do **not** translate or relabel them.
+
+{{- range .AutoFillFields }}
+
+- `{{ .ID }}` ({{ .Name }}) — type: `{{ .Type }}`{{ if .Required }}, required{{ end }}
+{{- if .Description }}
+  - Description: {{ .Description }}
+{{- end }}
+{{- if eq .Type "select" }}
+  - Value shape: a single string equal to one of the option ids below.
+  - Allowed option ids:
+  {{- range .Options }}
+    - `{{ .ID }}` — {{ .Label }}{{ if .Description }} — {{ .Description }}{{ end }}
+  {{- end }}
+{{- else if eq .Type "multi-select" }}
+  - Value shape: an array of strings; each entry must equal one of the option ids below.
+  - Allowed option ids:
+  {{- range .Options }}
+    - `{{ .ID }}` — {{ .Label }}{{ if .Description }} — {{ .Description }}{{ end }}
+  {{- end }}
+{{- else if eq .Type "number" }}
+  - Value shape: a JSON number.
+{{- else if eq .Type "date" }}
+  - Value shape: a string formatted as `YYYY-MM-DD` (ISO 8601 date).
+{{- else if eq .Type "user" }}
+  - Value shape: a single Slack user id string (e.g. `U123ABC`).
+{{- else if eq .Type "multi-user" }}
+  - Value shape: an array of Slack user id strings.
+{{- else if eq .Type "url" }}
+  - Value shape: an absolute URL string.
+{{- else }}
+  - Value shape: a plain string.
+{{- end }}
+{{- end }}
+
+If you genuinely cannot determine a value for a non-required auto-fill field, omit its entry; never emit a placeholder, empty string, or guess. For required auto-fill fields, you must commit to a value — pick the closest reasonable option and explain the reasoning in `summary`.
+{{- end }}
 
 ## Rules
 

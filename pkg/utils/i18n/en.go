@@ -5,6 +5,10 @@ var en = map[MsgKey]string{
 	MsgStatusChange:      "Status: *{old}* → *{new}*",
 	MsgStatusChangeLabel: "Status",
 
+	MsgTicketRefActive:    "🎫 <{url}|Ticket #{id}> — {title}",
+	MsgTicketRefInactive:  "<{url}|Ticket #{id}> — {title}",
+	MsgTicketRefDismissed: "~<{url}|Ticket #{id}> — {title}~",
+
 	MsgTriageProgressHeader:  "Triage in progress: {message}",
 	MsgTriageProgressQueued:  "⏳ {request} — queued",
 	MsgTriageProgressRunning: "🔄 {request} — {trace}",
@@ -36,16 +40,16 @@ var en = map[MsgKey]string{
 	MsgTriageFailedError:       "Error: `{error}`",
 	MsgTriageFailedRetryButton: "Retry triage",
 	MsgTriageRetryQueued:       "Retrying triage…",
+	MsgTriagePlanRetrying:      "Planner response was invalid. Re-running the planner…",
 
-	MsgTriageReviewHeader:                        "Triage proposal — please review",
 	MsgTriageReviewMentionRequester:              "<@{user}> please review the proposal below and click *Submit* to confirm, *Edit* to adjust the title / summary / assignee, or *Re-investigate* to send the planner back for another look.",
 	MsgTriageReviewBtnEdit:                       "Edit",
 	MsgTriageReviewBtnSubmit:                     "Submit",
 	MsgTriageReviewBtnReinvestigate:              "Re-investigate",
 	MsgTriageReviewSubmittedHeader:               "Submitted",
 	MsgTriageReviewReinvestigatingHeader:         "Re-investigating…",
-	MsgTriageReviewActionedSubmittedFooter:       "✅ Submitted by <@{user}>",
-	MsgTriageReviewActionedReinvestigateFooter:   "🔄 Re-investigation requested by <@{user}> — buttons here are no longer active.",
+	MsgTriageReviewActionedSubmittedFooter:       "Submitted by <@{user}>",
+	MsgTriageReviewActionedReinvestigateFooter:   "Re-investigation requested by <@{user}> — buttons here are no longer active.",
 	MsgTriageReviewHandoffFallback:               "<@{user}>, this triage has been confirmed. Please take it from here.",
 	MsgTriageReviewReinvestigatingInstruction:    "Instruction: {instruction}",
 	MsgTriageReviewMentionAssignee:               "<@{user}>, please take this over.",
@@ -63,4 +67,5 @@ var en = map[MsgKey]string{
 	MsgTriageReviewReinvestigateModalSubmit:      "Restart investigation",
 	MsgTriageReviewReinvestigateModalClose:       "Cancel",
 	MsgTriageReviewFieldRequiredError:            "This field is required.",
+	MsgTriageReviewFieldSelectPlaceholder:        "Select an option",
 }

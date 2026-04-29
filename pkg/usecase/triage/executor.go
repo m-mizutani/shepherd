@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/url"
 
 	"github.com/m-mizutani/goerr/v2"
 	"github.com/m-mizutani/gollem"
 	"github.com/m-mizutani/shepherd/pkg/domain/interfaces"
 	"github.com/m-mizutani/shepherd/pkg/domain/model"
+	domainConfig "github.com/m-mizutani/shepherd/pkg/domain/model/config"
 	"github.com/m-mizutani/shepherd/pkg/domain/types"
 	slackService "github.com/m-mizutani/shepherd/pkg/service/slack"
 	"github.com/m-mizutani/shepherd/pkg/tool"
@@ -17,15 +19,53 @@ import (
 	slackgo "github.com/slack-go/slack"
 )
 
+// ticketRef builds the shared TicketRef used by every Slack Build* call so
+// each ticket-scoped message carries the same badge (id, title, link). The
+// URL is derived from cfg.BaseURL the same way SlackUseCase.HandleNewMessage
+// builds its "Ticket #N created" reply, keeping the two paths consistent.
+func (e *PlanExecutor) ticketRef(ticket *model.Ticket) slackService.TicketRef {
+	return ticketRefFromTicket(e.cfg.BaseURL, ticket)
+}
+
+func ticketRefFromTicket(baseURL string, ticket *model.Ticket) slackService.TicketRef {
+	if ticket == nil {
+		return slackService.TicketRef{}
+	}
+	tURL := ""
+	if baseURL != "" {
+		if u, err := url.JoinPath(baseURL, "ws", string(ticket.WorkspaceID), "tickets", string(ticket.ID)); err == nil {
+			tURL = u
+		}
+	}
+	return slackService.TicketRef{
+		ID:     ticket.ID,
+		SeqNum: ticket.SeqNum,
+		Title:  ticket.Title,
+		URL:    tURL,
+	}
+}
+
 // Config holds tunable parameters for the triage executor. Values come from
 // CLI flags / env vars at startup; defaults are applied via defaultConfig.
 type Config struct {
 	IterationCap int
+	// PlanRetryCap is the maximum number of times llmPlan re-asks the
+	// planner after a structured-output validation failure. The agent
+	// continues on the same gollem session, so the previous (invalid) turn
+	// stays in history; the verbatim error is fed back as the next user
+	// message. 0 disables retries.
+	PlanRetryCap int
+	// BaseURL is the deployment's public root (e.g. "https://shepherd.acme")
+	// used to render the ticket badge link. Empty leaves the badge link
+	// pointing at "/ws/.../tickets/..."; in dev that is harmless because the
+	// host is implicit, in prod the wiring sets it from the same flag the
+	// existing ReplyTicketCreated path already consumes.
+	BaseURL string
 }
 
 // defaultConfig returns the default triage executor configuration.
 func defaultConfig() Config {
-	return Config{IterationCap: 10}
+	return Config{IterationCap: 10, PlanRetryCap: 2}
 }
 
 // PlanExecutor drives a single triage's planning loop. One executor instance
@@ -50,6 +90,10 @@ type PlanExecutor struct {
 // `[triage] auto = true` in the workspace config.
 type WorkspaceLookup interface {
 	AutoTriage(ws types.WorkspaceID) bool
+	// WorkspaceSchema returns the workspace's FieldSchema. nil when the
+	// workspace is unknown or no schema was configured. The planner uses it
+	// to build the auto-fill briefing for custom fields.
+	WorkspaceSchema(ws types.WorkspaceID) *domainConfig.FieldSchema
 }
 
 // RegistryWorkspaceLookup adapts *model.WorkspaceRegistry to WorkspaceLookup.
@@ -69,6 +113,19 @@ func (r *RegistryWorkspaceLookup) AutoTriage(ws types.WorkspaceID) bool {
 		return false
 	}
 	return entry.AutoTriage
+}
+
+// WorkspaceSchema returns the FieldSchema registered for ws, or nil when the
+// workspace is unknown.
+func (r *RegistryWorkspaceLookup) WorkspaceSchema(ws types.WorkspaceID) *domainConfig.FieldSchema {
+	if r == nil || r.Registry == nil {
+		return nil
+	}
+	entry, ok := r.Registry.Get(ws)
+	if !ok {
+		return nil
+	}
+	return entry.FieldSchema
 }
 
 // SlackTriageClient is the slim Slack surface the triage usecase actually
@@ -91,6 +148,9 @@ func NewPlanExecutor(repo interfaces.Repository, historyRepo gollem.HistoryRepos
 	promptUC *prompt.UseCase, lookup WorkspaceLookup, cfg Config) *PlanExecutor {
 	if cfg.IterationCap <= 0 {
 		cfg.IterationCap = defaultConfig().IterationCap
+	}
+	if cfg.PlanRetryCap < 0 {
+		cfg.PlanRetryCap = defaultConfig().PlanRetryCap
 	}
 	return &PlanExecutor{
 		repo:        repo,
@@ -170,7 +230,7 @@ func (e *PlanExecutor) run(ctx context.Context, workspaceID types.WorkspaceID, t
 
 		switch plan.Kind {
 		case types.PlanInvestigate:
-			progress, perr := newProgressMessage(ctx, e.slack, ticket.SlackChannelID, ticket.SlackThreadTS, plan.Message, plan.Investigate.Subtasks)
+			progress, perr := newProgressMessage(ctx, e.slack, ticket.SlackChannelID, ticket.SlackThreadTS, e.ticketRef(ticket), plan.Message, plan.Investigate.Subtasks)
 			if perr != nil {
 				return goerr.Wrap(perr, "post progress message")
 			}
@@ -222,7 +282,7 @@ func (e *PlanExecutor) reportFailure(ctx context.Context, ticket *model.Ticket, 
 	logger.Error("triage run failed; posting recovery message",
 		slog.String("error", runErr.Error()),
 	)
-	blocks := slackService.BuildFailedBlocks(ctx, ticket.ID, runErr.Error())
+	blocks := slackService.BuildFailedBlocks(ctx, e.ticketRef(ticket), runErr.Error())
 	if _, err := e.slack.PostThreadBlocks(ctx, string(ticket.SlackChannelID), string(ticket.SlackThreadTS), blocks); err != nil {
 		logger.Error("failed to post triage failure recovery message",
 			slog.String("error", err.Error()),
@@ -238,7 +298,7 @@ func (e *PlanExecutor) postAsk(ctx context.Context, ticket *model.Ticket, plan *
 	if plan.Ask == nil {
 		return goerr.New("plan kind ask without payload")
 	}
-	blocks := buildAskBlocks(ctx, ticket, plan)
+	blocks := buildAskBlocks(ctx, e.cfg.BaseURL, ticket, plan)
 	if _, err := e.slack.PostThreadBlocks(ctx, string(ticket.SlackChannelID), string(ticket.SlackThreadTS), blocks); err != nil {
 		return goerr.Wrap(err, "post ask form")
 	}
