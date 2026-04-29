@@ -16,6 +16,10 @@ type Status = components["schemas"]["StatusDef"];
 
 type GroupBy = "status" | "assignee";
 
+const COLUMN_W = 290;
+const LANE_W = 168;
+const LANE_GAP = 14;
+
 type DragData = {
   ticketId: string;
   fromStatusId: string;
@@ -24,7 +28,7 @@ type DragData = {
 
 function timeAgo(iso: string): string {
   const d = new Date(iso).getTime();
-  const diff = Math.floor((Date.now() - d) / 1000);
+  const diff = Math.max(0, Math.floor((Date.now() - d) / 1000));
   if (diff < 60) return `${diff}s`;
   if (diff < 3600) return `${Math.floor(diff / 60)}m`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
@@ -75,6 +79,12 @@ export function TicketKanbanView({
 
   const queryClient = useQueryClient();
   const [moveError, setMoveError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!moveError) return;
+    const timer = window.setTimeout(() => setMoveError(null), 3500);
+    return () => window.clearTimeout(timer);
+  }, [moveError]);
 
   const move = useMutation({
     mutationFn: async (vars: {
@@ -133,7 +143,6 @@ export function TicketKanbanView({
         }
       }
       setMoveError(t("ticketBoardUpdateFailed"));
-      window.setTimeout(() => setMoveError(null), 3500);
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["tickets", workspaceId] });
@@ -340,7 +349,6 @@ function BoardByAssignee({
   ) => void;
 }) {
   const { t } = useTranslation();
-  const columnW = 290;
   const lanes: Array<{ id: string; isUnassigned: boolean }> = [
     ...assignees.map((id) => ({ id, isUnassigned: false })),
     { id: "", isUnassigned: true },
@@ -352,7 +360,7 @@ function BoardByAssignee({
       <div
         className="sticky top-0 z-[3] flex gap-3.5 pb-2"
         style={{
-          marginLeft: 168,
+          marginLeft: LANE_W,
           background: "linear-gradient(var(--bg) 80%, transparent)",
         }}
       >
@@ -363,7 +371,7 @@ function BoardByAssignee({
               key={s.id}
               className="rounded-2 bg-bg-elev border border-line flex items-center gap-2"
               style={{
-                flex: `0 0 ${columnW}px`,
+                flex: `0 0 ${COLUMN_W}px`,
                 padding: "8px 10px",
                 borderTop: `3px solid ${s.color}`,
               }}
@@ -394,8 +402,8 @@ function BoardByAssignee({
             <div
               className="sticky left-0 z-[2] bg-bg border-r border-line flex flex-col gap-1.5"
               style={{
-                flex: "0 0 168px",
-                padding: "14px 14px 14px 4px",
+                flex: `0 0 ${LANE_W}px`,
+                padding: `${LANE_GAP}px ${LANE_GAP}px ${LANE_GAP}px 4px`,
               }}
             >
               {lane.isUnassigned ? (
@@ -426,7 +434,6 @@ function BoardByAssignee({
                 return (
                   <DropCell
                     key={s.id}
-                    columnW={columnW}
                     hasCards={cards.length > 0}
                     onDropTicket={(d) => {
                       if (
@@ -533,12 +540,10 @@ function KanbanColumn({
 }
 
 function DropCell({
-  columnW,
   hasCards,
   onDropTicket,
   children,
 }: {
-  columnW: number;
   hasCards: boolean;
   onDropTicket: (d: DragData) => void;
   children: React.ReactNode;
@@ -554,7 +559,7 @@ function DropCell({
         over && "ring-2 ring-brand bg-bg-sunken",
       )}
       style={{
-        flex: `0 0 ${columnW}px`,
+        flex: `0 0 ${COLUMN_W}px`,
         minHeight: 96,
       }}
       onDragOver={(e) => {

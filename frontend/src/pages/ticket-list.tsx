@@ -245,7 +245,7 @@ export default function TicketListPage() {
       <div
         className={cn(
           view === "board"
-            ? "flex flex-col h-[calc(100vh-49px)] pt-5 pb-2"
+            ? "flex flex-col h-[calc(100vh-var(--app-header-h))] pt-5 pb-2"
             : "max-w-[1240px] mx-auto px-8 pt-5 pb-10",
         )}
       >
