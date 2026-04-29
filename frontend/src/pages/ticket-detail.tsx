@@ -758,11 +758,13 @@ function UnifiedSidebar({
             users={slackUsers}
             value={ticket.assigneeIds}
             onChange={(ids) => {
-              const before = ticket.assigneeIds;
-              const sameLength = before.length === ids.length;
-              const sameOrder =
-                sameLength && before.every((id, i) => id === ids[i]);
-              if (!sameOrder) onChangeAssignees(ids);
+              // Compare by membership rather than positional order so
+              // re-ordering alone does not trigger a redundant PATCH.
+              const before = [...ticket.assigneeIds].sort();
+              const after = [...ids].sort();
+              if (JSON.stringify(before) !== JSON.stringify(after)) {
+                onChangeAssignees(ids);
+              }
             }}
             disabled={isAssigneePending}
             placeholder={t("ticketDetailUnassigned")}

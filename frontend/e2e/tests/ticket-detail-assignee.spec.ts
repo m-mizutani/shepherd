@@ -5,6 +5,15 @@ const FAKE_USERS = [
   { id: "U_BOB", name: "Bob", email: "bob@example.com" },
 ];
 
+async function clickRemoveAssignee(page: Page, name: string) {
+  const chip = page
+    .locator("span")
+    .filter({ hasText: new RegExp(`^${name}$`) })
+    .first()
+    .locator("..");
+  await chip.getByRole("button", { name: "Remove" }).click();
+}
+
 async function stubSlackUsers(page: Page) {
   await page.route("**/api/v1/ws/*/slack/users", async (route) => {
     await route.fulfill({
@@ -137,20 +146,13 @@ test.describe("Ticket Assignee inline edit (multi-user)", () => {
     await page.goto(`/ws/support/tickets/${ticket.id}`);
     await expect(page.getByText("Remove One Test")).toBeVisible();
 
-    // Click the Remove button next to Alice's chip. The picker renders one
-    // Remove button per chip; we target the one whose neighbour is Alice.
-    const aliceChip = page
-      .locator("span")
-      .filter({ hasText: /^Alice$/ })
-      .first()
-      .locator("..");
-    const removeAlice = aliceChip.getByRole("button", { name: "Remove" });
+    // Click the Remove button next to Alice's chip.
     const patchReq = page.waitForRequest(
       (req) =>
         req.method() === "PATCH" &&
         req.url().includes(`/api/v1/ws/support/tickets/${ticket.id}`),
     );
-    await removeAlice.click();
+    await clickRemoveAssignee(page, "Alice");
     const req = await patchReq;
     expect(JSON.parse(req.postData() ?? "{}")).toEqual({
       assigneeIds: ["U_BOB"],
@@ -177,18 +179,12 @@ test.describe("Ticket Assignee inline edit (multi-user)", () => {
     await page.goto(`/ws/support/tickets/${ticket.id}`);
     await expect(page.getByText("Unassign Test")).toBeVisible();
 
-    const aliceChip = page
-      .locator("span")
-      .filter({ hasText: /^Alice$/ })
-      .first()
-      .locator("..");
-    const removeAlice = aliceChip.getByRole("button", { name: "Remove" });
     const patchReq = page.waitForRequest(
       (req) =>
         req.method() === "PATCH" &&
         req.url().includes(`/api/v1/ws/support/tickets/${ticket.id}`),
     );
-    await removeAlice.click();
+    await clickRemoveAssignee(page, "Alice");
     const req = await patchReq;
     expect(JSON.parse(req.postData() ?? "{}")).toEqual({ assigneeIds: [] });
 

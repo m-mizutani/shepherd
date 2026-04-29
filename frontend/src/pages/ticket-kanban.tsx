@@ -242,9 +242,13 @@ export function TicketKanbanView({
                 : [];
               const tk = tickets.find((x) => x.id === d.ticketId);
               const before = tk?.assigneeIds ?? [];
-              const sameLength = before.length === targetIds.length;
+              // Compare by membership so the lane-replace drop only fires a
+              // PATCH when the assignee set actually differs.
+              const beforeSet = new Set(before);
+              const targetSet = new Set(targetIds);
               const sameMembership =
-                sameLength && before.every((id, i) => id === targetIds[i]);
+                beforeSet.size === targetSet.size &&
+                [...beforeSet].every((id) => targetSet.has(id));
               move.mutate({
                 ticketId: d.ticketId,
                 statusId: target.statusId,
