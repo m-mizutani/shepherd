@@ -201,6 +201,25 @@ export const msgKeys = {
   ticketDialogCreating: "ticketDialogCreating",
   ticketDialogCreateFailed: "ticketDialogCreateFailed",
 
+  // Tickets - Kanban / Board view
+  ticketViewList: "ticketViewList",
+  ticketViewBoard: "ticketViewBoard",
+  ticketViewCalendar: "ticketViewCalendar",
+  ticketBoardCount: "ticketBoardCount",
+  ticketBoardGroupBy: "ticketBoardGroupBy",
+  ticketBoardGroupByStatus: "ticketBoardGroupByStatus",
+  ticketBoardGroupByAssignee: "ticketBoardGroupByAssignee",
+  ticketBoardGroupByCategory: "ticketBoardGroupByCategory",
+  ticketBoardGroupByDue: "ticketBoardGroupByDue",
+  ticketBoardColumnEmpty: "ticketBoardColumnEmpty",
+  ticketBoardEmptyCell: "ticketBoardEmptyCell",
+  ticketBoardUnassigned: "ticketBoardUnassigned",
+  ticketBoardLaneOpen: "ticketBoardLaneOpen",
+  ticketBoardUpdateFailed: "ticketBoardUpdateFailed",
+  ticketBoardReporter: "ticketBoardReporter",
+  ticketBoardReporterPrefix: "ticketBoardReporterPrefix",
+  ticketBoardAssigneePrefix: "ticketBoardAssigneePrefix",
+
   // Tickets - column headers
   ticketColId: "ticketColId",
   ticketColTitle: "ticketColTitle",
