@@ -68,18 +68,24 @@ func DecodeTriageReviewModalMetadata(raw string) (TriageReviewModalMetadata, err
 }
 
 // BuildReviewBlocks renders the planner's PlanComplete proposal with three
-// action buttons. The body of the message reuses the same sections as
-// BuildCompleteBlocks so reporters see identical content; the difference is
-// that finalisation is gated by the buttons. requesterID, when non-empty,
-// is mentioned with a fixed call-to-action so the reporter is paged back.
-func BuildReviewBlocks(ctx context.Context, ticketID types.TicketID, comp *model.Complete, requesterID types.SlackUserID) []slackgo.Block {
+// action buttons. The body reuses the same sections as BuildCompleteBlocks so
+// reporters see identical content; the difference is that finalisation is
+// gated by the buttons.
+//
+// Layout: the requester mention is placed at the very top so the page-out
+// arrives the moment the message lands; right below, the ticket reference
+// is rendered as a prominent bold section (instead of the dim context badge
+// other messages use) so this action-required message visually stands apart
+// from the surrounding thread chatter. requesterID may be empty (no mention).
+//
+// schema + fieldValues, when non-nil/non-empty, render the ticket's
+// persisted custom field values as a section so the reporter can confirm
+// them before clicking Submit. fieldValues is the canonical state read
+// from the ticket repository, not the planner's transient SuggestedFields.
+func BuildReviewBlocks(ctx context.Context, ref TicketRef, comp *model.Complete, requesterID types.SlackUserID, schema *domainConfig.FieldSchema, fieldValues map[string]model.FieldValue) []slackgo.Block {
 	loc := i18n.From(ctx)
 
-	blocks := []slackgo.Block{
-		slackgo.NewHeaderBlock(slackgo.NewTextBlockObject(
-			slackgo.PlainTextType, loc.T(i18n.MsgTriageReviewHeader), false, false,
-		)),
-	}
+	var blocks []slackgo.Block
 	if requesterID != "" {
 		blocks = append(blocks, slackgo.NewSectionBlock(
 			slackgo.NewTextBlockObject(slackgo.MarkdownType,
@@ -88,19 +94,23 @@ func BuildReviewBlocks(ctx context.Context, ticketID types.TicketID, comp *model
 			nil, nil,
 		))
 	}
+	if title := ticketRefBlock(ctx, ref, TicketRefStateActive); title != nil {
+		blocks = append(blocks, title)
+	}
 	blocks = append(blocks, completeBodyBlocks(ctx, comp)...)
+	blocks = append(blocks, fieldValuesBlocks(ctx, schema, fieldValues)...)
 	blocks = append(blocks, slackgo.NewDividerBlock())
 
 	editBtn := slackgo.NewButtonBlockElement(
-		TriageReviewEditActionID, string(ticketID),
+		TriageReviewEditActionID, string(ref.ID),
 		slackgo.NewTextBlockObject(slackgo.PlainTextType, loc.T(i18n.MsgTriageReviewBtnEdit), false, false),
 	)
 	submitBtn := slackgo.NewButtonBlockElement(
-		TriageReviewSubmitActionID, string(ticketID),
+		TriageReviewSubmitActionID, string(ref.ID),
 		slackgo.NewTextBlockObject(slackgo.PlainTextType, loc.T(i18n.MsgTriageReviewBtnSubmit), false, false),
 	).WithStyle(slackgo.StylePrimary)
 	reinvestigateBtn := slackgo.NewButtonBlockElement(
-		TriageReviewReinvestigateActionID, string(ticketID),
+		TriageReviewReinvestigateActionID, string(ref.ID),
 		slackgo.NewTextBlockObject(slackgo.PlainTextType, loc.T(i18n.MsgTriageReviewBtnReinvestigate), false, false),
 	)
 
@@ -125,29 +135,37 @@ const (
 // proposed), no buttons, plus a footer line indicating who actioned it. Used
 // via chat.update on the original review message so the buttons disappear and
 // can no longer be clicked again.
-func BuildReviewActionedBlocks(ctx context.Context, comp *model.Complete, kind ReviewActionedKind, actorID types.SlackUserID) []slackgo.Block {
+//
+// The ticket reference at the top is rendered per-kind: the Submitted path
+// drops to the quiet Inactive form (the message is now history); the
+// Re-investigate path uses the Dismissed form (struck-through) so the
+// rejected proposal is visibly invalidated and a reader can immediately
+// distinguish it from a successfully submitted record.
+//
+// schema + fieldValues mirror the field-values section rendered in
+// BuildReviewBlocks; fieldValues is the repository's persisted state, so a
+// fresh chat.update after edit reflects whatever the user just saved.
+func BuildReviewActionedBlocks(ctx context.Context, ref TicketRef, comp *model.Complete, kind ReviewActionedKind, actorID types.SlackUserID, schema *domainConfig.FieldSchema, fieldValues map[string]model.FieldValue) []slackgo.Block {
 	loc := i18n.From(ctx)
-	blocks := []slackgo.Block{
-		slackgo.NewHeaderBlock(slackgo.NewTextBlockObject(
-			slackgo.PlainTextType, loc.T(i18n.MsgTriageReviewHeader), false, false,
-		)),
-	}
-	blocks = append(blocks, completeBodyBlocks(ctx, comp)...)
-	blocks = append(blocks, slackgo.NewDividerBlock())
-
 	var footerKey i18n.MsgKey
+	state := TicketRefStateInactive
 	switch kind {
 	case ReviewActionedReinvestigate:
 		footerKey = i18n.MsgTriageReviewActionedReinvestigateFooter
+		state = TicketRefStateDismissed
 	default:
 		footerKey = i18n.MsgTriageReviewActionedSubmittedFooter
 	}
+	var blocks []slackgo.Block
+	blocks = append(blocks, completeBodyBlocks(ctx, comp)...)
+	blocks = append(blocks, fieldValuesBlocks(ctx, schema, fieldValues)...)
+	blocks = append(blocks, slackgo.NewDividerBlock())
 	blocks = append(blocks, slackgo.NewContextBlock("triage_review_actioned",
 		slackgo.NewTextBlockObject(slackgo.MarkdownType,
 			loc.T(footerKey, "user", string(actorID)),
 			false, false),
 	))
-	return blocks
+	return prependTicketRef(ctx, ref, state, blocks)
 }
 
 // BuildHandoffMessageBlocks renders the LLM-generated hand-off message that
@@ -155,19 +173,25 @@ func BuildReviewActionedBlocks(ctx context.Context, comp *model.Complete, kind R
 // expected to already include the assignee mention (the LLM is instructed to
 // produce that). When message is empty (LLM failure), the caller should
 // substitute the localised fallback so a mention still reaches the assignee.
-func BuildHandoffMessageBlocks(_ context.Context, message string) []slackgo.Block {
-	return []slackgo.Block{
+// Marked Active because, after Submit, the hand-off is the message that
+// represents the ticket's terminal live state — the assignee should land
+// here and recognise it as the current state at a glance.
+func BuildHandoffMessageBlocks(ctx context.Context, ref TicketRef, message string) []slackgo.Block {
+	blocks := []slackgo.Block{
 		slackgo.NewSectionBlock(
 			slackgo.NewTextBlockObject(slackgo.MarkdownType, message, false, false),
 			nil, nil,
 		),
 	}
+	return prependTicketRef(ctx, ref, TicketRefStateActive, blocks)
 }
 
 // BuildReviewReinvestigatingBlocks renders the follow-up message posted to
 // the thread when a Re-investigate is accepted. The instruction text from the
-// modal is echoed so the thread records why the planner restarted.
-func BuildReviewReinvestigatingBlocks(ctx context.Context, instruction string) []slackgo.Block {
+// modal is echoed so the thread records why the planner restarted. Marked
+// Inactive because this is a transitional notice — the ticket's live state
+// is the next planner output (a fresh Review or Ask), not this banner.
+func BuildReviewReinvestigatingBlocks(ctx context.Context, ref TicketRef, instruction string) []slackgo.Block {
 	loc := i18n.From(ctx)
 	blocks := []slackgo.Block{
 		slackgo.NewHeaderBlock(slackgo.NewTextBlockObject(
@@ -183,7 +207,7 @@ func BuildReviewReinvestigatingBlocks(ctx context.Context, instruction string) [
 			nil, nil,
 		))
 	}
-	return blocks
+	return prependTicketRef(ctx, ref, TicketRefStateInactive, blocks)
 }
 
 // BuildReviewEditModal builds the modal that lets a user adjust the planner's
@@ -209,7 +233,7 @@ func BuildReviewEditModal(ctx context.Context, meta TriageReviewModalMetadata, c
 			),
 		)
 		for _, f := range schema.Fields {
-			block, err := buildFieldInputBlock(ctx, f, comp.SuggestedFields, fieldValues)
+			block, err := buildFieldInputBlock(ctx, f, fieldValues)
 			if err != nil {
 				return slackgo.ModalViewRequest{}, goerr.Wrap(err, "build field input", goerr.V("field_id", f.ID))
 			}
@@ -336,11 +360,13 @@ func buildSummaryInputBlock(ctx context.Context, initial string) slackgo.Block {
 	input := slackgo.NewPlainTextInputBlockElement(nil, TriageReviewSummaryActionID)
 	input.Multiline = true
 	// MaxLength is well above any realistic LLM summary; we set it so the
-	// hidden truncate bar Slack shows at the bottom-right reads "0/4000"
+	// hidden truncate bar Slack shows at the bottom-right reads "0/3000"
 	// instead of "0/100", subtly hinting the field is meant for long text.
+	// 3000 is the Block Kit ceiling for plain_text_input.max_length —
+	// anything higher is rejected at views.open with invalid_arguments.
 	// Note: Block Kit has no API to specify initial visible row count, so
 	// height still autofits to InitialValue.
-	maxLen := 4000
+	maxLen := 3000
 	input.MaxLength = maxLen
 	if strings.TrimSpace(initial) != "" {
 		input.InitialValue = initial
@@ -355,7 +381,9 @@ func buildSummaryInputBlock(ctx context.Context, initial string) slackgo.Block {
 
 func buildAssigneeInputBlock(ctx context.Context, decision model.AssigneeDecision) slackgo.Block {
 	loc := i18n.From(ctx)
-	users := slackgo.NewOptionsMultiSelectBlockElement(slackgo.MultiOptTypeUser, nil, TriageReviewAssigneeActionID)
+	placeholder := slackgo.NewTextBlockObject(slackgo.PlainTextType,
+		loc.T(i18n.MsgTriageReviewFieldSelectPlaceholder), false, false)
+	users := slackgo.NewOptionsMultiSelectBlockElement(slackgo.MultiOptTypeUser, placeholder, TriageReviewAssigneeActionID)
 	if decision.Kind == types.AssigneeAssigned && len(decision.UserIDs) > 0 {
 		initial := make([]string, 0, len(decision.UserIDs))
 		for _, id := range decision.UserIDs {
@@ -379,45 +407,60 @@ func buildAssigneeInputBlock(ctx context.Context, decision model.AssigneeDecisio
 // buildFieldInputBlock maps a custom FieldDefinition to its Slack input
 // element. The block_id is set to the FieldDefinition.ID so the parser can
 // loop over schema.Fields and look up state.values[field.ID][field_value].
-func buildFieldInputBlock(_ context.Context, f domainConfig.FieldDefinition, suggested map[string]string, current map[string]model.FieldValue) (slackgo.Block, error) {
+func buildFieldInputBlock(ctx context.Context, f domainConfig.FieldDefinition, current map[string]model.FieldValue) (slackgo.Block, error) {
+	loc := i18n.From(ctx)
 	label := slackgo.NewTextBlockObject(slackgo.PlainTextType, f.Name, false, false)
 	hint := (*slackgo.TextBlockObject)(nil)
 	if f.Description != "" {
 		hint = slackgo.NewTextBlockObject(slackgo.PlainTextType, f.Description, false, false)
 	}
 
-	initialString := initialFieldString(f, suggested, current)
+	// Slack rejects static_select / multi_static_select / users_select inside
+	// an Input block when neither an initial value nor a placeholder is set
+	// (it returns invalid_arguments at views.open). Always supply a localised
+	// placeholder so the modal opens even when the planner omitted a value.
+	placeholder := slackgo.NewTextBlockObject(slackgo.PlainTextType,
+		loc.T(i18n.MsgTriageReviewFieldSelectPlaceholder), false, false)
+
+	initialString := initialFieldString(f, current)
+
+	// Slack requires action_id to be unique within a single view. Sharing
+	// "field_value" across every input made views.open fail with
+	// invalid_arguments as soon as the schema declared more than one custom
+	// field. Per-field action_id keeps the parser happy (parseFieldValue
+	// scopes lookup by block_id, then walks all action_ids in that block).
+	actionID := TriageReviewFieldValueAction + "_" + f.ID
 
 	var element slackgo.BlockElement
 	switch f.Type {
 	case types.FieldTypeText:
-		input := slackgo.NewPlainTextInputBlockElement(nil, TriageReviewFieldValueAction)
+		input := slackgo.NewPlainTextInputBlockElement(nil, actionID)
 		input.Multiline = true
 		if initialString != "" {
 			input.InitialValue = initialString
 		}
 		element = input
 	case types.FieldTypeNumber:
-		input := slackgo.NewNumberInputBlockElement(nil, TriageReviewFieldValueAction, true)
+		input := slackgo.NewNumberInputBlockElement(nil, actionID, true)
 		if initialString != "" {
 			input.InitialValue = initialString
 		}
 		element = input
 	case types.FieldTypeURL:
-		input := slackgo.NewURLTextInputBlockElement(nil, TriageReviewFieldValueAction)
+		input := slackgo.NewURLTextInputBlockElement(nil, actionID)
 		if initialString != "" {
 			input.InitialValue = initialString
 		}
 		element = input
 	case types.FieldTypeDate:
-		input := slackgo.NewDatePickerBlockElement(TriageReviewFieldValueAction)
+		input := slackgo.NewDatePickerBlockElement(actionID)
 		if initialString != "" {
 			input.InitialDate = initialString
 		}
 		element = input
 	case types.FieldTypeSelect:
 		opts := buildSelectOptions(f.Options)
-		sel := slackgo.NewOptionsSelectBlockElement(slackgo.OptTypeStatic, nil, TriageReviewFieldValueAction, opts...)
+		sel := slackgo.NewOptionsSelectBlockElement(slackgo.OptTypeStatic, placeholder, actionID, opts...)
 		if initialString != "" {
 			if opt := findOption(opts, initialString); opt != nil {
 				sel = sel.WithInitialOption(opt)
@@ -426,8 +469,8 @@ func buildFieldInputBlock(_ context.Context, f domainConfig.FieldDefinition, sug
 		element = sel
 	case types.FieldTypeMultiSelect:
 		opts := buildSelectOptions(f.Options)
-		sel := slackgo.NewOptionsMultiSelectBlockElement(slackgo.MultiOptTypeStatic, nil, TriageReviewFieldValueAction, opts...)
-		initials := initialFieldStrings(f, suggested, current)
+		sel := slackgo.NewOptionsMultiSelectBlockElement(slackgo.MultiOptTypeStatic, placeholder, actionID, opts...)
+		initials := initialFieldStrings(f, current)
 		if len(initials) > 0 {
 			selected := make([]*slackgo.OptionBlockObject, 0, len(initials))
 			for _, id := range initials {
@@ -441,14 +484,14 @@ func buildFieldInputBlock(_ context.Context, f domainConfig.FieldDefinition, sug
 		}
 		element = sel
 	case types.FieldTypeUser:
-		sel := slackgo.NewOptionsSelectBlockElement(slackgo.OptTypeUser, nil, TriageReviewFieldValueAction)
+		sel := slackgo.NewOptionsSelectBlockElement(slackgo.OptTypeUser, placeholder, actionID)
 		if initialString != "" {
 			sel = sel.WithInitialUser(initialString)
 		}
 		element = sel
 	case types.FieldTypeMultiUser:
-		sel := slackgo.NewOptionsMultiSelectBlockElement(slackgo.MultiOptTypeUser, nil, TriageReviewFieldValueAction)
-		initials := initialFieldStrings(f, suggested, current)
+		sel := slackgo.NewOptionsMultiSelectBlockElement(slackgo.MultiOptTypeUser, placeholder, actionID)
+		initials := initialFieldStrings(f, current)
 		if len(initials) > 0 {
 			sel = sel.WithInitialUsers(initials...)
 		}
@@ -483,41 +526,140 @@ func findOption(opts []*slackgo.OptionBlockObject, id string) *slackgo.OptionBlo
 	return nil
 }
 
-// initialFieldString picks a single initial value for a scalar field input.
-// The current ticket value (if any) wins; the planner's suggestion is the
-// fallback so reporters see something even on first render.
-func initialFieldString(f domainConfig.FieldDefinition, suggested map[string]string, current map[string]model.FieldValue) string {
+// initialFieldString picks the scalar initial value for a field input from
+// the ticket's persisted FieldValues. The repository is the single source
+// of truth — the planner's transient SuggestedFields are merged into
+// FieldValues at enterReview time, so renderers no longer need a fallback.
+func initialFieldString(f domainConfig.FieldDefinition, current map[string]model.FieldValue) string {
 	if cur, ok := current[f.ID]; ok {
 		if s, ok := scalarToString(cur.Value); ok {
 			return s
 		}
 	}
-	if v, ok := suggested[f.ID]; ok {
-		return v
-	}
 	return ""
 }
 
-// initialFieldStrings is the multi-select / multi-user counterpart. It splits
-// suggested values by comma when no current value exists, matching the
-// LLM-side convention of comma-separated id lists.
-func initialFieldStrings(f domainConfig.FieldDefinition, suggested map[string]string, current map[string]model.FieldValue) []string {
+// initialFieldStrings is the multi-select / multi-user counterpart of
+// initialFieldString.
+func initialFieldStrings(f domainConfig.FieldDefinition, current map[string]model.FieldValue) []string {
 	if cur, ok := current[f.ID]; ok {
 		if list, ok := stringsFromAny(cur.Value); ok {
 			return list
 		}
 	}
-	if v, ok := suggested[f.ID]; ok && v != "" {
-		parts := strings.Split(v, ",")
-		out := make([]string, 0, len(parts))
-		for _, p := range parts {
-			if s := strings.TrimSpace(p); s != "" {
-				out = append(out, s)
+	return nil
+}
+
+// fieldValuesBlocks renders every custom field declared on the workspace
+// schema as a labelled section so the reporter (during review) and later
+// the assignee (on hand-off) see the full set inline — auto_fill or not,
+// populated or not. Unset fields fall back to an em dash so the UI matches
+// the web ticket panel's "every field is always visible" contract. The
+// repository is the source of truth: renderers read FieldValues, not the
+// planner's transient SuggestedFields.
+func fieldValuesBlocks(_ context.Context, schema *domainConfig.FieldSchema, values map[string]model.FieldValue) []slackgo.Block {
+	if schema == nil || len(schema.Fields) == 0 {
+		return nil
+	}
+	lines := make([]string, 0, len(schema.Fields))
+	for _, f := range schema.Fields {
+		display := "—"
+		if fv, ok := values[f.ID]; ok {
+			if rendered := formatSuggestedFieldValue(f, fv.Value); rendered != "" {
+				display = rendered
 			}
 		}
-		return out
+		lines = append(lines, "*"+escapeMrkdwn(f.Name)+":*\n"+display)
 	}
-	return nil
+	return []slackgo.Block{
+		slackgo.NewSectionBlock(
+			slackgo.NewTextBlockObject(slackgo.MarkdownType, strings.Join(lines, "\n\n"), false, false),
+			nil, nil,
+		),
+	}
+}
+
+// formatSuggestedFieldValue renders a single suggested field value as Slack
+// mrkdwn. Scalar values (select / number / text / date / url) and option
+// labels are wrapped in inline-code spans for the boxed look the web UI
+// uses; user / multi-user values render as native mentions instead — code
+// formatting would suppress the mention. Multi-value fields produce a
+// comma-separated sequence of code spans.
+func formatSuggestedFieldValue(f domainConfig.FieldDefinition, raw any) string {
+	switch f.Type {
+	case types.FieldTypeSelect:
+		s, ok := scalarToString(raw)
+		if !ok {
+			return ""
+		}
+		return codeSpan(optionLabel(f.Options, s))
+	case types.FieldTypeMultiSelect:
+		ids, ok := stringsFromAny(raw)
+		if !ok {
+			if s, ok := scalarToString(raw); ok && s != "" {
+				ids = strings.Split(s, ",")
+			}
+		}
+		spans := make([]string, 0, len(ids))
+		for _, id := range ids {
+			id = strings.TrimSpace(id)
+			if id == "" {
+				continue
+			}
+			spans = append(spans, codeSpan(optionLabel(f.Options, id)))
+		}
+		return strings.Join(spans, ", ")
+	case types.FieldTypeUser:
+		s, ok := scalarToString(raw)
+		if !ok || s == "" {
+			return ""
+		}
+		return fmt.Sprintf("<@%s>", s)
+	case types.FieldTypeMultiUser:
+		ids, ok := stringsFromAny(raw)
+		if !ok {
+			if s, ok := scalarToString(raw); ok && s != "" {
+				ids = strings.Split(s, ",")
+			}
+		}
+		mentions := make([]string, 0, len(ids))
+		for _, id := range ids {
+			id = strings.TrimSpace(id)
+			if id == "" {
+				continue
+			}
+			mentions = append(mentions, fmt.Sprintf("<@%s>", id))
+		}
+		return strings.Join(mentions, " ")
+	default:
+		s, ok := scalarToString(raw)
+		if !ok {
+			return ""
+		}
+		return codeSpan(s)
+	}
+}
+
+// codeSpan wraps text in Slack mrkdwn inline code. Backticks inside the
+// value would break the span, so they're stripped — the boxed presentation
+// matters more than preserving stray backticks the LLM might emit.
+func codeSpan(text string) string {
+	if text == "" {
+		return ""
+	}
+	return "`" + strings.ReplaceAll(text, "`", "") + "`"
+}
+
+func optionLabel(opts []domainConfig.FieldOption, id string) string {
+	for _, o := range opts {
+		if o.ID == id {
+			if o.Name != "" {
+				return o.Name
+			}
+			return o.ID
+		}
+	}
+	return id
 }
 
 func scalarToString(v any) (string, bool) {

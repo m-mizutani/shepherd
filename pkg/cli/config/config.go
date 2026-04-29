@@ -69,10 +69,11 @@ type StatusConfig struct {
 }
 
 type FieldOptionConfig struct {
-	ID       string         `toml:"id"`
-	Name     string         `toml:"name"`
-	Color    string         `toml:"color"`
-	Metadata map[string]any `toml:"metadata"`
+	ID          string         `toml:"id"`
+	Name        string         `toml:"name"`
+	Color       string         `toml:"color"`
+	Description string         `toml:"description"`
+	Metadata    map[string]any `toml:"metadata"`
 }
 
 type FieldConfig struct {
@@ -80,6 +81,7 @@ type FieldConfig struct {
 	Name        string              `toml:"name"`
 	Type        string              `toml:"type"`
 	Required    bool                `toml:"required"`
+	AutoFill    bool                `toml:"auto_fill"`
 	Description string              `toml:"description"`
 	Options     []FieldOptionConfig `toml:"options"`
 }
@@ -148,10 +150,11 @@ func (a *AppConfig) ToDomainFieldSchema() *domainConfig.FieldSchema {
 		options := make([]domainConfig.FieldOption, len(f.Options))
 		for j, opt := range f.Options {
 			options[j] = domainConfig.FieldOption{
-				ID:       opt.ID,
-				Name:     opt.Name,
-				Color:    opt.Color,
-				Metadata: opt.Metadata,
+				ID:          opt.ID,
+				Name:        opt.Name,
+				Color:       opt.Color,
+				Description: opt.Description,
+				Metadata:    opt.Metadata,
 			}
 		}
 		fields[i] = domainConfig.FieldDefinition{
@@ -159,6 +162,7 @@ func (a *AppConfig) ToDomainFieldSchema() *domainConfig.FieldSchema {
 			Name:        f.Name,
 			Type:        types.FieldType(f.Type),
 			Required:    f.Required,
+			AutoFill:    f.AutoFill,
 			Description: f.Description,
 			Options:     options,
 		}

@@ -79,6 +79,31 @@ type TriagePlanInput struct {
 	InitialMessage string
 	Reporter       string
 	UserGuidance   string
+	AutoFillFields []AutoFillField
+}
+
+// AutoFillField is the per-field briefing the planner sees when a workspace
+// has at least one custom field marked auto_fill = true. The struct is the
+// projection of FieldDefinition that the prompt template actually needs;
+// keeping it here avoids leaking the full domain config type into the
+// template and lets the template stay readable.
+type AutoFillField struct {
+	ID          string
+	Name        string
+	Type        string
+	Description string
+	Required    bool
+	Options     []AutoFillOption
+}
+
+// AutoFillOption is the (id, label, description) tuple the planner is
+// allowed to pick from for select / multi-select fields. Description is
+// optional but, when present, is rendered in the system prompt so the
+// model can disambiguate between similarly named options.
+type AutoFillOption struct {
+	ID          string
+	Label       string
+	Description string
 }
 
 // TriageSubtaskInput is the data for the triage subtask system prompt. It is

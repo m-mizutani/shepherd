@@ -2,6 +2,7 @@ package triage_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"sync"
@@ -588,4 +589,245 @@ func TestLifecycle_TicketCreate_Ask_Submit_Complete(t *testing.T) {
 	async.Wait()
 	gt.N(t, len(triageSlack.updates)).Equal(prevUpdates + 1) // one invalidation update, no new posts
 	gt.N(t, int(atomic.LoadInt32(&llmCalls))).Equal(2)        // LLM was NOT invoked again
+}
+
+// autoFillSchema returns a FieldSchema with one auto_fill select field
+// (severity, required) and one auto_fill multi-select field (tags, optional).
+// The shape mirrors the on-disk config a workspace would declare; the
+// lifecycle tests use it to drive the planner's auto_fill briefing + the
+// validator + the suggested-fields rendering on the review message.
+func autoFillSchema() *config.FieldSchema {
+	return &config.FieldSchema{
+		Statuses: []config.StatusDef{{ID: types.StatusID("open"), Name: "Open"}},
+		TicketConfig: config.TicketConfig{
+			DefaultStatusID: types.StatusID("open"),
+		},
+		Fields: []config.FieldDefinition{
+			{
+				ID: "severity", Name: "Severity",
+				Type:     types.FieldTypeSelect,
+				Required: true, AutoFill: true,
+				Options: []config.FieldOption{
+					{ID: "p0", Name: "Sev 0 — outage"},
+					{ID: "p1", Name: "Sev 1 — major"},
+				},
+			},
+			{
+				ID: "tags", Name: "Tags",
+				Type: types.FieldTypeMultiSelect, AutoFill: true,
+				Options: []config.FieldOption{
+					{ID: "frontend", Name: "Frontend"},
+					{ID: "backend", Name: "Backend"},
+				},
+			},
+		},
+	}
+}
+
+const completePlanInvalidAutoFillJSON = `{
+  "kind": "complete",
+  "message": "Done",
+  "complete": {
+    "summary": "Investigation done",
+    "assignee": {
+      "kind": "assigned",
+      "user_ids": ["U123"],
+      "reasoning": "owner"
+    },
+    "suggested_fields": {
+      "severity": "made-up-severity",
+      "tags": ["frontend"]
+    }
+  }
+}`
+
+const completePlanValidAutoFillJSON = `{
+  "kind": "complete",
+  "message": "Done",
+  "complete": {
+    "summary": "Investigation done",
+    "assignee": {
+      "kind": "assigned",
+      "user_ids": ["U123"],
+      "reasoning": "owner"
+    },
+    "suggested_fields": {
+      "severity": "p0",
+      "tags": ["frontend", "backend"]
+    }
+  }
+}`
+
+// blockJSON renders a block to JSON so tests can substring-check the rendered
+// text without depending on the slack-go block type tree.
+func blockJSON(t *testing.T, blocks []slackgo.Block) string {
+	t.Helper()
+	out := strings.Builder{}
+	for _, b := range blocks {
+		raw, err := json.Marshal(b)
+		gt.NoError(t, err)
+		out.Write(raw)
+		out.WriteByte('\n')
+	}
+	return out.String()
+}
+
+// TestLifecycle_AutoFill_RetriesThenPostsReviewWithSuggestedFields drives
+// the full planner loop with a workspace that has auto_fill custom fields.
+// The first LLM response is rejected by validatePlanAutoFill (option id
+// outside the allow-list); the executor must:
+//
+//   - post the i18n "retrying" notice on the ticket thread,
+//   - feed the verbatim error back as the next user turn (history grows),
+//   - re-invoke the planner exactly once,
+//   - and on the valid response, park on the reporter-review buttons with a
+//     "Suggested field values" section whose labels come from the schema.
+func TestLifecycle_AutoFill_RetriesThenPostsReviewWithSuggestedFields(t *testing.T) {
+	repo := memory.New()
+	t.Cleanup(func() { _ = repo.Close() })
+	hist := newFakeHistory()
+	slack := &fakeTriageSlack{}
+
+	var llmCalls int32
+	scripted := []string{
+		completePlanInvalidAutoFillJSON,
+		completePlanValidAutoFillJSON,
+	}
+	llm := &mock.LLMClientMock{
+		NewSessionFunc: func(_ context.Context, _ ...gollem.SessionOption) (gollem.Session, error) {
+			internal := &gollem.History{Version: gollem.HistoryVersion, LLType: gollem.LLMTypeOpenAI}
+			return &mock.SessionMock{
+				GenerateFunc: func(_ context.Context, _ []gollem.Input, _ ...gollem.GenerateOption) (*gollem.Response, error) {
+					n := atomic.AddInt32(&llmCalls, 1)
+					if int(n) > len(scripted) {
+						t.Fatalf("Generate called %d times; script has %d entries", n, len(scripted))
+					}
+					return &gollem.Response{Texts: []string{scripted[n-1]}}, nil
+				},
+				HistoryFunc:       func() (*gollem.History, error) { return internal.Clone(), nil },
+				AppendHistoryFunc: func(h *gollem.History) error {
+					if h != nil {
+						internal.Messages = append(internal.Messages, h.Messages...)
+					}
+					return nil
+				},
+			}, nil
+		},
+	}
+
+	catalog := tool.NewCatalog(nil, repo.ToolSettings())
+	promptUC := prompt.New(repo.Prompt())
+	lookup := &fakeWorkspaceLookup{
+		auto:    map[types.WorkspaceID]bool{}, // auto=false → enterReview path
+		schemas: map[types.WorkspaceID]*config.FieldSchema{tWS: autoFillSchema()},
+	}
+	exec := triage.NewPlanExecutor(repo, hist, llm, slack, catalog, promptUC, lookup,
+		triage.Config{IterationCap: 5, PlanRetryCap: 2})
+	ticket := mustCreateTicket(t, repo, false)
+
+	gt.NoError(t, exec.RunForTest(context.Background(), tWS, ticket.ID))
+
+	// LLM was called exactly twice: invalid then valid.
+	gt.N(t, int(atomic.LoadInt32(&llmCalls))).Equal(2)
+
+	// Slack: exactly one retry notice on the thread.
+	gt.A(t, slack.replies).Length(1)
+	gt.S(t, slack.replies[0].channel).Equal(tChannel)
+	gt.S(t, slack.replies[0].threadTS).Equal(tThread)
+	gt.True(t, strings.Contains(slack.replies[0].text, "Re-running") ||
+		strings.Contains(slack.replies[0].text, "再実行"))
+
+	// Slack: one post — the review message (auto=false so we hit enterReview).
+	gt.A(t, slack.posts).Length(1)
+	gt.S(t, slack.posts[0].channel).Equal(tChannel)
+
+	// The review blocks must surface the suggested-field section with
+	// schema-resolved labels (not raw option ids), proving the planner's
+	// auto-fill values reach the reporter for confirmation.
+	rendered := blockJSON(t, slack.posts[0].blocks)
+	for _, want := range []string{
+		"Severity",         // field name from schema
+		"Sev 0 — outage",   // resolved option label for "p0"
+		"Tags",             // multi-select field name
+		"Frontend",         // resolved option label
+		"Backend",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Errorf("review blocks missing %q\n---\n%s", want, rendered)
+		}
+	}
+
+	// Ticket must NOT be triaged — auto=false parks on the review buttons.
+	got := gt.R1(repo.Ticket().Get(context.Background(), tWS, ticket.ID)).NoError(t)
+	gt.False(t, got.Triaged)
+
+	// The latest persisted plan must carry the *valid* auto_fill values, not
+	// the invalid first response. This proves validation rejected attempt #1
+	// before it landed in the canonical TriagePlan.
+	plan := gt.R1(triage.LoadLatestTriagePlanForTest(context.Background(), hist, tWS, ticket.ID)).NoError(t)
+	gt.NotNil(t, plan)
+	gt.Equal(t, plan.Kind, types.PlanComplete)
+	gt.NotNil(t, plan.Complete)
+	gt.Equal(t, plan.Complete.SuggestedFields["severity"], "p0")
+}
+
+// TestLifecycle_AutoFill_RetryCapExhausted_PostsFailureMessage verifies the
+// error path: with PlanRetryCap=0 a single invalid response is enough to
+// surface as a failure-recovery post (the standard retry-button message),
+// rather than silently looping.
+func TestLifecycle_AutoFill_RetryCapExhausted_PostsFailureMessage(t *testing.T) {
+	repo := memory.New()
+	t.Cleanup(func() { _ = repo.Close() })
+	hist := newFakeHistory()
+	slack := &fakeTriageSlack{}
+
+	var llmCalls int32
+	llm := &mock.LLMClientMock{
+		NewSessionFunc: func(_ context.Context, _ ...gollem.SessionOption) (gollem.Session, error) {
+			internal := &gollem.History{Version: gollem.HistoryVersion, LLType: gollem.LLMTypeOpenAI}
+			return &mock.SessionMock{
+				GenerateFunc: func(_ context.Context, _ []gollem.Input, _ ...gollem.GenerateOption) (*gollem.Response, error) {
+					atomic.AddInt32(&llmCalls, 1)
+					return &gollem.Response{Texts: []string{completePlanInvalidAutoFillJSON}}, nil
+				},
+				HistoryFunc:       func() (*gollem.History, error) { return internal.Clone(), nil },
+				AppendHistoryFunc: func(h *gollem.History) error {
+					if h != nil {
+						internal.Messages = append(internal.Messages, h.Messages...)
+					}
+					return nil
+				},
+			}, nil
+		},
+	}
+
+	catalog := tool.NewCatalog(nil, repo.ToolSettings())
+	promptUC := prompt.New(repo.Prompt())
+	lookup := &fakeWorkspaceLookup{
+		auto:    map[types.WorkspaceID]bool{},
+		schemas: map[types.WorkspaceID]*config.FieldSchema{tWS: autoFillSchema()},
+	}
+	exec := triage.NewPlanExecutor(repo, hist, llm, slack, catalog, promptUC, lookup,
+		triage.Config{IterationCap: 5, PlanRetryCap: 0})
+	ticket := mustCreateTicket(t, repo, false)
+
+	// On a validation failure with retries exhausted, run() bubbles the error
+	// up *and* the deferred handler posts the recovery message. We assert
+	// both: the error surfaces (so caller logging still works) and the
+	// reporter sees the standard retry-button message in the thread.
+	err := exec.RunForTest(context.Background(), tWS, ticket.ID)
+	gt.Error(t, err)
+
+	// LLM was called exactly once — the retry cap is 0 so no second attempt.
+	gt.N(t, int(atomic.LoadInt32(&llmCalls))).Equal(1)
+
+	// No retry notice on the thread (cap=0 means we never reach the notify step).
+	gt.A(t, slack.replies).Length(0)
+
+	// Failure-recovery message was posted to the thread.
+	gt.A(t, slack.posts).Length(1)
+
+	// Ticket stays un-triaged.
+	got := gt.R1(repo.Ticket().Get(context.Background(), tWS, ticket.ID)).NoError(t)
+	gt.False(t, got.Triaged)
 }

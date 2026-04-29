@@ -43,15 +43,17 @@ type FieldDefinition struct {
 	Name        string
 	Type        types.FieldType
 	Required    bool
+	AutoFill    bool
 	Description string
 	Options     []FieldOption
 }
 
 type FieldOption struct {
-	ID       string
-	Name     string
-	Color    string
-	Metadata map[string]any
+	ID          string
+	Name        string
+	Color       string
+	Description string
+	Metadata    map[string]any
 }
 
 type EntityLabels struct {

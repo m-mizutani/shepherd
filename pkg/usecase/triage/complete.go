@@ -6,6 +6,7 @@ import (
 
 	"github.com/m-mizutani/goerr/v2"
 	"github.com/m-mizutani/shepherd/pkg/domain/model"
+	domainConfig "github.com/m-mizutani/shepherd/pkg/domain/model/config"
 	"github.com/m-mizutani/shepherd/pkg/domain/types"
 	slackService "github.com/m-mizutani/shepherd/pkg/service/slack"
 	slackgo "github.com/slack-go/slack"
@@ -39,7 +40,19 @@ func (e *PlanExecutor) finalizeComplete(ctx context.Context, ticket *model.Ticke
 	// existing ticket.Title intact (older plans pre-date the field).
 	titleChanged := strings.TrimSpace(comp.Title) != "" && ticket.Title != comp.Title
 	descChanged := strings.TrimSpace(comp.Summary) != "" && ticket.Description != comp.Summary
-	if titleChanged || descChanged {
+
+	// Promote the planner's auto-filled suggestions into the ticket's
+	// FieldValues so the web UI / hand-off see real values, not "—". Skipped
+	// when the operator already set values via the Edit modal — those are
+	// pre-merged into ticket.FieldValues by the caller, and FieldValues
+	// already contains the operator's choice for that field.
+	var schema *domainConfig.FieldSchema
+	if e.lookup != nil {
+		schema = e.lookup.WorkspaceSchema(ticket.WorkspaceID)
+	}
+	fieldsChanged := mergeSuggestedFields(ticket, comp, schema)
+
+	if titleChanged || descChanged || fieldsChanged {
 		if titleChanged {
 			ticket.Title = comp.Title
 		}
@@ -69,7 +82,11 @@ func (e *PlanExecutor) finalizeCompleteAndAnnounce(ctx context.Context, ticket *
 	if err := e.finalizeComplete(ctx, ticket, comp); err != nil {
 		return err
 	}
-	blocks := slackService.BuildCompleteBlocks(ctx, comp)
+	var schema *domainConfig.FieldSchema
+	if e.lookup != nil {
+		schema = e.lookup.WorkspaceSchema(ticket.WorkspaceID)
+	}
+	blocks := slackService.BuildCompleteBlocks(ctx, e.ticketRef(ticket), comp, schema, ticket.FieldValues)
 	if _, err := e.slack.PostThreadBlocks(ctx, string(ticket.SlackChannelID), string(ticket.SlackThreadTS), blocks); err != nil {
 		return goerr.Wrap(err, "post triage complete message")
 	}
@@ -86,7 +103,21 @@ func (e *PlanExecutor) enterReview(ctx context.Context, ticket *model.Ticket, co
 	if comp == nil {
 		return goerr.New("enterReview called with nil Complete")
 	}
-	blocks := slackService.BuildReviewBlocks(ctx, ticket.ID, comp, ticket.ReporterSlackUserID)
+	var schema *domainConfig.FieldSchema
+	if e.lookup != nil {
+		schema = e.lookup.WorkspaceSchema(ticket.WorkspaceID)
+	}
+	// Promote auto-filled suggestions to the ticket so the web UI and any
+	// other observers see real values during the review window. Triaged
+	// stays false (the buttons are still load-bearing); Submit / Edit-Submit
+	// finalise. Operator-edited values from a prior Edit click are
+	// preserved by the merge's "skip if already set" rule.
+	if mergeSuggestedFields(ticket, comp, schema) {
+		if _, err := e.repo.Ticket().Update(ctx, ticket.WorkspaceID, ticket); err != nil {
+			return goerr.Wrap(err, "persist suggested field values", goerr.V("ticket_id", ticket.ID))
+		}
+	}
+	blocks := slackService.BuildReviewBlocks(ctx, e.ticketRef(ticket), comp, ticket.ReporterSlackUserID, schema, ticket.FieldValues)
 	if _, err := e.slack.PostThreadBlocks(ctx, string(ticket.SlackChannelID), string(ticket.SlackThreadTS), blocks); err != nil {
 		return goerr.Wrap(err, "post triage review message")
 	}
@@ -110,11 +141,96 @@ func (e *PlanExecutor) finalizeAbort(ctx context.Context, ticket *model.Ticket, 
 		return goerr.Wrap(err, "finalize triage abort in repository", goerr.V("ticket_id", ticket.ID))
 	}
 
-	blocks := slackService.BuildAbortedBlocks(ctx, reason)
+	blocks := slackService.BuildAbortedBlocks(ctx, e.ticketRef(ticket), reason)
 	if _, err := e.slack.PostThreadBlocks(ctx, string(ticket.SlackChannelID), string(ticket.SlackThreadTS), blocks); err != nil {
 		return goerr.Wrap(err, "post triage abort message")
 	}
 	return nil
+}
+
+// mergeSuggestedFields converts the planner's SuggestedFields map (typed by
+// JSON: string / number / []any) into ticket.FieldValues entries, leaving
+// any value the operator already supplied untouched. Returns true when at
+// least one field was added so the caller knows whether to call Update.
+func mergeSuggestedFields(ticket *model.Ticket, comp *model.Complete, schema *domainConfig.FieldSchema) bool {
+	if comp == nil || len(comp.SuggestedFields) == 0 || schema == nil {
+		return false
+	}
+	if ticket.FieldValues == nil {
+		ticket.FieldValues = make(map[string]model.FieldValue, len(comp.SuggestedFields))
+	}
+	changed := false
+	for _, f := range schema.Fields {
+		if _, alreadySet := ticket.FieldValues[f.ID]; alreadySet {
+			continue
+		}
+		raw, ok := comp.SuggestedFields[f.ID]
+		if !ok {
+			continue
+		}
+		val, ok := normalizeSuggestedFieldValue(f, raw)
+		if !ok {
+			continue
+		}
+		ticket.FieldValues[f.ID] = model.FieldValue{
+			FieldID: types.FieldID(f.ID),
+			Type:    f.Type,
+			Value:   val,
+		}
+		changed = true
+	}
+	return changed
+}
+
+// normalizeSuggestedFieldValue coerces the JSON-decoded value into the in-Go
+// representation that matches the field type. select/multi-select are kept
+// as their raw option ids (string or []string); the FieldDefinition's
+// declared option list is the source of truth for labels at render time.
+func normalizeSuggestedFieldValue(f domainConfig.FieldDefinition, raw any) (any, bool) {
+	switch f.Type {
+	case types.FieldTypeText, types.FieldTypeURL, types.FieldTypeSelect,
+		types.FieldTypeUser, types.FieldTypeDate:
+		s, ok := raw.(string)
+		if !ok || strings.TrimSpace(s) == "" {
+			return nil, false
+		}
+		return s, true
+	case types.FieldTypeNumber:
+		switch v := raw.(type) {
+		case float64:
+			return v, true
+		case float32:
+			return float64(v), true
+		case int:
+			return float64(v), true
+		case int64:
+			return float64(v), true
+		}
+		return nil, false
+	case types.FieldTypeMultiSelect, types.FieldTypeMultiUser:
+		switch v := raw.(type) {
+		case []string:
+			if len(v) == 0 {
+				return nil, false
+			}
+			return v, true
+		case []any:
+			out := make([]string, 0, len(v))
+			for _, e := range v {
+				s, ok := e.(string)
+				if !ok || strings.TrimSpace(s) == "" {
+					continue
+				}
+				out = append(out, s)
+			}
+			if len(out) == 0 {
+				return nil, false
+			}
+			return out, true
+		}
+		return nil, false
+	}
+	return nil, false
 }
 
 func truncate(s string, max int) string {
@@ -125,10 +241,12 @@ func truncate(s string, max int) string {
 }
 
 // buildAskBlocks is split out so executor.go and usecase.go can share it.
-func buildAskBlocks(ctx context.Context, ticket *model.Ticket, plan *model.TriagePlan) []slackgo.Block {
+// baseURL feeds the shared ticket badge so the rendered message stays
+// self-identifying even outside the originating thread context.
+func buildAskBlocks(ctx context.Context, baseURL string, ticket *model.Ticket, plan *model.TriagePlan) []slackgo.Block {
 	header := plan.Message
 	if strings.TrimSpace(header) == "" {
 		header = "..."
 	}
-	return slackService.BuildAskBlocks(ctx, ticket.ID, plan.Ask, header)
+	return slackService.BuildAskBlocks(ctx, ticketRefFromTicket(baseURL, ticket), plan.Ask, header)
 }

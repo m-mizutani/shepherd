@@ -145,6 +145,59 @@ func TestRenderTriagePlan_UserGuidanceWithLeadingHeading(t *testing.T) {
 	}
 }
 
+func TestRenderTriagePlan_AutoFillFieldsRendered(t *testing.T) {
+	got, err := prompt.RenderTriagePlan(prompt.TriagePlanInput{
+		Title: "Crash on save",
+		AutoFillFields: []prompt.AutoFillField{
+			{
+				ID:          "severity",
+				Name:        "Severity",
+				Type:        "select",
+				Description: "Triage urgency level",
+				Required:    true,
+				Options: []prompt.AutoFillOption{
+					{ID: "p0", Label: "Sev 0 — outage", Description: "Active or imminent customer impact"},
+					{ID: "p1", Label: "Sev 1 — major"},
+				},
+			},
+			{
+				ID:   "tags",
+				Name: "Tags",
+				Type: "multi-select",
+				Options: []prompt.AutoFillOption{
+					{ID: "frontend", Label: "Frontend"},
+				},
+			},
+		},
+	})
+	gt.NoError(t, err)
+	for _, want := range []string{
+		"Auto-fill custom fields",
+		"`severity`",
+		"Severity",
+		"required",
+		"Triage urgency level",
+		"`p0`",
+		"Sev 0 — outage",
+		"Active or imminent customer impact",
+		"`tags`",
+		"multi-select",
+		"`frontend`",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("auto_fill section missing %q\n---\n%s", want, got)
+		}
+	}
+}
+
+func TestRenderTriagePlan_NoAutoFillSectionWhenEmpty(t *testing.T) {
+	got, err := prompt.RenderTriagePlan(prompt.TriagePlanInput{Title: "x"})
+	gt.NoError(t, err)
+	if strings.Contains(got, "Auto-fill custom fields") {
+		t.Errorf("auto_fill section should be omitted when no fields are configured, got:\n%s", got)
+	}
+}
+
 func TestRenderTriageSubtask_RendersCriteria(t *testing.T) {
 	got, err := prompt.RenderTriageSubtask(prompt.TriageSubtaskInput{
 		Request: "Collect related Slack posts in the last 48h",
