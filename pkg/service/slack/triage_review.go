@@ -373,7 +373,7 @@ func buildDescriptionInputBlock(ctx context.Context, initial string) slackgo.Blo
 	}
 	return slackgo.NewInputBlock(
 		TriageReviewDescriptionBlockID,
-		slackgo.NewTextBlockObject(slackgo.PlainTextType, loc.T(i18n.MsgTriageReviewEditSummaryLabel), false, false),
+		slackgo.NewTextBlockObject(slackgo.PlainTextType, loc.T(i18n.MsgTriageReviewEditDescriptionLabel), false, false),
 		nil,
 		input,
 	)

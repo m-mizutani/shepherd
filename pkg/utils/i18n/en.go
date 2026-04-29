@@ -57,7 +57,7 @@ var en = map[MsgKey]string{
 	MsgTriageReviewMissingProposal:               "No triage proposal is available to act on.",
 	MsgTriageReviewEditModalTitle:                "Edit triage proposal",
 	MsgTriageReviewEditTitleLabel:                "Title",
-	MsgTriageReviewEditSummaryLabel:              "Summary",
+	MsgTriageReviewEditDescriptionLabel:          "Summary",
 	MsgTriageReviewEditAssigneeLabel:             "Assignee",
 	MsgTriageReviewEditFieldsHeader:              "Custom fields",
 	MsgTriageReviewEditModalSubmit:               "Save & Submit",
