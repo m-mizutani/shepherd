@@ -223,11 +223,13 @@ func (c *Complete) Validate() error {
 	return c.Assignee.Validate()
 }
 
-// AssigneeDecision captures whether the LLM picked an assignee or intentionally
-// left the ticket unassigned. Reasoning is required in either case.
+// AssigneeDecision captures whether the LLM picked one or more assignees or
+// intentionally left the ticket unassigned. Reasoning is required in either
+// case. UserIDs is empty for unassigned decisions and contains 1..N ids for
+// assigned ones.
 type AssigneeDecision struct {
 	Kind      types.AssigneeDecisionKind `json:"kind"`
-	UserID    *types.SlackUserID         `json:"user_id,omitempty"`
+	UserIDs   []types.SlackUserID        `json:"user_ids,omitempty"`
 	Reasoning string                     `json:"reasoning"`
 }
 
@@ -237,12 +239,17 @@ func (d *AssigneeDecision) Validate() error {
 	}
 	switch d.Kind {
 	case types.AssigneeAssigned:
-		if d.UserID == nil || *d.UserID == "" {
-			return goerr.New("assigned decision requires a user id")
+		if len(d.UserIDs) == 0 {
+			return goerr.New("assigned decision requires at least one user id")
+		}
+		for _, id := range d.UserIDs {
+			if id == "" {
+				return goerr.New("assigned decision contains empty user id")
+			}
 		}
 	case types.AssigneeUnassigned:
-		if d.UserID != nil {
-			return goerr.New("unassigned decision must not carry a user id")
+		if len(d.UserIDs) > 0 {
+			return goerr.New("unassigned decision must not carry user ids")
 		}
 	default:
 		return goerr.New("unknown assignee decision kind", goerr.V("kind", d.Kind))

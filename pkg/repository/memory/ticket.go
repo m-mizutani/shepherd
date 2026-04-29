@@ -119,7 +119,7 @@ func (r *TicketRepo) Delete(ctx context.Context, workspaceID types.WorkspaceID, 
 	return nil
 }
 
-func (r *TicketRepo) FinalizeTriage(ctx context.Context, workspaceID types.WorkspaceID, ticketID types.TicketID, assignee *types.SlackUserID, history *model.TicketHistory) error {
+func (r *TicketRepo) FinalizeTriage(ctx context.Context, workspaceID types.WorkspaceID, ticketID types.TicketID, assignees *[]types.SlackUserID, history *model.TicketHistory) error {
 	if history == nil {
 		return goerr.New("history entry is required")
 	}
@@ -143,8 +143,8 @@ func (r *TicketRepo) FinalizeTriage(ctx context.Context, workspaceID types.Works
 
 	// Update ticket fields.
 	t.Triaged = true
-	if assignee != nil {
-		t.AssigneeID = *assignee
+	if assignees != nil {
+		t.AssigneeIDs = append([]types.SlackUserID(nil), (*assignees)...)
 	}
 	t.UpdatedAt = time.Now()
 	copied := *t

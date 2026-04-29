@@ -26,7 +26,7 @@ var ja = map[MsgKey]string{
 
 	MsgTriageCompleteHeaderAssigned:   "triageが完了しました",
 	MsgTriageCompleteHeaderUnassigned: "triageが完了しました（担当者未定）",
-	MsgTriageCompleteAssigneeMention:  "<@{user}> 対応をお願いします。",
+	MsgTriageCompleteAssigneeMention:  "{users} 対応をお願いします。",
 	MsgTriageCompleteSectionSummary:   "*サマリ*",
 	MsgTriageCompleteSectionFindings:  "*重要事項*",
 	MsgTriageCompleteSectionAnswers:   "*依頼者からの回答*",

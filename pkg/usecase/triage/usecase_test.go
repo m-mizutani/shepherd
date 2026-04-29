@@ -559,7 +559,8 @@ func TestLifecycle_TicketCreate_Ask_Submit_Complete(t *testing.T) {
 	// === Step 3: planner resumed and completed triage =====================
 	got := gt.R1(repo.Ticket().Get(ctx, wsID, ticket.ID)).NoError(t)
 	gt.True(t, got.Triaged)
-	gt.Equal(t, got.AssigneeID, types.SlackUserID("U123"))
+	gt.A(t, got.AssigneeIDs).Length(1)
+	gt.Equal(t, got.AssigneeIDs[0], types.SlackUserID("U123"))
 
 	// Triage posted the hand-off summary in the ticket thread (in addition
 	// to the original ask form).
@@ -630,7 +631,7 @@ const completePlanInvalidAutoFillJSON = `{
     "summary": "Investigation done",
     "assignee": {
       "kind": "assigned",
-      "user_id": "U123",
+      "user_ids": ["U123"],
       "reasoning": "owner"
     },
     "suggested_fields": {
@@ -647,7 +648,7 @@ const completePlanValidAutoFillJSON = `{
     "summary": "Investigation done",
     "assignee": {
       "kind": "assigned",
-      "user_id": "U123",
+      "user_ids": ["U123"],
       "reasoning": "owner"
     },
     "suggested_fields": {

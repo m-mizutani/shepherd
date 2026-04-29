@@ -129,11 +129,12 @@ func TestExecutorRun_LLMProposesComplete_FinalizesTriage(t *testing.T) {
 
 	gt.NoError(t, exec.RunForTest(context.Background(), tWS, ticket.ID))
 
-	// Persistence: Triaged flag flipped, assignee from completePlanJSON persisted.
+	// Persistence: Triaged flag flipped, assignees from completePlanJSON persisted.
 	got, err := repo.Ticket().Get(context.Background(), tWS, ticket.ID)
 	gt.NoError(t, err)
 	gt.True(t, got.Triaged)
-	gt.Equal(t, got.AssigneeID, types.SlackUserID("U123"))
+	gt.A(t, got.AssigneeIDs).Length(1)
+	gt.Equal(t, got.AssigneeIDs[0], types.SlackUserID("U123"))
 
 	// Slack: hand-off summary posted in the ticket thread.
 	gt.A(t, slack.posts).Length(1)

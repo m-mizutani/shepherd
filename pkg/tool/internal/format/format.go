@@ -19,6 +19,10 @@ func Ticket(t *model.Ticket, statusName string) map[string]any {
 	for k, v := range t.FieldValues {
 		fields[k] = v.Value
 	}
+	assignees := make([]string, 0, len(t.AssigneeIDs))
+	for _, id := range t.AssigneeIDs {
+		assignees = append(assignees, string(id))
+	}
 	return map[string]any{
 		"id":               string(t.ID),
 		"seq_num":          t.SeqNum,
@@ -26,7 +30,7 @@ func Ticket(t *model.Ticket, statusName string) map[string]any {
 		"description":      t.Description,
 		"status_id":        string(t.StatusID),
 		"status_name":      statusName,
-		"assignee":         string(t.AssigneeID),
+		"assignees":        assignees,
 		"reporter":         string(t.ReporterSlackUserID),
 		"slack_channel_id": string(t.SlackChannelID),
 		"slack_thread_ts":  string(t.SlackThreadTS),

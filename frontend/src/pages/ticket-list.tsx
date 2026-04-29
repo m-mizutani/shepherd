@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { PageShell } from "../components/ui/page-shell";
 import { Card } from "../components/ui/card";
@@ -11,13 +11,16 @@ import { Skeleton } from "../components/ui/skeleton";
 import { ErrorBox } from "../components/ui/error-box";
 import { EmptyState } from "../components/ui/empty-state";
 import { Popover, PopoverHeader, PopoverItem, PopoverSep } from "../components/ui/popover";
-import { Dialog } from "../components/ui/dialog";
 import { SlackUserName } from "../components/slack-user-name";
+import { NewTicketDialog } from "../components/tickets/new-ticket-dialog";
+import { ViewSwitcher, type TicketView } from "../components/tickets/view-switcher";
+import { TicketKanbanView } from "./ticket-kanban";
 import { cn } from "../lib/utils";
 import { useTranslation } from "../i18n";
 import type { MsgKey } from "../i18n/keys";
 
 const COLUMN_KEY = (wsId: string) => `shepherd.tickets.cols.${wsId}`;
+const VIEW_KEY = (wsId: string) => `shepherd.tickets.view.${wsId}`;
 const SORT_OPTIONS: ReadonlyArray<{
   value: "updatedAt" | "createdAt" | "seqNum" | "statusId";
   labelKey: MsgKey;
@@ -46,6 +49,36 @@ export default function TicketListPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { t } = useTranslation();
+
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlView = searchParams.get("view");
+  const view: TicketView = urlView === "board" ? "board" : "list";
+  const setView = (v: TicketView) => {
+    if (workspaceId) {
+      window.localStorage.setItem(VIEW_KEY(workspaceId), v);
+    }
+    const next = new URLSearchParams(searchParams);
+    if (v === "list") next.delete("view");
+    else next.set("view", v);
+    setSearchParams(next, { replace: true });
+  };
+
+  // On first visit without ?view=, restore last-used view from localStorage.
+  // (Explicit list selection writes "list" to localStorage so we don't bounce.)
+  useEffect(() => {
+    if (!workspaceId) return;
+    if (urlView !== null) {
+      window.localStorage.setItem(VIEW_KEY(workspaceId), view);
+      return;
+    }
+    const saved = window.localStorage.getItem(VIEW_KEY(workspaceId));
+    if (saved === "board") {
+      const next = new URLSearchParams(searchParams);
+      next.set("view", "board");
+      setSearchParams(next, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspaceId, urlView]);
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
@@ -209,9 +242,20 @@ export default function TicketListPage() {
       crumbs={[{ label: t("ticketListCrumb") }]}
       showSettings
     >
-      <div className="max-w-[1240px] mx-auto px-8 pt-5 pb-10">
+      <div
+        className={cn(
+          view === "board"
+            ? "flex flex-col h-[calc(100vh-var(--app-header-h))] pt-5 pb-2"
+            : "max-w-[1240px] mx-auto px-8 pt-5 pb-10",
+        )}
+      >
         {/* Title row */}
-        <div className="flex items-center justify-between mb-3.5">
+        <div
+          className={cn(
+            "flex items-center justify-between mb-3.5",
+            view === "board" && "px-8",
+          )}
+        >
           <div className="flex items-baseline gap-2.5">
             <h1 className="m-0 text-[22px] font-semibold tracking-[-0.018em] text-ink-1">
               {t("ticketListTitle")}
@@ -224,7 +268,8 @@ export default function TicketListPage() {
                 })}
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
+            <ViewSwitcher current={view} onChange={setView} />
             <label className="inline-flex items-center gap-1.5 h-[30px] px-2.5 bg-bg-elev border border-line-strong rounded-2 text-[13px] w-[260px]">
               <Icon name="search" size={13} className="text-ink-4" />
               <input
@@ -243,6 +288,19 @@ export default function TicketListPage() {
           </div>
         </div>
 
+        {view === "board" && (
+          <TicketKanbanView
+            workspaceId={workspaceId!}
+            tickets={tickets}
+            statuses={configData?.statuses ?? []}
+            isLoading={isLoading}
+            error={error}
+            onRetry={() => refetch()}
+          />
+        )}
+
+        {view === "list" && (
+        <>
         {/* Filter bar */}
         <div className="flex items-center gap-1.5 px-2.5 py-2 bg-bg-elev border border-line border-b-0 rounded-t-3 flex-wrap">
           <FilterChip
@@ -487,11 +545,20 @@ export default function TicketListPage() {
                         return <Td key={id}>{renderField(id, fv?.value)}</Td>;
                       })}
                       <Td>
-                        {tk.assigneeId ? (
-                          <SlackUserName
-                            workspaceId={workspaceId!}
-                            userId={tk.assigneeId}
-                          />
+                        {tk.assigneeIds && tk.assigneeIds.length > 0 ? (
+                          <span className="inline-flex items-center gap-1.5">
+                            <SlackUserName
+                              workspaceId={workspaceId!}
+                              userId={tk.assigneeIds[0]}
+                            />
+                            {tk.assigneeIds.length > 1 && (
+                              <span className="text-[11.5px] text-ink-3">
+                                {t("ticketAssigneePlusMore", {
+                                  count: tk.assigneeIds.length - 1,
+                                })}
+                              </span>
+                            )}
+                          </span>
                         ) : (
                           <span className="text-ink-4 text-[12.5px] italic">
                             {t("ticketListUnassigned")}
@@ -572,6 +639,8 @@ export default function TicketListPage() {
               </Button>
             </div>
           </div>
+        )}
+        </>
         )}
       </div>
 
@@ -694,109 +763,3 @@ function FilterChip({
   );
 }
 
-function NewTicketDialog({
-  open,
-  onClose,
-  workspaceId,
-  defaultStatusId,
-  onCreated,
-}: {
-  open: boolean;
-  onClose: () => void;
-  workspaceId: string;
-  defaultStatusId?: string;
-  onCreated: (ticketId: string) => void;
-}) {
-  const { t } = useTranslation();
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const create = useMutation({
-    mutationFn: async () => {
-      const { data, error } = await api.POST(
-        "/api/v1/ws/{workspaceId}/tickets",
-        {
-          params: { path: { workspaceId } },
-          body: {
-            title,
-            description: description || undefined,
-            statusId: defaultStatusId || undefined,
-          },
-        },
-      );
-      if (error) throw error;
-      return data!;
-    },
-    onSuccess: (ticket) => {
-      setTitle("");
-      setDescription("");
-      onCreated(ticket.id);
-    },
-  });
-
-  useEffect(() => {
-    if (!open) {
-      setTitle("");
-      setDescription("");
-      create.reset();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
-
-  return (
-    <Dialog
-      open={open}
-      onClose={onClose}
-      title={t("ticketDialogNewTitle")}
-      width={520}
-      footer={
-        <>
-          <Button variant="ghost" onClick={onClose}>
-            {t("btnCancel")}
-          </Button>
-          <Button
-            variant="primary"
-            disabled={!title.trim() || create.isPending}
-            onClick={() => create.mutate()}
-          >
-            {create.isPending
-              ? t("ticketDialogCreating")
-              : t("ticketDialogCreate")}
-          </Button>
-        </>
-      }
-    >
-      <div className="space-y-3">
-        <label className="block">
-          <span className="text-[12px] font-medium text-ink-3">
-            {t("ticketDialogTitleLabel")}
-          </span>
-          <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            autoFocus
-            placeholder={t("ticketDialogTitlePlaceholder")}
-            className="mt-1 w-full h-9 px-3 bg-bg-elev border border-line-strong rounded-2 text-[13.5px] text-ink-1 focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand-soft"
-          />
-        </label>
-        <label className="block">
-          <span className="text-[12px] font-medium text-ink-3">
-            {t("ticketDialogDescriptionLabel")}
-          </span>
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            rows={5}
-            placeholder={t("ticketDialogDescriptionPlaceholder")}
-            className="mt-1 w-full px-3 py-2 bg-bg-elev border border-line-strong rounded-2 text-[13.5px] text-ink-1 focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand-soft"
-          />
-        </label>
-        {create.isError && (
-          <ErrorBox
-            title={t("ticketDialogCreateFailed")}
-            onRetry={() => create.mutate()}
-          />
-        )}
-      </div>
-    </Dialog>
-  );
-}

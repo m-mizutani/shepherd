@@ -82,15 +82,17 @@ type TicketRepository interface {
 	GetBySlackThreadTS(ctx context.Context, workspaceID types.WorkspaceID, channelID types.SlackChannelID, threadTS types.SlackThreadTS) (*model.Ticket, error)
 
 	// FinalizeTriage atomically marks the ticket as triaged, optionally updates
-	// the assignee, and records the supplied history entry. Implementations
+	// the assignees, and records the supplied history entry. Implementations
 	// MUST execute the ticket update and the history append in a single atomic
 	// step (Firestore RunTransaction or equivalent). The operation is
 	// idempotent: when the ticket is already Triaged, the call is a no-op and
 	// no additional history entry is recorded.
 	//
-	// assignee == nil leaves Ticket.AssigneeID untouched. history.ID may be
-	// empty; implementations must populate it with a generated identifier.
-	FinalizeTriage(ctx context.Context, workspaceID types.WorkspaceID, ticketID types.TicketID, assignee *types.SlackUserID, history *model.TicketHistory) error
+	// assignees == nil leaves Ticket.AssigneeIDs untouched. A non-nil pointer
+	// (even to an empty slice) replaces the assignee list wholesale.
+	// history.ID may be empty; implementations must populate it with a
+	// generated identifier.
+	FinalizeTriage(ctx context.Context, workspaceID types.WorkspaceID, ticketID types.TicketID, assignees *[]types.SlackUserID, history *model.TicketHistory) error
 }
 
 type CommentRepository interface {

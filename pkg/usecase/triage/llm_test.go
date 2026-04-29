@@ -38,7 +38,6 @@ func tagsField() domainConfig.FieldDefinition {
 }
 
 func completePlan(values map[string]any) *model.TriagePlan {
-	uid := types.SlackUserID("U123")
 	return &model.TriagePlan{
 		Kind:    types.PlanComplete,
 		Message: "done",
@@ -46,7 +45,7 @@ func completePlan(values map[string]any) *model.TriagePlan {
 			Summary: "ok",
 			Assignee: model.AssigneeDecision{
 				Kind:      types.AssigneeAssigned,
-				UserID:    &uid,
+				UserIDs:   []types.SlackUserID{"U123"},
 				Reasoning: "owner",
 			},
 			SuggestedFields: values,

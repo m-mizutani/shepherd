@@ -26,7 +26,7 @@ var en = map[MsgKey]string{
 
 	MsgTriageCompleteHeaderAssigned:   "Triage completed",
 	MsgTriageCompleteHeaderUnassigned: "Triage completed (no assignee)",
-	MsgTriageCompleteAssigneeMention:  "<@{user}>, please take this over.",
+	MsgTriageCompleteAssigneeMention:  "{users}, please take this over.",
 	MsgTriageCompleteSectionSummary:   "*Summary*",
 	MsgTriageCompleteSectionFindings:  "*Key findings*",
 	MsgTriageCompleteSectionAnswers:   "*Reporter answers*",

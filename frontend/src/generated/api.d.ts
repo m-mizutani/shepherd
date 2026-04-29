@@ -335,7 +335,7 @@ export interface components {
             title: string;
             description?: string;
             statusId: string;
-            assigneeId?: string;
+            assigneeIds: string[];
             reporterSlackUserId?: string;
             slackChannelId?: string;
             slackThreadTs?: string;
@@ -349,14 +349,14 @@ export interface components {
             title: string;
             description?: string;
             statusId?: string;
-            assigneeId?: string;
+            assigneeIds?: string[];
             fields?: components["schemas"]["FieldValue"][];
         };
         UpdateTicketRequest: {
             title?: string;
             description?: string;
             statusId?: string;
-            assigneeId?: string;
+            assigneeIds?: string[];
             fields?: components["schemas"]["FieldValue"][];
         };
         SlackUserInfo: {

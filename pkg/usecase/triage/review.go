@@ -347,11 +347,17 @@ func applyEditModalState(ctx context.Context, base *model.Complete, schema *doma
 			}
 		}
 		if v, ok := lookupAction(state, slackService.TriageReviewAssigneeBlockID, slackService.TriageReviewAssigneeActionID); ok {
-			if u := v.SelectedUser; u != "" {
-				uid := types.SlackUserID(u)
+			ids := make([]types.SlackUserID, 0, len(v.SelectedUsers))
+			for _, u := range v.SelectedUsers {
+				if u == "" {
+					continue
+				}
+				ids = append(ids, types.SlackUserID(u))
+			}
+			if len(ids) > 0 {
 				out.Assignee = model.AssigneeDecision{
 					Kind:      types.AssigneeAssigned,
-					UserID:    &uid,
+					UserIDs:   ids,
 					Reasoning: base.Assignee.Reasoning,
 				}
 			} else {

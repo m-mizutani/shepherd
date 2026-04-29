@@ -40,7 +40,6 @@ export default function TicketDetailPage() {
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const [editDescription, setEditDescription] = useState("");
-  const [editAssigneeId, setEditAssigneeId] = useState("");
   const [editFields, setEditFields] = useState<Record<string, unknown>>({});
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
@@ -111,7 +110,7 @@ export default function TicketDetailPage() {
       title?: string;
       description?: string;
       statusId?: string;
-      assigneeId?: string;
+      assigneeIds?: string[];
       fields?: { fieldId: string; value: unknown }[];
     }) => {
       const { data, error } = await api.PATCH(
@@ -126,11 +125,15 @@ export default function TicketDetailPage() {
       if (error) throw error;
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({
         queryKey: ["ticket", workspaceId, ticketId],
       });
-      setIsEditing(false);
+      const isBulkSave =
+        variables.title !== undefined ||
+        variables.description !== undefined ||
+        variables.fields !== undefined;
+      if (isBulkSave) setIsEditing(false);
     },
   });
 
@@ -149,7 +152,6 @@ export default function TicketDetailPage() {
     if (!ticket) return;
     setEditTitle(ticket.title);
     setEditDescription(ticket.description ?? "");
-    setEditAssigneeId(ticket.assigneeId ?? "");
     const fields: Record<string, unknown> = {};
     for (const f of ticket.fields ?? []) fields[f.fieldId] = f.value;
     setEditFields(fields);
@@ -176,7 +178,6 @@ export default function TicketDetailPage() {
     updateTicket.mutate({
       title: editTitle,
       description: editDescription,
-      assigneeId: editAssigneeId,
       fields: fieldValues,
     });
   };
@@ -569,9 +570,11 @@ export default function TicketDetailPage() {
               statuses={configData?.statuses ?? []}
               fields={configData?.fields ?? []}
               onChangeStatus={(statusId) => updateTicket.mutate({ statusId })}
+              onChangeAssignees={(assigneeIds) =>
+                updateTicket.mutate({ assigneeIds })
+              }
               isEditing={isEditing}
-              editAssigneeId={editAssigneeId}
-              setEditAssigneeId={setEditAssigneeId}
+              isAssigneePending={updateTicket.isPending}
               renderFieldValue={renderFieldValue}
               renderFieldEditor={renderFieldEditor}
               workspaceId={workspaceId!}
@@ -644,7 +647,7 @@ interface UnifiedSidebarProps {
   ticket: {
     id: string;
     statusId: string;
-    assigneeId?: string;
+    assigneeIds: string[];
     reporterSlackUserId?: string;
     slackChannelId?: string;
     fields?: { fieldId: string; value: unknown }[];
@@ -655,9 +658,9 @@ interface UnifiedSidebarProps {
   statuses: { id: string; name: string; color: string }[];
   fields: { id: string; name: string; type: string; required: boolean }[];
   onChangeStatus: (id: string) => void;
+  onChangeAssignees: (ids: string[]) => void;
   isEditing: boolean;
-  editAssigneeId: string;
-  setEditAssigneeId: (v: string) => void;
+  isAssigneePending: boolean;
   renderFieldValue: (fieldId: string, value: unknown) => ReactNode;
   renderFieldEditor: (fieldId: string) => ReactNode;
   workspaceId: string;
@@ -670,9 +673,9 @@ function UnifiedSidebar({
   statuses,
   fields,
   onChangeStatus,
+  onChangeAssignees,
   isEditing,
-  editAssigneeId,
-  setEditAssigneeId,
+  isAssigneePending,
   renderFieldValue,
   renderFieldEditor,
   workspaceId,
@@ -749,20 +752,23 @@ function UnifiedSidebar({
 
         <div className="h-px bg-line my-1" />
 
-        <FieldRow label={t("ticketDetailLabelAssignee")}>
-          {isEditing ? (
-            <UserPicker
-              users={slackUsers}
-              value={editAssigneeId}
-              onChange={setEditAssigneeId}
-            />
-          ) : ticket.assigneeId ? (
-            <SlackUserName workspaceId={workspaceId} userId={ticket.assigneeId} />
-          ) : (
-            <span className="text-ink-4 text-[12.5px] italic">
-              {t("ticketDetailUnassigned")}
-            </span>
-          )}
+        <FieldRow label={t("ticketDetailLabelAssignees")}>
+          <UserPicker
+            multi
+            users={slackUsers}
+            value={ticket.assigneeIds}
+            onChange={(ids) => {
+              // Compare by membership rather than positional order so
+              // re-ordering alone does not trigger a redundant PATCH.
+              const before = [...ticket.assigneeIds].sort();
+              const after = [...ids].sort();
+              if (JSON.stringify(before) !== JSON.stringify(after)) {
+                onChangeAssignees(ids);
+              }
+            }}
+            disabled={isAssigneePending}
+            placeholder={t("ticketDetailUnassigned")}
+          />
         </FieldRow>
         {ticket.reporterSlackUserId && (
           <FieldRow label={t("ticketDetailLabelReporter")}>
