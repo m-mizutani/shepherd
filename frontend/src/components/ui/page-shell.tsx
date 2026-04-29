@@ -20,7 +20,10 @@ export function PageShell({
   contentClassName,
 }: Props) {
   return (
-    <div className="min-h-screen flex flex-col bg-bg text-ink-1">
+    <div
+      className="min-h-screen flex flex-col bg-bg text-ink-1"
+      style={{ ["--app-header-h" as string]: "49px" }}
+    >
       <AppHeader
         crumbs={crumbs}
         showSettings={showSettings}
