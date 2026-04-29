@@ -326,10 +326,10 @@ func BuildCompleteBlocks(ctx context.Context, comp *model.Complete) []slackgo.Bl
 
 	switch comp.Assignee.Kind {
 	case types.AssigneeAssigned:
-		if comp.Assignee.UserID != nil {
+		if mentions := joinAssigneeMentions(comp.Assignee.UserIDs); mentions != "" {
 			blocks = append(blocks, slackgo.NewSectionBlock(
 				slackgo.NewTextBlockObject(slackgo.MarkdownType,
-					loc.T(i18n.MsgTriageCompleteAssigneeMention, "user", string(*comp.Assignee.UserID)),
+					loc.T(i18n.MsgTriageCompleteAssigneeMention, "users", mentions),
 					false, false),
 				nil, nil,
 			))
@@ -426,6 +426,20 @@ func sectionLabeled(label, body string) slackgo.Block {
 		slackgo.NewTextBlockObject(slackgo.MarkdownType, text, false, false),
 		nil, nil,
 	)
+}
+
+// joinAssigneeMentions formats assignee Slack ids as space-separated mention
+// tokens (e.g. "<@U123> <@U456>"). Empty ids are skipped. Returns "" when no
+// valid id is present.
+func joinAssigneeMentions(ids []types.SlackUserID) string {
+	mentions := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if id == "" {
+			continue
+		}
+		mentions = append(mentions, "<@"+string(id)+">")
+	}
+	return strings.Join(mentions, " ")
 }
 
 // escapeMrkdwn escapes Slack mrkdwn metacharacters so user-supplied content

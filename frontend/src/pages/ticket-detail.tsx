@@ -110,7 +110,7 @@ export default function TicketDetailPage() {
       title?: string;
       description?: string;
       statusId?: string;
-      assigneeId?: string;
+      assigneeIds?: string[];
       fields?: { fieldId: string; value: unknown }[];
     }) => {
       const { data, error } = await api.PATCH(
@@ -570,8 +570,8 @@ export default function TicketDetailPage() {
               statuses={configData?.statuses ?? []}
               fields={configData?.fields ?? []}
               onChangeStatus={(statusId) => updateTicket.mutate({ statusId })}
-              onChangeAssignee={(assigneeId) =>
-                updateTicket.mutate({ assigneeId })
+              onChangeAssignees={(assigneeIds) =>
+                updateTicket.mutate({ assigneeIds })
               }
               isEditing={isEditing}
               isAssigneePending={updateTicket.isPending}
@@ -647,7 +647,7 @@ interface UnifiedSidebarProps {
   ticket: {
     id: string;
     statusId: string;
-    assigneeId?: string;
+    assigneeIds: string[];
     reporterSlackUserId?: string;
     slackChannelId?: string;
     fields?: { fieldId: string; value: unknown }[];
@@ -658,7 +658,7 @@ interface UnifiedSidebarProps {
   statuses: { id: string; name: string; color: string }[];
   fields: { id: string; name: string; type: string; required: boolean }[];
   onChangeStatus: (id: string) => void;
-  onChangeAssignee: (id: string) => void;
+  onChangeAssignees: (ids: string[]) => void;
   isEditing: boolean;
   isAssigneePending: boolean;
   renderFieldValue: (fieldId: string, value: unknown) => ReactNode;
@@ -673,7 +673,7 @@ function UnifiedSidebar({
   statuses,
   fields,
   onChangeStatus,
-  onChangeAssignee,
+  onChangeAssignees,
   isEditing,
   isAssigneePending,
   renderFieldValue,
@@ -752,12 +752,17 @@ function UnifiedSidebar({
 
         <div className="h-px bg-line my-1" />
 
-        <FieldRow label={t("ticketDetailLabelAssignee")}>
+        <FieldRow label={t("ticketDetailLabelAssignees")}>
           <UserPicker
+            multi
             users={slackUsers}
-            value={ticket.assigneeId ?? ""}
-            onChange={(v) => {
-              if (v !== (ticket.assigneeId ?? "")) onChangeAssignee(v);
+            value={ticket.assigneeIds}
+            onChange={(ids) => {
+              const before = ticket.assigneeIds;
+              const sameLength = before.length === ids.length;
+              const sameOrder =
+                sameLength && before.every((id, i) => id === ids[i]);
+              if (!sameOrder) onChangeAssignees(ids);
             }}
             disabled={isAssigneePending}
             placeholder={t("ticketDetailUnassigned")}

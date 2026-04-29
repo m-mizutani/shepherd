@@ -99,12 +99,18 @@ func (h *APIHandler) CreateTicket(w http.ResponseWriter, r *http.Request, worksp
 	}
 
 	var statusID types.StatusID
-	var assigneeID types.SlackUserID
+	var assigneeIDs []types.SlackUserID
 	if req.StatusId != nil {
 		statusID = types.StatusID(*req.StatusId)
 	}
-	if req.AssigneeId != nil {
-		assigneeID = types.SlackUserID(*req.AssigneeId)
+	if req.AssigneeIds != nil {
+		assigneeIDs = make([]types.SlackUserID, 0, len(*req.AssigneeIds))
+		for _, id := range *req.AssigneeIds {
+			if id == "" {
+				continue
+			}
+			assigneeIDs = append(assigneeIDs, types.SlackUserID(id))
+		}
 	}
 
 	fields := toModelFieldValues(req.Fields)
@@ -114,7 +120,7 @@ func (h *APIHandler) CreateTicket(w http.ResponseWriter, r *http.Request, worksp
 		description = *req.Description
 	}
 
-	ticket, err := h.ticketUC.Create(r.Context(), types.WorkspaceID(workspaceId), req.Title, description, statusID, assigneeID, fields)
+	ticket, err := h.ticketUC.Create(r.Context(), types.WorkspaceID(workspaceId), req.Title, description, statusID, assigneeIDs, fields)
 	if err != nil {
 		handleUseCaseError(r.Context(), w, err)
 		return
@@ -142,17 +148,23 @@ func (h *APIHandler) UpdateTicket(w http.ResponseWriter, r *http.Request, worksp
 	fields := toModelFieldValues(req.Fields)
 
 	var statusID *types.StatusID
-	var assigneeID *types.SlackUserID
+	var assigneeIDs *[]types.SlackUserID
 	if req.StatusId != nil {
 		sid := types.StatusID(*req.StatusId)
 		statusID = &sid
 	}
-	if req.AssigneeId != nil {
-		aid := types.SlackUserID(*req.AssigneeId)
-		assigneeID = &aid
+	if req.AssigneeIds != nil {
+		ids := make([]types.SlackUserID, 0, len(*req.AssigneeIds))
+		for _, id := range *req.AssigneeIds {
+			if id == "" {
+				continue
+			}
+			ids = append(ids, types.SlackUserID(id))
+		}
+		assigneeIDs = &ids
 	}
 
-	ticket, err := h.ticketUC.Update(r.Context(), types.WorkspaceID(workspaceId), types.TicketID(ticketId), req.Title, req.Description, statusID, assigneeID, fields)
+	ticket, err := h.ticketUC.Update(r.Context(), types.WorkspaceID(workspaceId), types.TicketID(ticketId), req.Title, req.Description, statusID, assigneeIDs, fields)
 	if err != nil {
 		handleUseCaseError(r.Context(), w, err)
 		return
@@ -245,22 +257,24 @@ func toTicketResponse(t *model.Ticket) Ticket {
 		})
 	}
 
+	assigneeIDs := make([]string, 0, len(t.AssigneeIDs))
+	for _, id := range t.AssigneeIDs {
+		assigneeIDs = append(assigneeIDs, string(id))
+	}
+
 	ticket := Ticket{
-		Id:        string(t.ID),
-		SeqNum:    t.SeqNum,
-		Title:     t.Title,
-		StatusId:  string(t.StatusID),
-		Fields:    fields,
-		CreatedAt: t.CreatedAt,
-		UpdatedAt: t.UpdatedAt,
+		Id:          string(t.ID),
+		SeqNum:      t.SeqNum,
+		Title:       t.Title,
+		StatusId:    string(t.StatusID),
+		AssigneeIds: assigneeIDs,
+		Fields:      fields,
+		CreatedAt:   t.CreatedAt,
+		UpdatedAt:   t.UpdatedAt,
 	}
 
 	if t.Description != "" {
 		ticket.Description = &t.Description
-	}
-	if t.AssigneeID != "" {
-		s := string(t.AssigneeID)
-		ticket.AssigneeId = &s
 	}
 	if t.ReporterSlackUserID != "" {
 		s := string(t.ReporterSlackUserID)

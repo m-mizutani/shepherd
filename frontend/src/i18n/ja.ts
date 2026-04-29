@@ -248,6 +248,8 @@ export const ja: Messages = {
   ticketDetailSaveChanges: "変更を保存",
   ticketDetailLabelStatus: "ステータス",
   ticketDetailLabelAssignee: "担当者",
+  ticketDetailLabelAssignees: "担当者",
+  ticketAssigneePlusMore: "他{count}名",
   ticketDetailLabelReporter: "起票者",
   ticketDetailLabelCreated: "作成",
   ticketDetailLabelUpdated: "更新",

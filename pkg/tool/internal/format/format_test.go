@@ -19,7 +19,7 @@ func TestTicket(t *testing.T) {
 		Title:               "boom",
 		Description:         "details",
 		StatusID:            "open",
-		AssigneeID:          "U-A",
+		AssigneeIDs:         []types.SlackUserID{"U-A", "U-B"},
 		ReporterSlackUserID: "U-R",
 		SlackChannelID:      "C-1",
 		SlackThreadTS:       "1.0",
@@ -33,6 +33,7 @@ func TestTicket(t *testing.T) {
 	gt.Equal(t, got["id"], "tk-1")
 	gt.Equal(t, got["seq_num"].(int64), int64(42))
 	gt.Equal(t, got["status_name"], "Open")
+	gt.Equal(t, got["assignees"].([]string), []string{"U-A", "U-B"})
 	fields := got["fields"].(map[string]any)
 	gt.Equal(t, fields["severity"], "high")
 	gt.Equal(t, got["created_at"], "2026-01-02T03:04:05Z")

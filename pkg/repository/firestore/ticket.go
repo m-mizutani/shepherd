@@ -128,7 +128,7 @@ func (r *ticketRepository) Delete(ctx context.Context, workspaceID types.Workspa
 	return nil
 }
 
-func (r *ticketRepository) FinalizeTriage(ctx context.Context, workspaceID types.WorkspaceID, ticketID types.TicketID, assignee *types.SlackUserID, history *model.TicketHistory) error {
+func (r *ticketRepository) FinalizeTriage(ctx context.Context, workspaceID types.WorkspaceID, ticketID types.TicketID, assignees *[]types.SlackUserID, history *model.TicketHistory) error {
 	if history == nil {
 		return goerr.New("history entry is required")
 	}
@@ -165,8 +165,12 @@ func (r *ticketRepository) FinalizeTriage(ctx context.Context, workspaceID types
 			{Path: "Triaged", Value: true},
 			{Path: "UpdatedAt", Value: time.Now()},
 		}
-		if assignee != nil {
-			updates = append(updates, firestore.Update{Path: "AssigneeID", Value: string(*assignee)})
+		if assignees != nil {
+			ids := make([]string, len(*assignees))
+			for i, id := range *assignees {
+				ids[i] = string(id)
+			}
+			updates = append(updates, firestore.Update{Path: "AssigneeIDs", Value: ids})
 		}
 		if err := tx.Update(ticketRef, updates); err != nil {
 			return goerr.Wrap(err, "failed to update ticket")

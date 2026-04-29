@@ -14,7 +14,7 @@ type Ticket struct {
 	Description         string
 	InitialMessage      string
 	StatusID            types.StatusID
-	AssigneeID          types.SlackUserID
+	AssigneeIDs         []types.SlackUserID
 	ReporterSlackUserID types.SlackUserID
 	SlackChannelID      types.SlackChannelID
 	SlackThreadTS       types.SlackThreadTS

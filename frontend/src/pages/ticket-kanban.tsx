@@ -23,7 +23,10 @@ const LANE_GAP = 14;
 type DragData = {
   ticketId: string;
   fromStatusId: string;
-  fromAssigneeId: string;
+  // The assignee lane the card was dragged from. Empty string means the
+  // unassigned lane. A ticket may render in multiple assignee lanes; this
+  // captures whichever one initiated the drag so self-drops are detected.
+  fromAssigneeLaneId: string;
 };
 
 function timeAgo(iso: string): string {
@@ -90,13 +93,13 @@ export function TicketKanbanView({
     mutationFn: async (vars: {
       ticketId: string;
       statusId: string;
-      assigneeId?: string;
+      assigneeIds?: string[];
       assigneeChange: boolean;
     }) => {
-      const body: { statusId?: string; assigneeId?: string } = {
+      const body: { statusId?: string; assigneeIds?: string[] } = {
         statusId: vars.statusId,
       };
-      if (vars.assigneeChange) body.assigneeId = vars.assigneeId ?? "";
+      if (vars.assigneeChange) body.assigneeIds = vars.assigneeIds ?? [];
       const { data, error } = await api.PATCH(
         "/api/v1/ws/{workspaceId}/tickets/{ticketId}",
         {
@@ -126,7 +129,7 @@ export function TicketKanbanView({
                     ...tk,
                     statusId: vars.statusId,
                     ...(vars.assigneeChange
-                      ? { assigneeId: vars.assigneeId || undefined }
+                      ? { assigneeIds: vars.assigneeIds ?? [] }
                       : {}),
                   }
                 : tk,
@@ -153,11 +156,12 @@ export function TicketKanbanView({
     const ids: string[] = [];
     const seen = new Set<string>();
     for (const tk of tickets) {
-      const id = tk.assigneeId;
-      if (!id) continue;
-      if (seen.has(id)) continue;
-      seen.add(id);
-      ids.push(id);
+      for (const id of tk.assigneeIds ?? []) {
+        if (!id) continue;
+        if (seen.has(id)) continue;
+        seen.add(id);
+        ids.push(id);
+      }
     }
     ids.sort();
     return ids;
@@ -232,14 +236,22 @@ export function TicketKanbanView({
             tickets={tickets}
             statuses={statuses}
             assignees={assignees}
-            onMove={(d, target) =>
+            onMove={(d, target) => {
+              const targetIds = target.laneAssigneeId
+                ? [target.laneAssigneeId]
+                : [];
+              const tk = tickets.find((x) => x.id === d.ticketId);
+              const before = tk?.assigneeIds ?? [];
+              const sameLength = before.length === targetIds.length;
+              const sameMembership =
+                sameLength && before.every((id, i) => id === targetIds[i]);
               move.mutate({
                 ticketId: d.ticketId,
                 statusId: target.statusId,
-                assigneeId: target.assigneeId,
-                assigneeChange: d.fromAssigneeId !== target.assigneeId,
-              })
-            }
+                assigneeIds: targetIds,
+                assigneeChange: !sameMembership,
+              });
+            }}
           />
         )}
       </div>
@@ -332,6 +344,10 @@ function BoardByStatus({
 }
 
 // ── Assignee swimlanes ──────────────────────────────
+//
+// Tickets with multiple assignees render once per lane they belong to.
+// Dropping a card onto a lane *replaces* its assignee list with that lane's
+// owner (or empties it for the Unassigned lane).
 function BoardByAssignee({
   workspaceId,
   tickets,
@@ -345,7 +361,7 @@ function BoardByAssignee({
   assignees: string[];
   onMove: (
     d: DragData,
-    target: { statusId: string; assigneeId: string },
+    target: { statusId: string; laneAssigneeId: string },
   ) => void;
 }) {
   const { t } = useTranslation();
@@ -389,7 +405,9 @@ function BoardByAssignee({
 
       {lanes.map((lane) => {
         const myCards = tickets.filter((tk) =>
-          lane.isUnassigned ? !tk.assigneeId : tk.assigneeId === lane.id,
+          lane.isUnassigned
+            ? !tk.assigneeIds || tk.assigneeIds.length === 0
+            : (tk.assigneeIds ?? []).includes(lane.id),
         );
         return (
           <div
@@ -438,12 +456,12 @@ function BoardByAssignee({
                     onDropTicket={(d) => {
                       if (
                         d.fromStatusId === s.id &&
-                        d.fromAssigneeId === lane.id
+                        d.fromAssigneeLaneId === lane.id
                       )
                         return;
                       onMove(d, {
                         statusId: s.id,
-                        assigneeId: lane.id,
+                        laneAssigneeId: lane.id,
                       });
                     }}
                   >
@@ -454,9 +472,10 @@ function BoardByAssignee({
                     ) : (
                       cards.map((tk) => (
                         <TicketCard
-                          key={tk.id}
+                          key={`${lane.id || "unassigned"}:${tk.id}`}
                           workspaceId={workspaceId}
                           ticket={tk}
+                          fromAssigneeLaneId={lane.id}
                         />
                       ))
                     )}
@@ -607,10 +626,15 @@ function TicketCard({
   workspaceId,
   ticket,
   showAssignee,
+  fromAssigneeLaneId,
 }: {
   workspaceId: string;
   ticket: Ticket;
   showAssignee?: boolean;
+  // When rendered inside an assignee lane, identifies which lane the drag
+  // originates from (empty string = Unassigned). Status-grouped boards leave
+  // this undefined; we fall back to the ticket's first assignee.
+  fromAssigneeLaneId?: string;
 }) {
   const navigate = useNavigate();
   const { t } = useTranslation();
@@ -624,7 +648,10 @@ function TicketCard({
         const data: DragData = {
           ticketId: ticket.id,
           fromStatusId: ticket.statusId,
-          fromAssigneeId: ticket.assigneeId ?? "",
+          fromAssigneeLaneId:
+            fromAssigneeLaneId !== undefined
+              ? fromAssigneeLaneId
+              : (ticket.assigneeIds ?? [])[0] ?? "",
         };
         e.dataTransfer.setData(DRAG_MIME, JSON.stringify(data));
         e.dataTransfer.effectAllowed = "move";
@@ -677,13 +704,20 @@ function TicketCard({
               <span className="w-8 shrink-0 text-[10.5px] font-medium text-ink-4 uppercase tracking-wide">
                 {t("ticketBoardAssigneePrefix")}
               </span>
-              {ticket.assigneeId ? (
-                <span className="min-w-0 truncate">
+              {ticket.assigneeIds && ticket.assigneeIds.length > 0 ? (
+                <span className="min-w-0 truncate inline-flex items-center gap-1.5">
                   <SlackUserName
                     workspaceId={workspaceId}
-                    userId={ticket.assigneeId}
+                    userId={ticket.assigneeIds[0]}
                     size="xs"
                   />
+                  {ticket.assigneeIds.length > 1 && (
+                    <span className="text-[10.5px] text-ink-3">
+                      {t("ticketAssigneePlusMore", {
+                        count: ticket.assigneeIds.length - 1,
+                      })}
+                    </span>
+                  )}
                 </span>
               ) : (
                 <span

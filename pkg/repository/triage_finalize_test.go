@@ -33,17 +33,19 @@ func TestFinalizeTriage_Assigned(t *testing.T) {
 		ctx := context.Background()
 		ws := types.WorkspaceID("ws-finalize-assigned")
 		tk := newTriageTicket(t, repo, ws)
-		assignee := types.SlackUserID("U123")
+		assignees := []types.SlackUserID{"U123", "U456"}
 
-		err := repo.Ticket().FinalizeTriage(ctx, ws, tk.ID, &assignee, &model.TicketHistory{
+		err := repo.Ticket().FinalizeTriage(ctx, ws, tk.ID, &assignees, &model.TicketHistory{
 			Action:    "triage_completed",
-			ChangedBy: assignee,
+			ChangedBy: assignees[0],
 		})
 		gt.NoError(t, err)
 
 		got := gt.R1(repo.Ticket().Get(ctx, ws, tk.ID)).NoError(t)
 		gt.True(t, got.Triaged)
-		gt.S(t, string(got.AssigneeID)).Equal("U123")
+		gt.A(t, got.AssigneeIDs).Length(2)
+		gt.S(t, string(got.AssigneeIDs[0])).Equal("U123")
+		gt.S(t, string(got.AssigneeIDs[1])).Equal("U456")
 
 		histories := gt.R1(repo.TicketHistory().List(ctx, ws, tk.ID)).NoError(t)
 		gt.N(t, len(histories)).Equal(1)
@@ -65,7 +67,7 @@ func TestFinalizeTriage_Unassigned(t *testing.T) {
 
 		got := gt.R1(repo.Ticket().Get(ctx, ws, tk.ID)).NoError(t)
 		gt.True(t, got.Triaged)
-		gt.S(t, string(got.AssigneeID)).Equal("") // assignee untouched
+		gt.A(t, got.AssigneeIDs).Length(0) // assignees untouched (nil pointer means leave alone)
 
 		histories := gt.R1(repo.TicketHistory().List(ctx, ws, tk.ID)).NoError(t)
 		gt.N(t, len(histories)).Equal(1)
@@ -77,15 +79,15 @@ func TestFinalizeTriage_Idempotent(t *testing.T) {
 		ctx := context.Background()
 		ws := types.WorkspaceID("ws-finalize-idempotent")
 		tk := newTriageTicket(t, repo, ws)
-		assignee := types.SlackUserID("U1")
+		assignees := []types.SlackUserID{"U1"}
 
 		// First call: should record one history.
-		gt.NoError(t, repo.Ticket().FinalizeTriage(ctx, ws, tk.ID, &assignee, &model.TicketHistory{
+		gt.NoError(t, repo.Ticket().FinalizeTriage(ctx, ws, tk.ID, &assignees, &model.TicketHistory{
 			Action: "triage_completed",
 		}))
 
 		// Second call on already-triaged ticket: must be a no-op (no extra history).
-		gt.NoError(t, repo.Ticket().FinalizeTriage(ctx, ws, tk.ID, &assignee, &model.TicketHistory{
+		gt.NoError(t, repo.Ticket().FinalizeTriage(ctx, ws, tk.ID, &assignees, &model.TicketHistory{
 			Action: "triage_completed_again",
 		}))
 

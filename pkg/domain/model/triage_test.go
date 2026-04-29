@@ -49,15 +49,14 @@ func validAskPlan() *model.TriagePlan {
 }
 
 func validCompletePlan() *model.TriagePlan {
-	uid := types.SlackUserID("U1")
 	return &model.TriagePlan{
 		Kind:    types.PlanComplete,
-		Message: "triageが完了しました",
+		Message: "triage completed",
 		Complete: &model.Complete{
 			Summary: "Investigation done",
 			Assignee: model.AssigneeDecision{
 				Kind:      types.AssigneeAssigned,
-				UserID:    &uid,
+				UserIDs:   []types.SlackUserID{"U1"},
 				Reasoning: "responsible for the affected service",
 			},
 		},
@@ -208,13 +207,12 @@ func TestAnswerIsValid(t *testing.T) {
 }
 
 func TestCompleteValidate(t *testing.T) {
-	uid := types.SlackUserID("U1")
 	base := func() *model.Complete {
 		return &model.Complete{
 			Summary: "summary",
 			Assignee: model.AssigneeDecision{
 				Kind:      types.AssigneeAssigned,
-				UserID:    &uid,
+				UserIDs:   []types.SlackUserID{"U1"},
 				Reasoning: "reason",
 			},
 		}
@@ -234,15 +232,26 @@ func TestCompleteValidate(t *testing.T) {
 }
 
 func TestAssigneeDecisionValidate(t *testing.T) {
-	uid := types.SlackUserID("U1")
-	t.Run("assigned ok", func(t *testing.T) {
+	t.Run("assigned single ok", func(t *testing.T) {
 		gt.NoError(t, (&model.AssigneeDecision{
-			Kind: types.AssigneeAssigned, UserID: &uid, Reasoning: "r",
+			Kind: types.AssigneeAssigned, UserIDs: []types.SlackUserID{"U1"}, Reasoning: "r",
 		}).Validate())
 	})
-	t.Run("assigned without user", func(t *testing.T) {
+	t.Run("assigned multiple ok", func(t *testing.T) {
+		gt.NoError(t, (&model.AssigneeDecision{
+			Kind:      types.AssigneeAssigned,
+			UserIDs:   []types.SlackUserID{"U1", "U2", "U3"},
+			Reasoning: "r",
+		}).Validate())
+	})
+	t.Run("assigned with empty list rejected", func(t *testing.T) {
 		gt.Error(t, (&model.AssigneeDecision{
-			Kind: types.AssigneeAssigned, UserID: nil, Reasoning: "r",
+			Kind: types.AssigneeAssigned, UserIDs: nil, Reasoning: "r",
+		}).Validate())
+	})
+	t.Run("assigned with empty id rejected", func(t *testing.T) {
+		gt.Error(t, (&model.AssigneeDecision{
+			Kind: types.AssigneeAssigned, UserIDs: []types.SlackUserID{"U1", ""}, Reasoning: "r",
 		}).Validate())
 	})
 	t.Run("unassigned ok", func(t *testing.T) {
@@ -250,14 +259,14 @@ func TestAssigneeDecisionValidate(t *testing.T) {
 			Kind: types.AssigneeUnassigned, Reasoning: "needs team review",
 		}).Validate())
 	})
-	t.Run("unassigned with user rejected", func(t *testing.T) {
+	t.Run("unassigned with users rejected", func(t *testing.T) {
 		gt.Error(t, (&model.AssigneeDecision{
-			Kind: types.AssigneeUnassigned, UserID: &uid, Reasoning: "r",
+			Kind: types.AssigneeUnassigned, UserIDs: []types.SlackUserID{"U1"}, Reasoning: "r",
 		}).Validate())
 	})
 	t.Run("missing reasoning", func(t *testing.T) {
 		gt.Error(t, (&model.AssigneeDecision{
-			Kind: types.AssigneeAssigned, UserID: &uid,
+			Kind: types.AssigneeAssigned, UserIDs: []types.SlackUserID{"U1"},
 		}).Validate())
 	})
 	t.Run("unknown kind", func(t *testing.T) {

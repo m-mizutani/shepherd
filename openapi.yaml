@@ -622,8 +622,10 @@ components:
           type: string
         statusId:
           type: string
-        assigneeId:
-          type: string
+        assigneeIds:
+          type: array
+          items:
+            type: string
         reporterSlackUserId:
           type: string
         slackChannelId:
@@ -640,7 +642,7 @@ components:
         updatedAt:
           type: string
           format: date-time
-      required: [id, seqNum, title, statusId, fields, createdAt, updatedAt]
+      required: [id, seqNum, title, statusId, assigneeIds, fields, createdAt, updatedAt]
 
     CreateTicketRequest:
       type: object
@@ -651,8 +653,10 @@ components:
           type: string
         statusId:
           type: string
-        assigneeId:
-          type: string
+        assigneeIds:
+          type: array
+          items:
+            type: string
         fields:
           type: array
           items:
@@ -668,8 +672,10 @@ components:
           type: string
         statusId:
           type: string
-        assigneeId:
-          type: string
+        assigneeIds:
+          type: array
+          items:
+            type: string
         fields:
           type: array
           items:

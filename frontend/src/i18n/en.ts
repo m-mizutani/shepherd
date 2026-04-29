@@ -247,6 +247,8 @@ export const en: Messages = {
   ticketDetailSaveChanges: "Save changes",
   ticketDetailLabelStatus: "Status",
   ticketDetailLabelAssignee: "Assignee",
+  ticketDetailLabelAssignees: "Assignees",
+  ticketAssigneePlusMore: "+{count} more",
   ticketDetailLabelReporter: "Reporter",
   ticketDetailLabelCreated: "Created",
   ticketDetailLabelUpdated: "Updated",

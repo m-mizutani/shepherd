@@ -51,8 +51,17 @@ func assigneeMentionText(comp *model.Complete) string {
 	if comp == nil {
 		return ""
 	}
-	if comp.Assignee.Kind == types.AssigneeAssigned && comp.Assignee.UserID != nil {
-		return fmt.Sprintf("<@%s>", string(*comp.Assignee.UserID))
+	if comp.Assignee.Kind == types.AssigneeAssigned && len(comp.Assignee.UserIDs) > 0 {
+		mentions := make([]string, 0, len(comp.Assignee.UserIDs))
+		for _, id := range comp.Assignee.UserIDs {
+			if id == "" {
+				continue
+			}
+			mentions = append(mentions, fmt.Sprintf("<@%s>", string(id)))
+		}
+		if len(mentions) > 0 {
+			return strings.Join(mentions, " ")
+		}
 	}
 	return "@channel"
 }

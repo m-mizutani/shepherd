@@ -247,6 +247,8 @@ export const msgKeys = {
   ticketDetailSaveChanges: "ticketDetailSaveChanges",
   ticketDetailLabelStatus: "ticketDetailLabelStatus",
   ticketDetailLabelAssignee: "ticketDetailLabelAssignee",
+  ticketDetailLabelAssignees: "ticketDetailLabelAssignees",
+  ticketAssigneePlusMore: "ticketAssigneePlusMore",
   ticketDetailLabelReporter: "ticketDetailLabelReporter",
   ticketDetailLabelCreated: "ticketDetailLabelCreated",
   ticketDetailLabelUpdated: "ticketDetailLabelUpdated",
