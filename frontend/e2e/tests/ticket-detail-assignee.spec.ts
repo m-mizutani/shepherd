@@ -193,4 +193,51 @@ test.describe("Ticket Assignee inline edit", () => {
     expect(after.assigneeId ?? "").toBe("");
     expect(after.title).toBe("Unassign Test");
   });
+
+  test("inline assignee change while in Edit mode does not close Edit mode or lose unsaved input", async ({
+    page,
+    request,
+  }) => {
+    const createRes = await request.post("/api/v1/ws/support/tickets", {
+      data: { title: "Mid-Edit Test", description: "original-desc" },
+    });
+    const ticket = await createRes.json();
+
+    await page.goto(`/ws/support/tickets/${ticket.id}`);
+    await expect(page.getByText("Mid-Edit Test")).toBeVisible();
+
+    // Enter Edit mode and stage unsaved changes in title + description.
+    await page.getByRole("button", { name: /^Edit$/ }).click();
+    const titleInput = page.locator("input").filter({ hasText: "" }).first();
+    await titleInput.fill("Mid-Edit Test (unsaved)");
+    await page.locator("textarea").first().fill("unsaved-desc");
+
+    // Inline-edit assignee while still in Edit mode.
+    await page.getByRole("button", { name: /Unassigned/i }).first().click();
+    const patchReq = page.waitForRequest(
+      (req) =>
+        req.method() === "PATCH" &&
+        req.url().includes(`/api/v1/ws/support/tickets/${ticket.id}`),
+    );
+    await page.getByRole("option", { name: "Alice" }).click();
+    expect(JSON.parse((await patchReq).postData() ?? "{}")).toEqual({
+      assigneeId: "U_ALICE",
+    });
+
+    // Save changes button must still be visible — Edit mode stayed open.
+    await expect(
+      page.getByRole("button", { name: /Save changes/ }),
+    ).toBeVisible();
+    // Unsaved title/description must still be present in the inputs.
+    await expect(titleInput).toHaveValue("Mid-Edit Test (unsaved)");
+    await expect(page.locator("textarea").first()).toHaveValue("unsaved-desc");
+
+    // Server-side: title/description still match the original (not yet saved).
+    const after = await request
+      .get(`/api/v1/ws/support/tickets/${ticket.id}`)
+      .then((r) => r.json());
+    expect(after.assigneeId).toBe("U_ALICE");
+    expect(after.title).toBe("Mid-Edit Test");
+    expect(after.description).toBe("original-desc");
+  });
 });

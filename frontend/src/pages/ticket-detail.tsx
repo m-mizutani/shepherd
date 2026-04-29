@@ -125,11 +125,15 @@ export default function TicketDetailPage() {
       if (error) throw error;
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({
         queryKey: ["ticket", workspaceId, ticketId],
       });
-      setIsEditing(false);
+      const isBulkSave =
+        variables.title !== undefined ||
+        variables.description !== undefined ||
+        variables.fields !== undefined;
+      if (isBulkSave) setIsEditing(false);
     },
   });
 
