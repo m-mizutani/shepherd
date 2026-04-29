@@ -234,14 +234,9 @@ func validatePlanAutoFill(plan *model.TriagePlan, autoFill []domainConfig.FieldD
 				goerr.V("field_id", f.ID))
 		}
 	}
-	for id := range values {
-		if _, known := defs[id]; !known {
-			// Tolerate ids that map to non-auto-fill fields: the LLM is
-			// allowed to volunteer those. Only flat-out unknown ids are
-			// rejected.
-			continue
-		}
-	}
+	// Extra ids that are not in the auto_fill set are tolerated: the LLM is
+	// allowed to volunteer values for non-auto-fill fields, and the JSON
+	// schema already constrains the shape we care about.
 	return nil
 }
 
