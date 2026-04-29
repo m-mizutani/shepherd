@@ -1,15 +1,23 @@
 package triage
 
-import "github.com/m-mizutani/gollem"
+import (
+	"github.com/m-mizutani/gollem"
+	domainConfig "github.com/m-mizutani/shepherd/pkg/domain/model/config"
+	"github.com/m-mizutani/shepherd/pkg/domain/types"
+)
 
 // triagePlanSchema is the JSON shape the LLM must return on every planner
 // turn. It mirrors model.TriagePlan: a discriminated union keyed on `kind`
 // where exactly one of `investigate` / `ask` / `complete` is populated.
 //
+// autoFill is the subset of the workspace schema's custom fields whose
+// AutoFill flag is set; the function uses it to constrain the
+// complete.suggested_fields object to typed, enum-bounded properties.
+//
 // Used with WithContentType(ContentTypeJSON) + WithResponseSchema so the
 // model's structured output lands in agent.Execute's *ExecuteResponse.Texts
 // already in the right shape — no tool-calling, no FunctionCall fishing.
-func triagePlanSchema() *gollem.Parameter {
+func triagePlanSchema(autoFill []domainConfig.FieldDefinition) *gollem.Parameter {
 	return &gollem.Parameter{
 		Title:       "TriagePlan",
 		Description: "Decision the planner makes for one triage turn. Set kind to exactly one of investigate / ask / complete and populate the matching payload (the other two payload fields must be omitted).",
@@ -29,7 +37,7 @@ func triagePlanSchema() *gollem.Parameter {
 			},
 			"investigate": investigateSchema(),
 			"ask":         askSchema(),
-			"complete":    completeSchema(),
+			"complete":    completeSchema(autoFill),
 		},
 	}
 }
@@ -133,7 +141,8 @@ func askSchema() *gollem.Parameter {
 	}
 }
 
-func completeSchema() *gollem.Parameter {
+func completeSchema(autoFill []domainConfig.FieldDefinition) *gollem.Parameter {
+
 	return &gollem.Parameter{
 		Type:        gollem.TypeObject,
 		Description: "Populated when kind=complete. Concludes triage with a hand-off summary.",
@@ -174,13 +183,83 @@ func completeSchema() *gollem.Parameter {
 					},
 				},
 			},
-			"suggested_fields": {
-				Type:        gollem.TypeObject,
-				Description: "Map of ticket field id -> suggested value.",
-				Properties:  map[string]*gollem.Parameter{},
-			},
+			"suggested_fields": suggestedFieldsSchema(autoFill),
 		},
 	}
+}
+
+// suggestedFieldsSchema returns the JSON schema constraining the
+// complete.suggested_fields object. When autoFill is non-empty, every entry
+// becomes a typed property and required entries are listed in Required.
+// When autoFill is empty the schema falls back to a free-form object so the
+// LLM keeps the ability to volunteer values for non-auto-fill fields.
+func suggestedFieldsSchema(autoFill []domainConfig.FieldDefinition) *gollem.Parameter {
+	props := make(map[string]*gollem.Parameter, len(autoFill))
+	for _, f := range autoFill {
+		p := autoFillFieldSchema(f)
+		p.Required = f.Required
+		props[f.ID] = p
+	}
+	return &gollem.Parameter{
+		Type:        gollem.TypeObject,
+		Description: "Map of ticket field id -> suggested value. Auto-fill fields listed in the system prompt MUST appear here with the value shape declared below.",
+		Properties:  props,
+	}
+}
+
+// autoFillFieldSchema renders a single FieldDefinition as the gollem schema
+// the LLM must satisfy. select / multi-select are constrained to the
+// configured option ids; date is constrained to ISO 8601.
+func autoFillFieldSchema(f domainConfig.FieldDefinition) *gollem.Parameter {
+	desc := f.Description
+	if desc == "" {
+		desc = f.Name
+	}
+	switch f.Type {
+	case types.FieldTypeSelect:
+		return &gollem.Parameter{
+			Type:        gollem.TypeString,
+			Description: desc,
+			Enum:        optionIDs(f.Options),
+		}
+	case types.FieldTypeMultiSelect:
+		return &gollem.Parameter{
+			Type:        gollem.TypeArray,
+			Description: desc,
+			Items: &gollem.Parameter{
+				Type: gollem.TypeString,
+				Enum: optionIDs(f.Options),
+			},
+		}
+	case types.FieldTypeNumber:
+		return &gollem.Parameter{Type: gollem.TypeNumber, Description: desc}
+	case types.FieldTypeDate:
+		return &gollem.Parameter{
+			Type:        gollem.TypeString,
+			Description: desc + " (format YYYY-MM-DD)",
+			Pattern:     `^\d{4}-\d{2}-\d{2}$`,
+		}
+	case types.FieldTypeUser:
+		return &gollem.Parameter{Type: gollem.TypeString, Description: desc + " (Slack user id, e.g. U123ABC)"}
+	case types.FieldTypeMultiUser:
+		return &gollem.Parameter{
+			Type:        gollem.TypeArray,
+			Description: desc + " (array of Slack user ids)",
+			Items:       &gollem.Parameter{Type: gollem.TypeString},
+		}
+	case types.FieldTypeURL:
+		return &gollem.Parameter{Type: gollem.TypeString, Description: desc + " (absolute URL)"}
+	default:
+		return &gollem.Parameter{Type: gollem.TypeString, Description: desc}
+	}
+}
+
+func optionIDs(opts []domainConfig.FieldOption) []string {
+	out := make([]string, 0, len(opts))
+	for _, o := range opts {
+		out = append(out, o.ID)
+	}
+	return out
 }
 
 func intPtr(v int) *int { return &v }

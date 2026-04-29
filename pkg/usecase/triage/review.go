@@ -122,7 +122,7 @@ func (u *UseCase) HandleReviewSubmit(ctx context.Context, ticketID types.TicketI
 	if err := u.executor.finalizeComplete(ctx, ticket, plan.Complete); err != nil {
 		return goerr.Wrap(err, "finalize complete from review submit")
 	}
-	u.deactivateReviewMessage(ctx, channelID, messageTS, plan.Complete, slackService.ReviewActionedSubmitted, types.SlackUserID(actorID))
+	u.deactivateReviewMessage(ctx, ticket, channelID, messageTS, plan.Complete, slackService.ReviewActionedSubmitted, types.SlackUserID(actorID), u.workspaceSchema(wsID), ticket.FieldValues)
 	return u.postHandoff(ctx, ticket, plan.Complete)
 }
 
@@ -208,7 +208,7 @@ func (u *UseCase) HandleReviewEditSubmit(ctx context.Context, ticketID types.Tic
 		if err := u.executor.finalizeComplete(ctx, t, editedCopy); err != nil {
 			return goerr.Wrap(err, "finalize complete from edit submit")
 		}
-		u.deactivateReviewMessage(ctx, channelCopy, messageTSCopy, editedCopy, slackService.ReviewActionedSubmitted, types.SlackUserID(actorCopy))
+		u.deactivateReviewMessage(ctx, t, channelCopy, messageTSCopy, editedCopy, slackService.ReviewActionedSubmitted, types.SlackUserID(actorCopy), u.workspaceSchema(wsIDCopy), t.FieldValues)
 		return u.postHandoff(ctx, t, editedCopy)
 	})
 	return nil, nil
@@ -251,10 +251,10 @@ func (u *UseCase) HandleReviewReinvestigate(ctx context.Context, ticketID types.
 	// history is what the buttons referenced; reuse it for the body so the
 	// rendered content stays accurate.
 	if plan, err := loadLatestTriagePlan(ctx, u.executor.historyRepo, wsID, ticketID); err == nil && plan != nil && plan.Complete != nil {
-		u.deactivateReviewMessage(ctx, channelID, messageTS, plan.Complete, slackService.ReviewActionedReinvestigate, types.SlackUserID(actorID))
+		u.deactivateReviewMessage(ctx, ticket, channelID, messageTS, plan.Complete, slackService.ReviewActionedReinvestigate, types.SlackUserID(actorID), u.workspaceSchema(wsID), ticket.FieldValues)
 	}
 
-	blocks := slackService.BuildReviewReinvestigatingBlocks(ctx, instruction)
+	blocks := slackService.BuildReviewReinvestigatingBlocks(ctx, u.ticketRef(ticket), instruction)
 	if _, err := u.executor.slack.PostThreadBlocks(ctx, channelID, string(ticket.SlackThreadTS), blocks); err != nil {
 		// Best effort: log and continue. The planner restart is the load-bearing
 		// effect; the follow-up message is informational.
@@ -273,7 +273,7 @@ func (u *UseCase) HandleReviewReinvestigate(ctx context.Context, ticketID types.
 // finalize; we surface them to errutil via the caller's return.
 func (u *UseCase) postHandoff(ctx context.Context, ticket *model.Ticket, comp *model.Complete) error {
 	message := u.executor.generateHandoffMessage(ctx, comp)
-	blocks := slackService.BuildHandoffMessageBlocks(ctx, message)
+	blocks := slackService.BuildHandoffMessageBlocks(ctx, u.ticketRef(ticket), message)
 	if _, err := u.executor.slack.PostThreadBlocks(ctx, string(ticket.SlackChannelID), string(ticket.SlackThreadTS), blocks); err != nil {
 		return goerr.Wrap(err, "post triage hand-off message")
 	}
@@ -284,11 +284,11 @@ func (u *UseCase) postHandoff(ctx context.Context, ticket *model.Ticket, comp *m
 // its buttons disappear once anyone has actioned it. Failures are logged and
 // swallowed: the message-update failing is annoying but not load-bearing — the
 // idempotency check (Triaged flag) still protects against duplicate finalises.
-func (u *UseCase) deactivateReviewMessage(ctx context.Context, channelID, messageTS string, comp *model.Complete, kind slackService.ReviewActionedKind, actor types.SlackUserID) {
+func (u *UseCase) deactivateReviewMessage(ctx context.Context, ticket *model.Ticket, channelID, messageTS string, comp *model.Complete, kind slackService.ReviewActionedKind, actor types.SlackUserID, schema *domainConfig.FieldSchema, fieldValues map[string]model.FieldValue) {
 	if messageTS == "" {
 		return
 	}
-	blocks := slackService.BuildReviewActionedBlocks(ctx, comp, kind, actor)
+	blocks := slackService.BuildReviewActionedBlocks(ctx, u.ticketRef(ticket), comp, kind, actor, schema, fieldValues)
 	if err := u.executor.slack.UpdateMessage(ctx, channelID, messageTS, blocks); err != nil {
 		logging.From(ctx).Warn("failed to deactivate review message",
 			slog.String("error", err.Error()),
@@ -375,13 +375,16 @@ func applyEditModalState(ctx context.Context, base *model.Complete, schema *doma
 	}
 
 	fieldValues := make(map[string]model.FieldValue, len(schema.Fields))
-	suggested := make(map[string]string, len(schema.Fields))
+	suggested := make(map[string]any, len(schema.Fields))
 	var errs ReviewFieldErrors
 
 	for _, f := range schema.Fields {
 		var act *slackgo.BlockAction
 		if state != nil {
-			if v, ok := lookupAction(state, f.ID, slackService.TriageReviewFieldValueAction); ok {
+			// action_id mirrors the per-field encoding used in
+			// buildFieldInputBlock: "field_value::<id>".
+			actionID := slackService.TriageReviewFieldValueAction + "_" + f.ID
+			if v, ok := lookupAction(state, f.ID, actionID); ok {
 				act = v
 			}
 		}

@@ -52,7 +52,8 @@ id = "priority"
 name = "Priority"
 type = "select"
 required = true
-description = "Ticket priority level"
+auto_fill = true
+description = "Ticket priority level. Auto-filled by the planner during triage."
 
   [[fields.options]]
   id = "high"

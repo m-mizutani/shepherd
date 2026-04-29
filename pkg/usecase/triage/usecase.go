@@ -8,6 +8,7 @@ import (
 
 	"github.com/m-mizutani/goerr/v2"
 	"github.com/m-mizutani/shepherd/pkg/domain/model"
+	configmodel "github.com/m-mizutani/shepherd/pkg/domain/model/config"
 	"github.com/m-mizutani/shepherd/pkg/domain/types"
 	slackService "github.com/m-mizutani/shepherd/pkg/service/slack"
 	"github.com/m-mizutani/shepherd/pkg/utils/async"
@@ -49,11 +50,36 @@ func (r *RegistryResolver) ResolveWorkspace(channelID string) (types.WorkspaceID
 	return entry.Workspace.ID, true
 }
 
+// WorkspaceSchema lets the review-edit path discover the workspace's custom
+// field schema through the same registry the channel resolution goes
+// through. Without this, workspaceSchema's type assertion on u.registry
+// silently returns nil and the Edit modal renders without any custom-field
+// inputs even when the workspace has fields configured.
+func (r *RegistryResolver) WorkspaceSchema(ws types.WorkspaceID) *configmodel.FieldSchema {
+	if r == nil || r.Registry == nil {
+		return nil
+	}
+	entry, ok := r.Registry.Get(ws)
+	if !ok {
+		return nil
+	}
+	return entry.FieldSchema
+}
+
 // NewUseCase builds a triage UseCase around an executor. registry is used
 // by the HTTP interaction handler to map a Slack interaction back to its
 // workspace before the submission is processed.
 func NewUseCase(executor *PlanExecutor, registry ChannelResolver) *UseCase {
 	return &UseCase{executor: executor, registry: registry}
+}
+
+// ticketRef forwards to the executor's TicketRef builder so review-flow
+// helpers in the UseCase produce the same badge as the planner-driven path.
+func (u *UseCase) ticketRef(ticket *model.Ticket) slackService.TicketRef {
+	if u == nil || u.executor == nil {
+		return ticketRefFromTicket("", ticket)
+	}
+	return u.executor.ticketRef(ticket)
 }
 
 // resolveTicket maps a Slack channel id + ticket id to a loaded ticket. It
@@ -80,10 +106,15 @@ func (u *UseCase) resolveTicket(ctx context.Context, channelID string, ticketID 
 
 // invalidateForm replaces the question/recovery message with the
 // "no longer valid" notice. Used when the interaction targets a ticket that
-// has gone away or whose channel mapping was removed.
-func (u *UseCase) invalidateForm(ctx context.Context, channelID, messageTS string) {
+// has gone away or whose channel mapping was removed. ticket may be nil
+// when the resolution failed; in that case the badge is omitted.
+func (u *UseCase) invalidateForm(ctx context.Context, ticket *model.Ticket, channelID, messageTS string) {
+	ref := slackService.TicketRef{}
+	if ticket != nil {
+		ref = u.ticketRef(ticket)
+	}
 	if err := u.executor.slack.UpdateMessage(ctx, channelID, messageTS,
-		slackService.BuildAskInvalidatedBlocks(ctx)); err != nil {
+		slackService.BuildAskInvalidatedBlocks(ctx, ref)); err != nil {
 		logging.From(ctx).Warn("failed to invalidate form message",
 			slog.String("error", err.Error()))
 	}
@@ -121,7 +152,7 @@ func (u *UseCase) HandleSubmit(ctx context.Context, sub Submission) error {
 		return goerr.Wrap(err, "resolve ticket")
 	}
 	if ticket == nil || ticket.Triaged {
-		u.invalidateForm(ctx, sub.ChannelID, sub.MessageTS)
+		u.invalidateForm(ctx, ticket, sub.ChannelID, sub.MessageTS)
 		return nil
 	}
 
@@ -130,7 +161,7 @@ func (u *UseCase) HandleSubmit(ctx context.Context, sub Submission) error {
 		return goerr.Wrap(err, "load latest plan")
 	}
 	if plan == nil || plan.Kind != types.PlanAsk || plan.Ask == nil {
-		u.invalidateForm(ctx, sub.ChannelID, sub.MessageTS)
+		u.invalidateForm(ctx, ticket, sub.ChannelID, sub.MessageTS)
 		return nil
 	}
 
@@ -139,7 +170,7 @@ func (u *UseCase) HandleSubmit(ctx context.Context, sub Submission) error {
 		return goerr.Wrap(err, "check waiting state")
 	}
 	if !waiting {
-		u.invalidateForm(ctx, sub.ChannelID, sub.MessageTS)
+		u.invalidateForm(ctx, ticket, sub.ChannelID, sub.MessageTS)
 		return nil
 	}
 
@@ -148,10 +179,11 @@ func (u *UseCase) HandleSubmit(ctx context.Context, sub Submission) error {
 		return goerr.Wrap(err, "match submission to questions")
 	}
 
+	ref := u.ticketRef(ticket)
 	if !allAnswersValid(answers, plan.Ask) {
 		// Re-render the form with an inline validation banner so the
 		// reporter can fix and resubmit.
-		blocks := slackService.BuildAskValidationErrorBlocks(ctx, ticket.ID, plan.Ask, plan.Message)
+		blocks := slackService.BuildAskValidationErrorBlocks(ctx, ref, plan.Ask, plan.Message)
 		if err := u.executor.slack.UpdateMessage(ctx, sub.ChannelID, sub.MessageTS, blocks); err != nil {
 			return goerr.Wrap(err, "post validation error")
 		}
@@ -164,7 +196,7 @@ func (u *UseCase) HandleSubmit(ctx context.Context, sub Submission) error {
 	}
 
 	if err := u.executor.slack.UpdateMessage(ctx, sub.ChannelID, sub.MessageTS,
-		slackService.BuildAskAnsweredBlocks(ctx, plan.Ask, answers, plan.Message)); err != nil {
+		slackService.BuildAskAnsweredBlocks(ctx, ref, plan.Ask, answers, plan.Message)); err != nil {
 		// non-fatal; continue to resume the loop
 		logger.Warn("failed to update ask message", slog.String("error", err.Error()))
 	}
@@ -292,12 +324,12 @@ func (u *UseCase) HandleRetry(ctx context.Context, ticketID types.TicketID, chan
 	}
 	if ticket == nil || ticket.Triaged {
 		// Already-finished or unknown tickets just have the button cleared.
-		u.invalidateForm(ctx, channelID, messageTS)
+		u.invalidateForm(ctx, ticket, channelID, messageTS)
 		return nil
 	}
 
 	if err := u.executor.slack.UpdateMessage(ctx, channelID, messageTS,
-		slackService.BuildRetryQueuedBlocks(ctx)); err != nil {
+		slackService.BuildRetryQueuedBlocks(ctx, u.ticketRef(ticket))); err != nil {
 		logger.Warn("failed to update retry message", slog.String("error", err.Error()))
 	}
 

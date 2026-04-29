@@ -2,6 +2,7 @@ package slack
 
 import (
 	"context"
+	"errors"
 
 	"github.com/m-mizutani/goerr/v2"
 	"github.com/m-mizutani/shepherd/pkg/utils/errutil"
@@ -86,6 +87,22 @@ func (c *Client) UpdateMessage(ctx context.Context, channelID, messageTS string,
 func (c *Client) OpenView(ctx context.Context, triggerID string, view slackgo.ModalViewRequest) (*slackgo.ViewResponse, error) {
 	resp, err := c.api.OpenViewContext(ctx, triggerID, view)
 	if err != nil {
+		// Slack returns per-field reasons via ResponseMetadata.Messages and
+		// per-block reasons via Errors when views.open fails. slackgo's
+		// default Error() prints only the top-level code (e.g. "invalid_arguments"),
+		// so debugging is impossible without surfacing these. Wrap them as
+		// structured values on the goerr so they land in the operator logs.
+		var slackErr slackgo.SlackErrorResponse
+		if errors.As(err, &slackErr) {
+			return nil, goerr.Wrap(err, "failed to open slack view",
+				goerr.V("trigger_id", triggerID),
+				goerr.V("callback_id", view.CallbackID),
+				goerr.V("slack_err", slackErr.Err),
+				goerr.V("slack_messages", slackErr.ResponseMetadata.Messages),
+				goerr.V("slack_errors", slackErr.Errors),
+				goerr.Tag(errutil.TagSlackError),
+			)
+		}
 		return nil, goerr.Wrap(err, "failed to open slack view",
 			goerr.V("trigger_id", triggerID),
 			goerr.V("callback_id", view.CallbackID),

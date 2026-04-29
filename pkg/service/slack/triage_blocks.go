@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/m-mizutani/shepherd/pkg/domain/model"
+	domainConfig "github.com/m-mizutani/shepherd/pkg/domain/model/config"
 	"github.com/m-mizutani/shepherd/pkg/domain/types"
 	"github.com/m-mizutani/shepherd/pkg/utils/i18n"
 	slackgo "github.com/slack-go/slack"
@@ -55,8 +56,11 @@ type SubtaskProgress struct {
 
 // BuildProgressBlocks renders the progress message for an Investigate
 // iteration: a header carrying the planner's reporter-facing message, a
-// divider, and one context block per subtask.
-func BuildProgressBlocks(ctx context.Context, headerMessage string, subtasks []SubtaskProgress) []slackgo.Block {
+// divider, and one context block per subtask. The ticket reference is
+// rendered as Inactive — the per-subtask state icons (⏳🔄✅❌) already
+// carry the "currently running" signal, and reserving the Active 🎫 form
+// for messages that demand reader attention keeps long threads scannable.
+func BuildProgressBlocks(ctx context.Context, ref TicketRef, headerMessage string, subtasks []SubtaskProgress) []slackgo.Block {
 	header := slackgo.NewSectionBlock(
 		slackgo.NewTextBlockObject(slackgo.MarkdownType,
 			i18n.From(ctx).T(i18n.MsgTriageProgressHeader, "message", headerMessage),
@@ -74,7 +78,7 @@ func BuildProgressBlocks(ctx context.Context, headerMessage string, subtasks []S
 			),
 		)
 	}
-	return blocks
+	return prependTicketRef(ctx, ref, TicketRefStateInactive, blocks)
 }
 
 func renderSubtaskLine(ctx context.Context, st SubtaskProgress) string {
@@ -99,11 +103,12 @@ func renderSubtaskLine(ctx context.Context, st SubtaskProgress) string {
 	}
 }
 
-// BuildAskBlocks renders the question form: a header carrying the planner's
-// reporter-facing message, one input section per question, and a final
-// submit button. block_id of each input section embeds the question id so
-// the submission payload can be matched back via state.values.
-func BuildAskBlocks(ctx context.Context, ticketID types.TicketID, ask *model.Ask, headerMessage string) []slackgo.Block {
+// BuildAskBlocks renders the question form: the shared ticket badge, a
+// header carrying the planner's reporter-facing message, one input section
+// per question, and a final submit button. block_id of each input section
+// embeds the question id so the submission payload can be matched back via
+// state.values.
+func BuildAskBlocks(ctx context.Context, ref TicketRef, ask *model.Ask, headerMessage string) []slackgo.Block {
 	loc := i18n.From(ctx)
 	blocks := []slackgo.Block{
 		slackgo.NewSectionBlock(
@@ -176,14 +181,17 @@ func BuildAskBlocks(ctx context.Context, ticketID types.TicketID, ask *model.Ask
 	// Submit button
 	btn := slackgo.NewButtonBlockElement(
 		TriageSubmitActionID,
-		string(ticketID),
+		string(ref.ID),
 		slackgo.NewTextBlockObject(slackgo.PlainTextType,
 			loc.T(i18n.MsgTriageAskSubmitButton),
 			false, false),
 	).WithStyle(slackgo.StylePrimary)
 	blocks = append(blocks, slackgo.NewActionBlock("triage_actions", btn))
 
-	return blocks
+	// Active: a live form awaiting the reporter's input is the ticket's
+	// current state until they hit Submit (which chat.update's this message
+	// to the Inactive AskAnswered form).
+	return prependTicketRef(ctx, ref, TicketRefStateActive, blocks)
 }
 
 // BuildAskAnsweredBlocks rebuilds the form-equivalent message after a
@@ -193,7 +201,7 @@ func BuildAskBlocks(ctx context.Context, ticketID types.TicketID, ask *model.Ask
 // omitted — once answered, the form is read-only — but the questions and
 // answers stay visible so the thread retains the full Q&A trail rather than
 // collapsing to a single "thanks" line.
-func BuildAskAnsweredBlocks(ctx context.Context, ask *model.Ask, answers []model.Answer, headerMessage string) []slackgo.Block {
+func BuildAskAnsweredBlocks(ctx context.Context, ref TicketRef, ask *model.Ask, answers []model.Answer, headerMessage string) []slackgo.Block {
 	loc := i18n.From(ctx)
 	blocks := []slackgo.Block{
 		slackgo.NewSectionBlock(
@@ -245,7 +253,9 @@ func BuildAskAnsweredBlocks(ctx context.Context, ask *model.Ask, answers []model
 				false, false),
 		),
 	)
-	return blocks
+	// Inactive: the form has been answered; the live state is whatever
+	// planner output follows.
+	return prependTicketRef(ctx, ref, TicketRefStateInactive, blocks)
 }
 
 func renderAnswerBody(loc i18n.Translator, ans model.Answer, choiceLabels map[types.ChoiceID]string) string {
@@ -269,8 +279,8 @@ func renderAnswerBody(loc i18n.Translator, ans model.Answer, choiceLabels map[ty
 // BuildAskInvalidatedBlocks replaces the question form when the submission
 // arrives after the form is no longer the latest pending Ask (e.g. the LLM
 // has already moved on).
-func BuildAskInvalidatedBlocks(ctx context.Context) []slackgo.Block {
-	return []slackgo.Block{
+func BuildAskInvalidatedBlocks(ctx context.Context, ref TicketRef) []slackgo.Block {
+	blocks := []slackgo.Block{
 		slackgo.NewSectionBlock(
 			slackgo.NewTextBlockObject(slackgo.MarkdownType,
 				i18n.From(ctx).T(i18n.MsgTriageAskInvalidated),
@@ -278,28 +288,48 @@ func BuildAskInvalidatedBlocks(ctx context.Context) []slackgo.Block {
 			nil, nil,
 		),
 	}
+	// Inactive: the original form is no longer the live state.
+	return prependTicketRef(ctx, ref, TicketRefStateInactive, blocks)
 }
 
 // BuildAskValidationErrorBlocks rebuilds the question form together with an
 // inline error notice so the reporter can adjust their input and resubmit.
-func BuildAskValidationErrorBlocks(ctx context.Context, ticketID types.TicketID, ask *model.Ask, headerMessage string) []slackgo.Block {
-	blocks := BuildAskBlocks(ctx, ticketID, ask, headerMessage)
+// The form remains action-required (the reporter still has to submit), so
+// BuildAskBlocks already prepends the Active ticket reference; we only
+// splice the validation banner in below the leading title + header section
+// pair so the reporter sees it immediately on re-render.
+func BuildAskValidationErrorBlocks(ctx context.Context, ref TicketRef, ask *model.Ask, headerMessage string) []slackgo.Block {
+	blocks := BuildAskBlocks(ctx, ref, ask, headerMessage)
 	errorBlock := slackgo.NewContextBlock("triage_error",
 		slackgo.NewTextBlockObject(slackgo.MarkdownType,
 			"⚠️ "+i18n.From(ctx).T(i18n.MsgTriageAskValidationError),
 			false, false),
 	)
-	// Insert validation banner just under the header (index 1, before divider).
+	// BuildAskBlocks returns [ticketRef?, askHeader, divider, …]. When ref
+	// is empty (no SeqNum) the leading ticketRef block is omitted, so we
+	// scope the leading prefix length to the ref's presence. The validation
+	// banner is then spliced after the prefix so it lands directly below
+	// the ask header section without disturbing the body.
+	leading := 1
+	if ref.SeqNum != 0 {
+		leading = 2
+	}
+	if len(blocks) < leading {
+		leading = len(blocks)
+	}
 	out := make([]slackgo.Block, 0, len(blocks)+1)
-	out = append(out, blocks[0], errorBlock)
-	out = append(out, blocks[1:]...)
+	out = append(out, blocks[:leading]...)
+	out = append(out, errorBlock)
+	out = append(out, blocks[leading:]...)
 	return out
 }
 
 // BuildCompleteBlocks renders the hand-off summary message. When
 // AssigneeDecision is Assigned, the message mentions the user; when
-// Unassigned, it explains why no individual was picked.
-func BuildCompleteBlocks(ctx context.Context, comp *model.Complete) []slackgo.Block {
+// Unassigned, it explains why no individual was picked. schema +
+// fieldValues, when non-nil/non-empty, render the ticket's persisted
+// custom field values inline so the assignee sees them on the hand-off.
+func BuildCompleteBlocks(ctx context.Context, ref TicketRef, comp *model.Complete, schema *domainConfig.FieldSchema, fieldValues map[string]model.FieldValue) []slackgo.Block {
 	loc := i18n.From(ctx)
 
 	var headerKey i18n.MsgKey
@@ -357,7 +387,10 @@ func BuildCompleteBlocks(ctx context.Context, comp *model.Complete) []slackgo.Bl
 			sectionLabeled(loc.T(i18n.MsgTriageCompleteSectionSummary), comp.Description),
 		)
 	}
-	return blocks
+	blocks = append(blocks, fieldValuesBlocks(ctx, schema, fieldValues)...)
+	// Active: terminal hand-off summary on the auto-finalise path is the
+	// ticket's live state.
+	return prependTicketRef(ctx, ref, TicketRefStateActive, blocks)
 }
 
 // BuildFailedBlocks renders the recovery message posted when the triage
@@ -365,7 +398,7 @@ func BuildCompleteBlocks(ctx context.Context, comp *model.Complete) []slackgo.Bl
 // message includes the error summary and a retry button keyed to the ticket
 // id; the HTTP interactions handler dispatches that button to
 // UseCase.HandleRetry.
-func BuildFailedBlocks(ctx context.Context, ticketID types.TicketID, errMessage string) []slackgo.Block {
+func BuildFailedBlocks(ctx context.Context, ref TicketRef, errMessage string) []slackgo.Block {
 	loc := i18n.From(ctx)
 	blocks := []slackgo.Block{
 		slackgo.NewHeaderBlock(slackgo.NewTextBlockObject(
@@ -380,19 +413,21 @@ func BuildFailedBlocks(ctx context.Context, ticketID types.TicketID, errMessage 
 	}
 	btn := slackgo.NewButtonBlockElement(
 		TriageRetryActionID,
-		string(ticketID),
+		string(ref.ID),
 		slackgo.NewTextBlockObject(slackgo.PlainTextType,
 			loc.T(i18n.MsgTriageFailedRetryButton),
 			false, false),
 	).WithStyle(slackgo.StylePrimary)
 	blocks = append(blocks, slackgo.NewActionBlock("triage_retry_actions", btn))
-	return blocks
+	// Active: a failure with a Retry button is action-required, the ticket's
+	// current live state until someone clicks Retry.
+	return prependTicketRef(ctx, ref, TicketRefStateActive, blocks)
 }
 
 // BuildRetryQueuedBlocks replaces the failure message after the retry button
 // is clicked, so subsequent clicks do not re-queue the planner.
-func BuildRetryQueuedBlocks(ctx context.Context) []slackgo.Block {
-	return []slackgo.Block{
+func BuildRetryQueuedBlocks(ctx context.Context, ref TicketRef) []slackgo.Block {
+	blocks := []slackgo.Block{
 		slackgo.NewSectionBlock(
 			slackgo.NewTextBlockObject(slackgo.MarkdownType,
 				i18n.From(ctx).T(i18n.MsgTriageRetryQueued),
@@ -400,14 +435,17 @@ func BuildRetryQueuedBlocks(ctx context.Context) []slackgo.Block {
 			nil, nil,
 		),
 	}
+	// Inactive: transitional notice; the resumed planner output is the next
+	// live state.
+	return prependTicketRef(ctx, ref, TicketRefStateInactive, blocks)
 }
 
 // BuildAbortedBlocks renders the message posted when triage is aborted
 // (cap exceeded, panic, permanent error). It records the abort reason so
 // operators can investigate.
-func BuildAbortedBlocks(ctx context.Context, reason string) []slackgo.Block {
+func BuildAbortedBlocks(ctx context.Context, ref TicketRef, reason string) []slackgo.Block {
 	loc := i18n.From(ctx)
-	return []slackgo.Block{
+	blocks := []slackgo.Block{
 		slackgo.NewHeaderBlock(slackgo.NewTextBlockObject(
 			slackgo.PlainTextType, loc.T(i18n.MsgTriageAbortedHeader), false, false,
 		)),
@@ -418,6 +456,8 @@ func BuildAbortedBlocks(ctx context.Context, reason string) []slackgo.Block {
 			nil, nil,
 		),
 	}
+	// Active: terminal aborted state — final live message for this ticket.
+	return prependTicketRef(ctx, ref, TicketRefStateActive, blocks)
 }
 
 func sectionLabeled(label, body string) slackgo.Block {
