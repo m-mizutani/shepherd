@@ -28,10 +28,10 @@ const (
 	// Modal field action_ids. Per-question custom-field block_ids are set to
 	// the FieldDefinition.ID at render time; their action_ids share this
 	// constant so the parser can look them up uniformly.
-	TriageReviewTitleBlockID      = "triage_review_title"
-	TriageReviewTitleActionID     = "triage_review_title_input"
-	TriageReviewSummaryBlockID    = "triage_review_summary"
-	TriageReviewSummaryActionID   = "triage_review_summary_input"
+	TriageReviewTitleBlockID         = "triage_review_title"
+	TriageReviewTitleActionID        = "triage_review_title_input"
+	TriageReviewDescriptionBlockID   = "triage_review_description"
+	TriageReviewDescriptionActionID  = "triage_review_description_input"
 	TriageReviewAssigneeBlockID   = "triage_review_assignee"
 	TriageReviewAssigneeActionID  = "triage_review_assignee_input"
 	TriageReviewFieldValueAction  = "field_value"
@@ -194,7 +194,7 @@ func BuildReviewEditModal(ctx context.Context, meta TriageReviewModalMetadata, c
 
 	blocks := []slackgo.Block{
 		buildTitleInputBlock(ctx, comp.Title),
-		buildSummaryInputBlock(ctx, comp.Summary),
+		buildDescriptionInputBlock(ctx, comp.Description),
 		buildAssigneeInputBlock(ctx, comp.Assignee),
 	}
 
@@ -267,9 +267,9 @@ func BuildReviewReinvestigateModal(ctx context.Context, meta TriageReviewModalMe
 // so the Review and Submitted messages mirror the legacy hand-off summary.
 //
 // Title (when present) is rendered as a sub-header at the top so the reader
-// sees the same headline that ticket.Title carries. Summary is rendered as
-// the body section labelled with MsgTriageCompleteSectionSummary; finalize
-// also writes Summary into ticket.Description.
+// sees the same headline that ticket.Title carries. Description is rendered
+// as the body section labelled with MsgTriageCompleteSectionSummary; finalize
+// also writes Description into ticket.Description.
 func completeBodyBlocks(ctx context.Context, comp *model.Complete) []slackgo.Block {
 	loc := i18n.From(ctx)
 	var blocks []slackgo.Block
@@ -311,8 +311,8 @@ func completeBodyBlocks(ctx context.Context, comp *model.Complete) []slackgo.Blo
 
 	blocks = append(blocks, slackgo.NewDividerBlock())
 
-	if comp.Summary != "" {
-		blocks = append(blocks, sectionLabeled(loc.T(i18n.MsgTriageCompleteSectionSummary), comp.Summary))
+	if comp.Description != "" {
+		blocks = append(blocks, sectionLabeled(loc.T(i18n.MsgTriageCompleteSectionSummary), comp.Description))
 	}
 	return blocks
 }
@@ -331,11 +331,11 @@ func buildTitleInputBlock(ctx context.Context, initial string) slackgo.Block {
 	)
 }
 
-func buildSummaryInputBlock(ctx context.Context, initial string) slackgo.Block {
+func buildDescriptionInputBlock(ctx context.Context, initial string) slackgo.Block {
 	loc := i18n.From(ctx)
-	input := slackgo.NewPlainTextInputBlockElement(nil, TriageReviewSummaryActionID)
+	input := slackgo.NewPlainTextInputBlockElement(nil, TriageReviewDescriptionActionID)
 	input.Multiline = true
-	// MaxLength is well above any realistic LLM summary; we set it so the
+	// MaxLength is well above any realistic LLM description; we set it so the
 	// hidden truncate bar Slack shows at the bottom-right reads "0/4000"
 	// instead of "0/100", subtly hinting the field is meant for long text.
 	// Note: Block Kit has no API to specify initial visible row count, so
@@ -346,7 +346,7 @@ func buildSummaryInputBlock(ctx context.Context, initial string) slackgo.Block {
 		input.InitialValue = initial
 	}
 	return slackgo.NewInputBlock(
-		TriageReviewSummaryBlockID,
+		TriageReviewDescriptionBlockID,
 		slackgo.NewTextBlockObject(slackgo.PlainTextType, loc.T(i18n.MsgTriageReviewEditSummaryLabel), false, false),
 		nil,
 		input,

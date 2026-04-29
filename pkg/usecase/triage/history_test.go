@@ -94,9 +94,8 @@ const askPlanJSON = `{
 const completePlanJSON = `{
   "kind": "complete",
   "message": "Done",
-  "summary": "Investigation done",
   "complete": {
-    "summary": "Investigation done",
+    "description": "Investigation done",
     "assignee": {
       "kind": "assigned",
       "user_ids": ["U123"],

@@ -44,7 +44,7 @@ When you build subtasks for `propose_investigate`:
 
 - The `assignee` decision is binary: either pick a single user (`kind: "assigned"` with a real Slack user id and reasoning) or intentionally leave it unassigned (`kind: "unassigned"` with reasoning explaining why a single owner cannot be confidently chosen).
 - When in doubt, prefer `unassigned`. Misrouting a ticket is worse than letting the team decide.
-- `summary` is the markdown the assignee reads first. Keep it tight.
+- `description` is the markdown the assignee reads first. Keep it tight.
 - Use `key_findings` (bullets), `next_steps` (bullets), `similar_tickets` (ticket ids), and `answer_summary` (label → reporter answer summary) to give the assignee actionable context.
 
 ## Rules

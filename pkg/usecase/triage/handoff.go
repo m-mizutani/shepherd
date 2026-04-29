@@ -74,11 +74,11 @@ type handoffPrompt struct {
 func buildHandoffPrompt(comp *model.Complete, mention string) handoffPrompt {
 	system := strings.Join([]string{
 		"You write a single short Slack message that hands a triaged ticket off to the chosen assignee.",
-		"Match the language of the supplied summary (Japanese summary → Japanese reply, English → English).",
+		"Match the language of the supplied description (Japanese description → Japanese reply, English → English).",
 		"Constraints:",
 		"- 1 to 2 sentences total.",
 		"- Start with the assignee mention exactly as supplied (do not modify it).",
-		"- Politely ask them to take the ticket from here, optionally referencing the most important point of the summary.",
+		"- Politely ask them to take the ticket from here, optionally referencing the most important point of the description.",
 		"- Plain text only. No bullet lists, no markdown headings, no preamble like 'Here is the message:'.",
 	}, "\n")
 
@@ -88,8 +88,8 @@ func buildHandoffPrompt(comp *model.Complete, mention string) handoffPrompt {
 		if comp.Title != "" {
 			fmt.Fprintf(&b, "Title: %s\n", comp.Title)
 		}
-		if comp.Summary != "" {
-			fmt.Fprintf(&b, "Summary: %s\n", comp.Summary)
+		if comp.Description != "" {
+			fmt.Fprintf(&b, "Description: %s\n", comp.Description)
 		}
 		if comp.Assignee.Reasoning != "" {
 			fmt.Fprintf(&b, "Why this assignee: %s\n", comp.Assignee.Reasoning)

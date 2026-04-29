@@ -144,7 +144,7 @@ func completeSchema() *gollem.Parameter {
 				Required:    true,
 				MinLength:   intPtr(1),
 			},
-			"summary": {
+			"description": {
 				Type:        gollem.TypeString,
 				Description: "Markdown overview the assignee will see first. This is written back to the ticket as ticket.Description and shown as the body of the Slack hand-off message.",
 				Required:    true,
