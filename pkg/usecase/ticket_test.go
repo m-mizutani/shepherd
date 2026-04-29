@@ -43,7 +43,7 @@ func TestTicketUseCase_Create(t *testing.T) {
 	uc, _ := setupTicketUseCase(t)
 	ctx := context.Background()
 
-	ticket := gt.R1(uc.Create(ctx, "ws-test", "My Ticket", "desc", "", "", nil)).NoError(t)
+	ticket := gt.R1(uc.Create(ctx, "ws-test", "My Ticket", "desc", "", nil, nil)).NoError(t)
 	gt.S(t, ticket.Title).Equal("My Ticket")
 	gt.S(t, string(ticket.StatusID)).Equal("open")
 	gt.S(t, string(ticket.ID)).NotEqual("")
@@ -53,7 +53,7 @@ func TestTicketUseCase_Create_WithStatus(t *testing.T) {
 	uc, _ := setupTicketUseCase(t)
 	ctx := context.Background()
 
-	ticket := gt.R1(uc.Create(ctx, "ws-test", "Custom Status", "", "in-progress", "", nil)).NoError(t)
+	ticket := gt.R1(uc.Create(ctx, "ws-test", "Custom Status", "", "in-progress", nil, nil)).NoError(t)
 	gt.S(t, string(ticket.StatusID)).Equal("in-progress")
 }
 
@@ -64,7 +64,7 @@ func TestTicketUseCase_Create_WithFields(t *testing.T) {
 	fields := map[string]model.FieldValue{
 		"priority": {FieldID: "priority", Type: types.FieldTypeSelect, Value: "high"},
 	}
-	ticket := gt.R1(uc.Create(ctx, "ws-test", "With Fields", "", "", "", fields)).NoError(t)
+	ticket := gt.R1(uc.Create(ctx, "ws-test", "With Fields", "", "", nil, fields)).NoError(t)
 	gt.M(t, ticket.FieldValues).HasKey("priority")
 	gt.V(t, ticket.FieldValues["priority"].Value).Equal(any("high"))
 }
@@ -73,7 +73,7 @@ func TestTicketUseCase_Create_UnknownWorkspace(t *testing.T) {
 	uc, _ := setupTicketUseCase(t)
 	ctx := context.Background()
 
-	_, err := uc.Create(ctx, "nonexistent", "Title", "", "", "", nil)
+	_, err := uc.Create(ctx, "nonexistent", "Title", "", "", nil, nil)
 	gt.Error(t, err)
 }
 
@@ -81,7 +81,7 @@ func TestTicketUseCase_GetAndList(t *testing.T) {
 	uc, _ := setupTicketUseCase(t)
 	ctx := context.Background()
 
-	created := gt.R1(uc.Create(ctx, "ws-test", "T1", "", "", "", nil)).NoError(t)
+	created := gt.R1(uc.Create(ctx, "ws-test", "T1", "", "", nil, nil)).NoError(t)
 
 	got := gt.R1(uc.Get(ctx, "ws-test", created.ID)).NoError(t)
 	gt.S(t, got.Title).Equal("T1")
@@ -94,9 +94,9 @@ func TestTicketUseCase_List_FilterByClosed(t *testing.T) {
 	uc, _ := setupTicketUseCase(t)
 	ctx := context.Background()
 
-	gt.R1(uc.Create(ctx, "ws-test", "Open Ticket", "", "open", "", nil)).NoError(t)
-	gt.R1(uc.Create(ctx, "ws-test", "Resolved Ticket", "", "resolved", "", nil)).NoError(t)
-	gt.R1(uc.Create(ctx, "ws-test", "Closed Ticket", "", "closed", "", nil)).NoError(t)
+	gt.R1(uc.Create(ctx, "ws-test", "Open Ticket", "", "open", nil, nil)).NoError(t)
+	gt.R1(uc.Create(ctx, "ws-test", "Resolved Ticket", "", "resolved", nil, nil)).NoError(t)
+	gt.R1(uc.Create(ctx, "ws-test", "Closed Ticket", "", "closed", nil, nil)).NoError(t)
 
 	isClosed := true
 	closedTickets := gt.R1(uc.List(ctx, "ws-test", &isClosed, nil)).NoError(t)
@@ -111,7 +111,7 @@ func TestTicketUseCase_Update(t *testing.T) {
 	uc, _ := setupTicketUseCase(t)
 	ctx := context.Background()
 
-	created := gt.R1(uc.Create(ctx, "ws-test", "Original", "desc", "", "", nil)).NoError(t)
+	created := gt.R1(uc.Create(ctx, "ws-test", "Original", "desc", "", nil, nil)).NoError(t)
 
 	newTitle := "Updated"
 	newStatus := types.StatusID("in-progress")
@@ -128,7 +128,7 @@ func TestTicketUseCase_Update_MergeFields(t *testing.T) {
 	initial := map[string]model.FieldValue{
 		"priority": {FieldID: "priority", Value: "high"},
 	}
-	created := gt.R1(uc.Create(ctx, "ws-test", "T", "", "", "", initial)).NoError(t)
+	created := gt.R1(uc.Create(ctx, "ws-test", "T", "", "", nil, initial)).NoError(t)
 
 	newFields := map[string]model.FieldValue{
 		"category": {FieldID: "category", Value: "bug"},
@@ -142,7 +142,7 @@ func TestTicketUseCase_Delete(t *testing.T) {
 	uc, _ := setupTicketUseCase(t)
 	ctx := context.Background()
 
-	created := gt.R1(uc.Create(ctx, "ws-test", "To Delete", "", "", "", nil)).NoError(t)
+	created := gt.R1(uc.Create(ctx, "ws-test", "To Delete", "", "", nil, nil)).NoError(t)
 	gt.NoError(t, uc.Delete(ctx, "ws-test", created.ID))
 
 	_, err := uc.Get(ctx, "ws-test", created.ID)
@@ -153,7 +153,7 @@ func TestTicketUseCase_Create_RecordsHistory(t *testing.T) {
 	uc, _ := setupTicketUseCase(t)
 	ctx := context.Background()
 
-	ticket := gt.R1(uc.Create(ctx, "ws-test", "History Test", "", "", "", nil)).NoError(t)
+	ticket := gt.R1(uc.Create(ctx, "ws-test", "History Test", "", "", nil, nil)).NoError(t)
 
 	histories := gt.R1(uc.ListHistory(ctx, "ws-test", ticket.ID)).NoError(t)
 	gt.A(t, histories).Length(1)
@@ -167,7 +167,7 @@ func TestTicketUseCase_Update_StatusChange_RecordsHistory(t *testing.T) {
 	uc, _ := setupTicketUseCase(t)
 	ctx := context.Background()
 
-	ticket := gt.R1(uc.Create(ctx, "ws-test", "Status Change", "", "", "", nil)).NoError(t)
+	ticket := gt.R1(uc.Create(ctx, "ws-test", "Status Change", "", "", nil, nil)).NoError(t)
 
 	newStatus := types.StatusID("in-progress")
 	gt.R1(uc.Update(ctx, "ws-test", ticket.ID, nil, nil, &newStatus, nil, nil)).NoError(t)
@@ -184,7 +184,7 @@ func TestTicketUseCase_Update_NoStatusChange_NoHistory(t *testing.T) {
 	uc, _ := setupTicketUseCase(t)
 	ctx := context.Background()
 
-	ticket := gt.R1(uc.Create(ctx, "ws-test", "No Status Change", "", "", "", nil)).NoError(t)
+	ticket := gt.R1(uc.Create(ctx, "ws-test", "No Status Change", "", "", nil, nil)).NoError(t)
 
 	newTitle := "Updated Title"
 	gt.R1(uc.Update(ctx, "ws-test", ticket.ID, &newTitle, nil, nil, nil, nil)).NoError(t)

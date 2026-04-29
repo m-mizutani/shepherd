@@ -33,7 +33,7 @@ func NewTicketUseCase(repo interfaces.Repository, registry *model.WorkspaceRegis
 	}
 }
 
-func (uc *TicketUseCase) Create(ctx context.Context, workspaceID types.WorkspaceID, title, description string, statusID types.StatusID, assigneeID types.SlackUserID, fields map[string]model.FieldValue) (*model.Ticket, error) {
+func (uc *TicketUseCase) Create(ctx context.Context, workspaceID types.WorkspaceID, title, description string, statusID types.StatusID, assigneeIDs []types.SlackUserID, fields map[string]model.FieldValue) (*model.Ticket, error) {
 	entry, ok := uc.registry.Get(workspaceID)
 	if !ok {
 		return nil, goerr.New("workspace not found", goerr.V("workspace_id", workspaceID), goerr.Tag(errutil.TagNotFound))
@@ -50,7 +50,7 @@ func (uc *TicketUseCase) Create(ctx context.Context, workspaceID types.Workspace
 		Title:       title,
 		Description: description,
 		StatusID:    statusID,
-		AssigneeID:  assigneeID,
+		AssigneeIDs: append([]types.SlackUserID(nil), assigneeIDs...),
 		FieldValues: fields,
 		CreatedAt:   now,
 		UpdatedAt:   now,
@@ -106,7 +106,7 @@ func (uc *TicketUseCase) List(ctx context.Context, workspaceID types.WorkspaceID
 	return tickets, nil
 }
 
-func (uc *TicketUseCase) Update(ctx context.Context, workspaceID types.WorkspaceID, ticketID types.TicketID, title, description *string, statusID *types.StatusID, assigneeID *types.SlackUserID, fields map[string]model.FieldValue) (*model.Ticket, error) {
+func (uc *TicketUseCase) Update(ctx context.Context, workspaceID types.WorkspaceID, ticketID types.TicketID, title, description *string, statusID *types.StatusID, assigneeIDs *[]types.SlackUserID, fields map[string]model.FieldValue) (*model.Ticket, error) {
 	existing, err := uc.repo.Ticket().Get(ctx, workspaceID, ticketID)
 	if err != nil {
 		return nil, goerr.Wrap(err, "failed to get ticket for update")
@@ -123,8 +123,8 @@ func (uc *TicketUseCase) Update(ctx context.Context, workspaceID types.Workspace
 	if statusID != nil {
 		existing.StatusID = *statusID
 	}
-	if assigneeID != nil {
-		existing.AssigneeID = *assigneeID
+	if assigneeIDs != nil {
+		existing.AssigneeIDs = append([]types.SlackUserID(nil), (*assigneeIDs)...)
 	}
 	if fields != nil {
 		if existing.FieldValues == nil {

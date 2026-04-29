@@ -99,7 +99,7 @@ const completePlanJSON = `{
     "summary": "Investigation done",
     "assignee": {
       "kind": "assigned",
-      "user_id": "U123",
+      "user_ids": ["U123"],
       "reasoning": "owner of the affected service"
     }
   }

@@ -285,10 +285,10 @@ func completeBodyBlocks(ctx context.Context, comp *model.Complete) []slackgo.Blo
 
 	switch comp.Assignee.Kind {
 	case types.AssigneeAssigned:
-		if comp.Assignee.UserID != nil {
+		if mentions := joinAssigneeMentions(comp.Assignee.UserIDs); mentions != "" {
 			blocks = append(blocks, slackgo.NewSectionBlock(
 				slackgo.NewTextBlockObject(slackgo.MarkdownType,
-					loc.T(i18n.MsgTriageCompleteAssigneeMention, "user", string(*comp.Assignee.UserID)),
+					loc.T(i18n.MsgTriageCompleteAssigneeMention, "users", mentions),
 					false, false),
 				nil, nil,
 			))
@@ -355,9 +355,16 @@ func buildSummaryInputBlock(ctx context.Context, initial string) slackgo.Block {
 
 func buildAssigneeInputBlock(ctx context.Context, decision model.AssigneeDecision) slackgo.Block {
 	loc := i18n.From(ctx)
-	users := slackgo.NewOptionsSelectBlockElement(slackgo.OptTypeUser, nil, TriageReviewAssigneeActionID)
-	if decision.Kind == types.AssigneeAssigned && decision.UserID != nil {
-		users = users.WithInitialUser(string(*decision.UserID))
+	users := slackgo.NewOptionsMultiSelectBlockElement(slackgo.MultiOptTypeUser, nil, TriageReviewAssigneeActionID)
+	if decision.Kind == types.AssigneeAssigned && len(decision.UserIDs) > 0 {
+		initial := make([]string, 0, len(decision.UserIDs))
+		for _, id := range decision.UserIDs {
+			if id == "" {
+				continue
+			}
+			initial = append(initial, string(id))
+		}
+		users.InitialUsers = initial
 	}
 	block := slackgo.NewInputBlock(
 		TriageReviewAssigneeBlockID,

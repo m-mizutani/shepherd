@@ -545,11 +545,20 @@ export default function TicketListPage() {
                         return <Td key={id}>{renderField(id, fv?.value)}</Td>;
                       })}
                       <Td>
-                        {tk.assigneeId ? (
-                          <SlackUserName
-                            workspaceId={workspaceId!}
-                            userId={tk.assigneeId}
-                          />
+                        {tk.assigneeIds && tk.assigneeIds.length > 0 ? (
+                          <span className="inline-flex items-center gap-1.5">
+                            <SlackUserName
+                              workspaceId={workspaceId!}
+                              userId={tk.assigneeIds[0]}
+                            />
+                            {tk.assigneeIds.length > 1 && (
+                              <span className="text-[11.5px] text-ink-3">
+                                {t("ticketAssigneePlusMore", {
+                                  count: tk.assigneeIds.length - 1,
+                                })}
+                              </span>
+                            )}
+                          </span>
                         ) : (
                           <span className="text-ink-4 text-[12.5px] italic">
                             {t("ticketListUnassigned")}

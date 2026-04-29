@@ -26,9 +26,10 @@ func (e *PlanExecutor) finalizeComplete(ctx context.Context, ticket *model.Ticke
 		return goerr.New("finalizeComplete called with nil Complete")
 	}
 
-	var assignee *types.SlackUserID
-	if comp.Assignee.Kind == types.AssigneeAssigned && comp.Assignee.UserID != nil {
-		assignee = comp.Assignee.UserID
+	var assignees *[]types.SlackUserID
+	if comp.Assignee.Kind == types.AssigneeAssigned && len(comp.Assignee.UserIDs) > 0 {
+		ids := append([]types.SlackUserID(nil), comp.Assignee.UserIDs...)
+		assignees = &ids
 	}
 
 	// Persist the LLM's (or human-edited) Title and Summary as the ticket's
@@ -55,7 +56,7 @@ func (e *PlanExecutor) finalizeComplete(ctx context.Context, ticket *model.Ticke
 		ChangedBy: ticket.ReporterSlackUserID, // best-effort: the bot has no Slack user id of its own.
 	}
 
-	if err := e.repo.Ticket().FinalizeTriage(ctx, ticket.WorkspaceID, ticket.ID, assignee, history); err != nil {
+	if err := e.repo.Ticket().FinalizeTriage(ctx, ticket.WorkspaceID, ticket.ID, assignees, history); err != nil {
 		return goerr.Wrap(err, "finalize triage in repository", goerr.V("ticket_id", ticket.ID))
 	}
 	return nil

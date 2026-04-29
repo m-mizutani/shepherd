@@ -33,7 +33,8 @@ func TestHandleReviewSubmit_HappyPath_FinalizesAndPostsFollowup(t *testing.T) {
 
 	got := gt.R1(repo.Ticket().Get(context.Background(), tWS, ticket.ID)).NoError(t)
 	gt.True(t, got.Triaged)
-	gt.Equal(t, got.AssigneeID, types.SlackUserID("U123"))
+	gt.A(t, got.AssigneeIDs).Length(1)
+	gt.Equal(t, got.AssigneeIDs[0], types.SlackUserID("U123"))
 
 	// Original review message is rewritten to remove buttons (1 update); the
 	// LLM hand-off message is posted as a fresh thread reply (1 post).
@@ -102,7 +103,7 @@ func TestHandleReviewEditSubmit_AppliesEditedAssigneeAndFinalizes(t *testing.T) 
 			slackService.TriageReviewSummaryActionID: {Value: "Edited summary"},
 		},
 		slackService.TriageReviewAssigneeBlockID: {
-			slackService.TriageReviewAssigneeActionID: {SelectedUser: "U999"},
+			slackService.TriageReviewAssigneeActionID: {SelectedUsers: []string{"U999", "U888"}},
 		},
 	}}
 
@@ -116,8 +117,10 @@ func TestHandleReviewEditSubmit_AppliesEditedAssigneeAndFinalizes(t *testing.T) 
 
 	got := gt.R1(repo.Ticket().Get(context.Background(), tWS, ticket.ID)).NoError(t)
 	gt.True(t, got.Triaged)
-	// finalizeComplete used the edited assignee, not the planner's U123.
-	gt.Equal(t, got.AssigneeID, types.SlackUserID("U999"))
+	// finalizeComplete used the edited assignees, not the planner's [U123].
+	gt.A(t, got.AssigneeIDs).Length(2)
+	gt.Equal(t, got.AssigneeIDs[0], types.SlackUserID("U999"))
+	gt.Equal(t, got.AssigneeIDs[1], types.SlackUserID("U888"))
 	// Edited title / summary are persisted onto the ticket itself so the
 	// values the user confirmed in the modal become the authoritative
 	// ticket headline + body.
