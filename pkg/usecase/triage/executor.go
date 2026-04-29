@@ -44,11 +44,12 @@ type PlanExecutor struct {
 
 // WorkspaceLookup exposes the per-workspace triage knobs the executor needs
 // at runtime. Implemented by *RegistryWorkspaceLookup in production; tests
-// pass a stub or nil. When nil, the executor takes the legacy fast path
-// (immediate finalize) on PlanComplete, which is the safe default for tests
-// that pre-date the review flow.
+// pass a stub or nil. When nil (or when the workspace is unknown), the
+// executor parks PlanComplete on the reporter-review buttons — that is the
+// safe default; opting into immediate finalisation requires an explicit
+// `[triage] auto = true` in the workspace config.
 type WorkspaceLookup interface {
-	RequireTriageReview(ws types.WorkspaceID) bool
+	AutoTriage(ws types.WorkspaceID) bool
 }
 
 // RegistryWorkspaceLookup adapts *model.WorkspaceRegistry to WorkspaceLookup.
@@ -57,9 +58,9 @@ type RegistryWorkspaceLookup struct {
 	Registry *model.WorkspaceRegistry
 }
 
-// RequireTriageReview returns the workspace's RequireTriageReview flag, or
-// false when the workspace is unknown (the safe legacy default).
-func (r *RegistryWorkspaceLookup) RequireTriageReview(ws types.WorkspaceID) bool {
+// AutoTriage returns the workspace's AutoTriage flag, or false when the
+// workspace is unknown (the safe default — review required).
+func (r *RegistryWorkspaceLookup) AutoTriage(ws types.WorkspaceID) bool {
 	if r == nil || r.Registry == nil {
 		return false
 	}
@@ -67,7 +68,7 @@ func (r *RegistryWorkspaceLookup) RequireTriageReview(ws types.WorkspaceID) bool
 	if !ok {
 		return false
 	}
-	return entry.RequireTriageReview
+	return entry.AutoTriage
 }
 
 // SlackTriageClient is the slim Slack surface the triage usecase actually
@@ -190,7 +191,10 @@ func (e *PlanExecutor) run(ctx context.Context, workspaceID types.WorkspaceID, t
 			if plan.Complete == nil {
 				return goerr.New("plan kind complete without payload")
 			}
-			if e.lookup != nil && e.lookup.RequireTriageReview(workspaceID) {
+			// Default (lookup nil, workspace unknown, or auto=false) parks on
+			// the reporter-review buttons. Only when the workspace explicitly
+			// opts into auto = true do we take the immediate-finalise path.
+			if e.lookup == nil || !e.lookup.AutoTriage(workspaceID) {
 				if err := e.enterReview(ctx, ticket, plan.Complete); err != nil {
 					return goerr.Wrap(err, "enter review")
 				}

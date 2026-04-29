@@ -14,7 +14,7 @@ type WorkspaceEntry struct {
 	Workspace           Workspace
 	FieldSchema         *config.FieldSchema
 	SlackChannelID      types.SlackChannelID
-	RequireTriageReview bool
+	AutoTriage          bool
 }
 
 type WorkspaceRegistry struct {

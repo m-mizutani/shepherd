@@ -51,11 +51,11 @@ type TicketSection struct {
 // TriageSection holds knobs that govern the triage flow itself, distinct from
 // the ticket schema controlled by [ticket].
 type TriageSection struct {
-	// RequireReview gates whether a PlanComplete must be confirmed by a human
-	// before it finalises the ticket. nil means the key was not specified in
-	// TOML — Validate normalises that to true (the safe default), so opting
-	// back into the legacy fast path requires an explicit `false`.
-	RequireReview *bool `toml:"require_review"`
+	// Auto, when true, finalises the ticket as soon as the planner converges
+	// — no human review step. Default (false / unset) parks the proposal
+	// behind the Edit / Submit / Re-investigate buttons in Slack and waits
+	// for someone to confirm.
+	Auto bool `toml:"auto"`
 }
 
 type SlackSection struct {
@@ -101,11 +101,11 @@ type AppConfig struct {
 }
 
 type WorkspaceConfig struct {
-	ID                  string
-	Name                string
-	SlackChannel        string
-	FieldSchema         *domainConfig.FieldSchema
-	RequireTriageReview bool
+	ID           string
+	Name         string
+	SlackChannel string
+	FieldSchema  *domainConfig.FieldSchema
+	AutoTriage   bool
 }
 
 func (a *AppConfig) Validate() error {
@@ -124,14 +124,10 @@ func (a *AppConfig) Validate() error {
 			goerr.V(WorkspaceIDKey, wsID))
 	}
 
-	// Default [triage] require_review to true when omitted. The TOML bool
-	// zero-value would otherwise silently flip every workspace into the
-	// legacy fast path, so we materialise the default here instead of relying
-	// on the zero-value.
-	if a.Triage.RequireReview == nil {
-		t := true
-		a.Triage.RequireReview = &t
-	}
+	// [triage] auto defaults to false (zero value), which means a human review
+	// step is required before the planner-proposed Complete is finalised.
+	// Workspaces that want the legacy "finalise immediately when planner
+	// converges" behaviour set auto = true explicitly.
 
 	return nil
 }
@@ -292,11 +288,11 @@ func loadSingleWorkspaceConfig(path string) (*WorkspaceConfig, error) {
 	}
 
 	return &WorkspaceConfig{
-		ID:                  appCfg.Workspace.ID,
-		Name:                wsName,
-		SlackChannel:        appCfg.Slack.Channel,
-		FieldSchema:         schema,
-		RequireTriageReview: *appCfg.Triage.RequireReview,
+		ID:           appCfg.Workspace.ID,
+		Name:         wsName,
+		SlackChannel: appCfg.Slack.Channel,
+		FieldSchema:  schema,
+		AutoTriage:   appCfg.Triage.Auto,
 	}, nil
 }
 
@@ -332,7 +328,7 @@ func BuildRegistry(ctx context.Context, configs []*WorkspaceConfig, resolve Chan
 			},
 			FieldSchema:         wc.FieldSchema,
 			SlackChannelID:      types.SlackChannelID(channelID),
-			RequireTriageReview: wc.RequireTriageReview,
+			AutoTriage:          wc.AutoTriage,
 		})
 		logger.Info("Registered workspace", "id", wc.ID, "name", wc.Name, "channel", channelID)
 	}

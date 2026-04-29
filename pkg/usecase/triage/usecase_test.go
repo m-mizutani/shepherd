@@ -474,7 +474,12 @@ func TestLifecycle_TicketCreate_Ask_Submit_Complete(t *testing.T) {
 	triageSlack := &fakeTriageSlack{}
 	catalog := tool.NewCatalog(nil, repo.ToolSettings())
 	promptUC := prompt.New(repo.Prompt())
-	exec := triage.NewPlanExecutor(repo, hist, llm, triageSlack, catalog, promptUC, nil, triage.Config{IterationCap: 5})
+	// Lifecycle test asserts the planner converges to Triaged=true; opt the
+	// workspace into auto-finalise so we exercise the legacy fast path
+	// without the reporter-review hop.
+	exec := triage.NewPlanExecutor(repo, hist, llm, triageSlack, catalog, promptUC,
+		&fakeWorkspaceLookup{auto: map[types.WorkspaceID]bool{wsID: true}},
+		triage.Config{IterationCap: 5})
 	triageUC := triage.NewUseCase(exec, &fakeResolver{ws: wsID, channel: channel})
 
 	slackUC := usecase.NewSlackUseCase(repo, registry, userSlack, "https://shepherd.example.com", llm, hist, nil)

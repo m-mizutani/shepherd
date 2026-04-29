@@ -63,7 +63,7 @@ func (e *PlanExecutor) finalizeComplete(ctx context.Context, ticket *model.Ticke
 
 // finalizeCompleteAndAnnounce is the legacy fast-path entry: persist + post
 // the BuildCompleteBlocks hand-off message. Used when the workspace has
-// require_review = false (planner converges → finalize immediately).
+// auto = true (planner converges → finalize immediately, no human review).
 func (e *PlanExecutor) finalizeCompleteAndAnnounce(ctx context.Context, ticket *model.Ticket, comp *model.Complete) error {
 	if err := e.finalizeComplete(ctx, ticket, comp); err != nil {
 		return err
