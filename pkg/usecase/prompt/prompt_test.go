@@ -74,9 +74,20 @@ func TestRenderTriagePlan_FullInput(t *testing.T) {
 		"<@U123>",
 		"acceptance_criteria",
 		"unassigned",
+		"one or more",
+		"user_ids",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("triage_plan prompt missing %q\n---\n%s", want, got)
+		}
+	}
+
+	for _, banned := range []string{
+		"a single user",
+		"a single owner",
+	} {
+		if strings.Contains(got, banned) {
+			t.Errorf("triage_plan prompt must not assert single-assignee constraint %q\n---\n%s", banned, got)
 		}
 	}
 }
