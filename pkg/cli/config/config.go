@@ -323,7 +323,7 @@ func loadSingleWorkspaceConfig(path string) (*WorkspaceConfig, error) {
 	}, nil
 }
 
-func BuildRegistry(configs []*WorkspaceConfig) (*model.WorkspaceRegistry, error) {
+func BuildRegistry(configs []*WorkspaceConfig) *model.WorkspaceRegistry {
 	registry := model.NewWorkspaceRegistry()
 	logger := logging.Default()
 
@@ -339,5 +339,5 @@ func BuildRegistry(configs []*WorkspaceConfig) (*model.WorkspaceRegistry, error)
 		})
 		logger.Info("Registered workspace", "id", wc.ID, "name", wc.Name, "channel", wc.SlackChannel)
 	}
-	return registry, nil
+	return registry
 }

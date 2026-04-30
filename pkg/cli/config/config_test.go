@@ -261,7 +261,7 @@ func TestBuildRegistry(t *testing.T) {
 
 	configs := gt.R1(config.LoadWorkspaceConfigs([]string{dir})).NoError(t)
 
-	registry := gt.R1(config.BuildRegistry(configs)).NoError(t)
+	registry := config.BuildRegistry(configs)
 	entry, ok := registry.Get(types.WorkspaceID("test-ws"))
 	gt.B(t, ok).True()
 	gt.S(t, entry.Workspace.Name).Equal("Test Workspace")
@@ -297,7 +297,7 @@ func TestBuildRegistry_PropagatesAutoTriage(t *testing.T) {
 	writeToml(t, dir, "ws.toml", tomlBody)
 
 	configs := gt.R1(config.LoadWorkspaceConfigs([]string{dir})).NoError(t)
-	registry := gt.R1(config.BuildRegistry(configs)).NoError(t)
+	registry := config.BuildRegistry(configs)
 	entry, ok := registry.Get(types.WorkspaceID("test-ws"))
 	gt.B(t, ok).True()
 	gt.B(t, entry.AutoTriage).True()

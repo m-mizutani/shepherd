@@ -121,10 +121,7 @@ func cmdServe() *cli.Command {
 				return goerr.Wrap(err, "failed to load workspace configs")
 			}
 
-			registry, err := config.BuildRegistry(workspaceConfigs)
-			if err != nil {
-				return goerr.Wrap(err, "failed to build workspace registry")
-			}
+			registry := config.BuildRegistry(workspaceConfigs)
 
 			repo, err := repoCfg.Configure(ctx)
 			if err != nil {
