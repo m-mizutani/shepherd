@@ -333,7 +333,7 @@ func BuildCompleteBlocks(ctx context.Context, ref TicketRef, comp *model.Complet
 	loc := i18n.From(ctx)
 
 	var headerKey i18n.MsgKey
-	if comp.Assignee.Kind == types.AssigneeAssigned {
+	if comp.Assignee.Assigned() {
 		headerKey = i18n.MsgTriageCompleteHeaderAssigned
 	} else {
 		headerKey = i18n.MsgTriageCompleteHeaderUnassigned
@@ -354,8 +354,7 @@ func BuildCompleteBlocks(ctx context.Context, ref TicketRef, comp *model.Complet
 		))
 	}
 
-	switch comp.Assignee.Kind {
-	case types.AssigneeAssigned:
+	if comp.Assignee.Assigned() {
 		if mentions := joinAssigneeMentions(comp.Assignee.UserIDs); mentions != "" {
 			blocks = append(blocks, slackgo.NewSectionBlock(
 				slackgo.NewTextBlockObject(slackgo.MarkdownType,
@@ -371,7 +370,7 @@ func BuildCompleteBlocks(ctx context.Context, ref TicketRef, comp *model.Complet
 					false, false),
 			))
 		}
-	case types.AssigneeUnassigned:
+	} else {
 		blocks = append(blocks, slackgo.NewSectionBlock(
 			slackgo.NewTextBlockObject(slackgo.MarkdownType,
 				loc.T(i18n.MsgTriageCompleteUnassignedReason, "reason", comp.Assignee.Reasoning),

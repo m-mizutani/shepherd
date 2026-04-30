@@ -354,18 +354,12 @@ func applyEditModalState(ctx context.Context, base *model.Complete, schema *doma
 				}
 				ids = append(ids, types.SlackUserID(u))
 			}
-			if len(ids) > 0 {
-				out.Assignee = model.AssigneeDecision{
-					Kind:      types.AssigneeAssigned,
-					UserIDs:   ids,
-					Reasoning: base.Assignee.Reasoning,
-				}
-			} else {
-				// Cleared selection: reset to unassigned, preserving reasoning.
-				out.Assignee = model.AssigneeDecision{
-					Kind:      types.AssigneeUnassigned,
-					Reasoning: base.Assignee.Reasoning,
-				}
+			// An empty list means the operator cleared the multi-select; we
+			// keep the reasoning so a later edit can restore an assignee
+			// without re-deriving "why" from scratch.
+			out.Assignee = model.AssigneeDecision{
+				UserIDs:   ids,
+				Reasoning: base.Assignee.Reasoning,
 			}
 		}
 	}

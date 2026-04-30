@@ -55,7 +55,6 @@ func validCompletePlan() *model.TriagePlan {
 		Complete: &model.Complete{
 			Description: "Investigation done",
 			Assignee: model.AssigneeDecision{
-				Kind:      types.AssigneeAssigned,
 				UserIDs:   []types.SlackUserID{"U1"},
 				Reasoning: "responsible for the affected service",
 			},
@@ -211,7 +210,6 @@ func TestCompleteValidate(t *testing.T) {
 		return &model.Complete{
 			Description: "description",
 			Assignee: model.AssigneeDecision{
-				Kind:      types.AssigneeAssigned,
 				UserIDs:   []types.SlackUserID{"U1"},
 				Reasoning: "reason",
 			},
@@ -233,45 +231,36 @@ func TestCompleteValidate(t *testing.T) {
 
 func TestAssigneeDecisionValidate(t *testing.T) {
 	t.Run("assigned single ok", func(t *testing.T) {
-		gt.NoError(t, (&model.AssigneeDecision{
-			Kind: types.AssigneeAssigned, UserIDs: []types.SlackUserID{"U1"}, Reasoning: "r",
-		}).Validate())
+		d := &model.AssigneeDecision{UserIDs: []types.SlackUserID{"U1"}, Reasoning: "r"}
+		gt.NoError(t, d.Validate())
+		gt.True(t, d.Assigned())
 	})
 	t.Run("assigned multiple ok", func(t *testing.T) {
-		gt.NoError(t, (&model.AssigneeDecision{
-			Kind:      types.AssigneeAssigned,
+		d := &model.AssigneeDecision{
 			UserIDs:   []types.SlackUserID{"U1", "U2", "U3"},
 			Reasoning: "r",
-		}).Validate())
+		}
+		gt.NoError(t, d.Validate())
+		gt.True(t, d.Assigned())
 	})
-	t.Run("assigned with empty list rejected", func(t *testing.T) {
+	t.Run("empty user id rejected", func(t *testing.T) {
 		gt.Error(t, (&model.AssigneeDecision{
-			Kind: types.AssigneeAssigned, UserIDs: nil, Reasoning: "r",
+			UserIDs: []types.SlackUserID{"U1", ""}, Reasoning: "r",
 		}).Validate())
 	})
-	t.Run("assigned with empty id rejected", func(t *testing.T) {
+	t.Run("unassigned ok with nil list", func(t *testing.T) {
+		d := &model.AssigneeDecision{Reasoning: "needs team review"}
+		gt.NoError(t, d.Validate())
+		gt.False(t, d.Assigned())
+	})
+	t.Run("unassigned ok with empty list", func(t *testing.T) {
+		d := &model.AssigneeDecision{UserIDs: []types.SlackUserID{}, Reasoning: "needs team review"}
+		gt.NoError(t, d.Validate())
+		gt.False(t, d.Assigned())
+	})
+	t.Run("missing reasoning rejected", func(t *testing.T) {
 		gt.Error(t, (&model.AssigneeDecision{
-			Kind: types.AssigneeAssigned, UserIDs: []types.SlackUserID{"U1", ""}, Reasoning: "r",
-		}).Validate())
-	})
-	t.Run("unassigned ok", func(t *testing.T) {
-		gt.NoError(t, (&model.AssigneeDecision{
-			Kind: types.AssigneeUnassigned, Reasoning: "needs team review",
-		}).Validate())
-	})
-	t.Run("unassigned with users rejected", func(t *testing.T) {
-		gt.Error(t, (&model.AssigneeDecision{
-			Kind: types.AssigneeUnassigned, UserIDs: []types.SlackUserID{"U1"}, Reasoning: "r",
-		}).Validate())
-	})
-	t.Run("missing reasoning", func(t *testing.T) {
-		gt.Error(t, (&model.AssigneeDecision{
-			Kind: types.AssigneeAssigned, UserIDs: []types.SlackUserID{"U1"},
-		}).Validate())
-	})
-	t.Run("unknown kind", func(t *testing.T) {
-		gt.Error(t, (&model.AssigneeDecision{
-			Kind: types.AssigneeDecisionKind("bogus"), Reasoning: "r",
+			UserIDs: []types.SlackUserID{"U1"},
 		}).Validate())
 	})
 

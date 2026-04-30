@@ -27,12 +27,3 @@ const (
 	PlanAsk         PlanKind = "ask"
 	PlanComplete    PlanKind = "complete"
 )
-
-// AssigneeDecisionKind expresses whether the LLM decided to assign someone or
-// intentionally left the ticket unassigned.
-type AssigneeDecisionKind string
-
-const (
-	AssigneeAssigned   AssigneeDecisionKind = "assigned"
-	AssigneeUnassigned AssigneeDecisionKind = "unassigned"
-)

@@ -307,8 +307,7 @@ func completeBodyBlocks(ctx context.Context, comp *model.Complete) []slackgo.Blo
 		))
 	}
 
-	switch comp.Assignee.Kind {
-	case types.AssigneeAssigned:
+	if comp.Assignee.Assigned() {
 		if mentions := joinAssigneeMentions(comp.Assignee.UserIDs); mentions != "" {
 			blocks = append(blocks, slackgo.NewSectionBlock(
 				slackgo.NewTextBlockObject(slackgo.MarkdownType,
@@ -324,7 +323,7 @@ func completeBodyBlocks(ctx context.Context, comp *model.Complete) []slackgo.Blo
 					false, false),
 			))
 		}
-	case types.AssigneeUnassigned:
+	} else {
 		blocks = append(blocks, slackgo.NewSectionBlock(
 			slackgo.NewTextBlockObject(slackgo.MarkdownType,
 				loc.T(i18n.MsgTriageCompleteUnassignedReason, "reason", comp.Assignee.Reasoning),
@@ -384,7 +383,7 @@ func buildAssigneeInputBlock(ctx context.Context, decision model.AssigneeDecisio
 	placeholder := slackgo.NewTextBlockObject(slackgo.PlainTextType,
 		loc.T(i18n.MsgTriageReviewFieldSelectPlaceholder), false, false)
 	users := slackgo.NewOptionsMultiSelectBlockElement(slackgo.MultiOptTypeUser, placeholder, TriageReviewAssigneeActionID)
-	if decision.Kind == types.AssigneeAssigned && len(decision.UserIDs) > 0 {
+	if decision.Assigned() {
 		initial := make([]string, 0, len(decision.UserIDs))
 		for _, id := range decision.UserIDs {
 			if id == "" {
