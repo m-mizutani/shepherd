@@ -7,7 +7,6 @@ import (
 
 	"github.com/m-mizutani/gollem"
 	"github.com/m-mizutani/shepherd/pkg/domain/model"
-	"github.com/m-mizutani/shepherd/pkg/domain/types"
 	"github.com/m-mizutani/shepherd/pkg/utils/i18n"
 )
 
@@ -51,7 +50,7 @@ func assigneeMentionText(comp *model.Complete) string {
 	if comp == nil {
 		return ""
 	}
-	if comp.Assignee.Kind == types.AssigneeAssigned && len(comp.Assignee.UserIDs) > 0 {
+	if comp.Assignee.Assigned() {
 		mentions := make([]string, 0, len(comp.Assignee.UserIDs))
 		for _, id := range comp.Assignee.UserIDs {
 			if id == "" {

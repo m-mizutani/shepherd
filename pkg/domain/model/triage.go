@@ -225,34 +225,27 @@ func (c *Complete) Validate() error {
 
 // AssigneeDecision captures whether the LLM picked one or more assignees or
 // intentionally left the ticket unassigned. Reasoning is required in either
-// case. UserIDs is empty for unassigned decisions and contains 1..N ids for
-// assigned ones.
+// case; an empty UserIDs list means "unassigned" and a non-empty list means
+// "assigned" — the same information `kind` previously encoded redundantly.
 type AssigneeDecision struct {
-	Kind      types.AssigneeDecisionKind `json:"kind"`
-	UserIDs   []types.SlackUserID        `json:"user_ids,omitempty"`
-	Reasoning string                     `json:"reasoning"`
+	UserIDs   []types.SlackUserID `json:"user_ids,omitempty"`
+	Reasoning string              `json:"reasoning"`
+}
+
+// Assigned reports whether the decision picks at least one concrete owner.
+// Unassigned decisions are simply the absence of any user id.
+func (d *AssigneeDecision) Assigned() bool {
+	return len(d.UserIDs) > 0
 }
 
 func (d *AssigneeDecision) Validate() error {
 	if d.Reasoning == "" {
 		return goerr.New("assignee reasoning is empty")
 	}
-	switch d.Kind {
-	case types.AssigneeAssigned:
-		if len(d.UserIDs) == 0 {
-			return goerr.New("assigned decision requires at least one user id")
+	for _, id := range d.UserIDs {
+		if id == "" {
+			return goerr.New("assignee decision contains empty user id")
 		}
-		for _, id := range d.UserIDs {
-			if id == "" {
-				return goerr.New("assigned decision contains empty user id")
-			}
-		}
-	case types.AssigneeUnassigned:
-		if len(d.UserIDs) > 0 {
-			return goerr.New("unassigned decision must not carry user ids")
-		}
-	default:
-		return goerr.New("unknown assignee decision kind", goerr.V("kind", d.Kind))
 	}
 	return nil
 }

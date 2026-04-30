@@ -65,8 +65,10 @@ When you build subtasks for `propose_investigate`:
 
 ## Completion (`propose_complete`)
 
-- The `assignee` decision is binary: either pick a single user (`kind: "assigned"` with a real Slack user id and reasoning) or intentionally leave it unassigned (`kind: "unassigned"` with reasoning explaining why a single owner cannot be confidently chosen).
-- When in doubt, prefer `unassigned`. Misrouting a ticket is worse than letting the team decide.
+- `assignee.user_ids` carries the assignment: an array of real Slack user id strings (e.g. `["U123ABC"]` or `["U123ABC", "U456DEF"]`) when you can confidently pick owners, or an empty array (or omit the field) to leave the ticket unassigned.
+- Add a second or third owner only when ownership genuinely spans people — e.g. the work straddles two teams, or the on-call rotation pairs primary + backup. Prefer the smallest correct set; do not pad the list "just in case".
+- `assignee.reasoning` is required either way: explain why these people were picked, or why no confident owner can be chosen.
+- When in doubt, leave `user_ids` empty. Misrouting a ticket — to one person or to many — is worse than letting the team decide.
 - `description` is the markdown the assignee reads first. Keep it tight.
 - Use `key_findings` (bullets), `next_steps` (bullets), `similar_tickets` (ticket ids), and `answer_summary` (label → reporter answer summary) to give the assignee actionable context.
 {{- if .AutoFillFields }}
