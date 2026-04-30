@@ -5,6 +5,15 @@ var ja = map[MsgKey]string{
 	MsgStatusChange:      "ステータス: *{old}* → *{new}*",
 	MsgStatusChangeLabel: "ステータス",
 
+	MsgAssigneeChange: "担当者: {old} → {new}",
+	MsgUnassigned:     "（未割当）",
+
+	MsgQuickActionsHeader:              "*クイック操作*",
+	MsgQuickActionsAssigneeLabel:       "担当者",
+	MsgQuickActionsStatusLabel:         "ステータス",
+	MsgQuickActionsStatusPlaceholder:   "ステータスを選択",
+	MsgQuickActionsAssigneePlaceholder: "担当者を選択",
+
 	MsgTicketRefActive:    "🎫 <{url}|チケット #{id}> — {title}",
 	MsgTicketRefInactive:  "<{url}|チケット #{id}> — {title}",
 	MsgTicketRefDismissed: "~<{url}|チケット #{id}> — {title}~",

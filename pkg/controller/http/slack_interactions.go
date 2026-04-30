@@ -36,12 +36,21 @@ type TriageInteractionsUC interface {
 	HandleReviewReinvestigate(ctx context.Context, ticketID types.TicketID, channelID, messageTS, actorID string, state *slackgo.ViewState) error
 }
 
+// QuickActionsInteractionsUC is the surface needed to react to the
+// inline quick-actions menu (assignee + status selects). Resolution of
+// the underlying ticket happens inside the usecase via channel + thread
+// timestamp, so the handler does not touch the registry.
+type QuickActionsInteractionsUC interface {
+	HandleAssigneeChange(ctx context.Context, channelID, threadTS string, userIDs []string) error
+	HandleStatusChange(ctx context.Context, channelID, threadTS, statusID string) error
+}
+
 // slackInteractionsHandler handles Slack Block Kit interactivity callbacks
 // (block_actions / view_submission). Slack delivers these as
 // application/x-www-form-urlencoded with a single "payload" field carrying
 // the JSON. The signature middleware (shared with /event) has already
 // validated the request body bytes by the time we run.
-func slackInteractionsHandler(uc TriageInteractionsUC) http.HandlerFunc {
+func slackInteractionsHandler(triageUC TriageInteractionsUC, quickUC QuickActionsInteractionsUC) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		logger := logging.From(ctx)
@@ -68,9 +77,9 @@ func slackInteractionsHandler(uc TriageInteractionsUC) http.HandlerFunc {
 
 		switch cb.Type {
 		case slackgo.InteractionTypeBlockActions:
-			handleBlockActions(ctx, w, uc, &cb)
+			handleBlockActions(ctx, w, triageUC, quickUC, &cb)
 		case slackgo.InteractionTypeViewSubmission:
-			handleViewSubmission(ctx, w, uc, &cb)
+			handleViewSubmission(ctx, w, triageUC, &cb)
 		default:
 			logger.Debug("slack interaction ignored: unsupported type",
 				slog.String("type", string(cb.Type)),
@@ -80,74 +89,119 @@ func slackInteractionsHandler(uc TriageInteractionsUC) http.HandlerFunc {
 	}
 }
 
-func handleBlockActions(ctx context.Context, w http.ResponseWriter, uc TriageInteractionsUC, cb *slackgo.InteractionCallback) {
+func handleBlockActions(ctx context.Context, w http.ResponseWriter, triageUC TriageInteractionsUC, quickUC QuickActionsInteractionsUC, cb *slackgo.InteractionCallback) {
 	logger := logging.From(ctx)
 
+	// Quick-actions selects (assignee / status) and triage buttons can in
+	// principle co-arrive in the same payload, though Slack's UI delivers
+	// at most one action per click. Iterate once, classify, and dispatch
+	// each match. Quick-actions resolve the underlying ticket from
+	// channel + thread_ts (the menu lives as a thread reply on the
+	// ticket's root message), so we forward those raw fields.
+	channelID := cb.Channel.ID
+	threadTS := cb.Message.ThreadTimestamp
+	if threadTS == "" {
+		threadTS = cb.Message.Timestamp
+	}
+
 	var triageAction *slackgo.BlockAction
+	var quickAssignee *slackgo.BlockAction
+	var quickStatus *slackgo.BlockAction
+
 	for i := range cb.ActionCallback.BlockActions {
-		id := cb.ActionCallback.BlockActions[i].ActionID
-		switch id {
+		ba := cb.ActionCallback.BlockActions[i]
+		switch ba.ActionID {
 		case slackService.TriageSubmitActionID,
 			slackService.TriageRetryActionID,
 			slackService.TriageReviewEditActionID,
 			slackService.TriageReviewSubmitActionID,
 			slackService.TriageReviewReinvestigateActionID:
-			triageAction = cb.ActionCallback.BlockActions[i]
-		}
-		if triageAction != nil {
-			break
+			if triageAction == nil {
+				triageAction = ba
+			}
+		case slackService.QuickActionsAssigneeActionID:
+			quickAssignee = ba
+		case slackService.QuickActionsStatusActionID:
+			quickStatus = ba
 		}
 	}
-	if triageAction == nil {
-		logger.Debug("slack interaction ignored: no triage action")
+
+	if triageAction == nil && quickAssignee == nil && quickStatus == nil {
+		logger.Debug("slack interaction ignored: no recognised action")
 		w.WriteHeader(http.StatusOK)
 		return
 	}
 
-	ticketID := types.TicketID(triageAction.Value)
-	channelID := cb.Channel.ID
-	messageTS := cb.Message.Timestamp
-	triggerID := cb.TriggerID
-	actionID := triageAction.ActionID
-	actorID := cb.User.ID
-	state := cb.BlockActionState
+	if triageAction != nil {
+		ticketID := types.TicketID(triageAction.Value)
+		messageTS := cb.Message.Timestamp
+		triggerID := cb.TriggerID
+		actionID := triageAction.ActionID
+		actorID := cb.User.ID
+		state := cb.BlockActionState
 
-	// Edit / Re-investigate must call OpenView synchronously to honor
-	// Slack's trigger_id deadline (~3s). Submit-style buttons follow the
-	// existing 200-then-async pattern.
-	switch actionID {
-	case slackService.TriageReviewEditActionID:
-		if err := uc.HandleReviewEditOpen(ctx, ticketID, channelID, messageTS, triggerID); err != nil {
-			errutil.Handle(ctx, goerr.Wrap(err, "review edit open"))
+		// Edit / Re-investigate must call OpenView synchronously to honor
+		// Slack's trigger_id deadline (~3s). Submit-style buttons follow
+		// the existing 200-then-async pattern.
+		switch actionID {
+		case slackService.TriageReviewEditActionID:
+			if err := triageUC.HandleReviewEditOpen(ctx, ticketID, channelID, messageTS, triggerID); err != nil {
+				errutil.Handle(ctx, goerr.Wrap(err, "review edit open"))
+			}
+			w.WriteHeader(http.StatusOK)
+			return
+		case slackService.TriageReviewReinvestigateActionID:
+			if err := triageUC.HandleReviewReinvestigateOpen(ctx, ticketID, channelID, messageTS, triggerID); err != nil {
+				errutil.Handle(ctx, goerr.Wrap(err, "review reinvestigate open"))
+			}
+			w.WriteHeader(http.StatusOK)
+			return
 		}
+
 		w.WriteHeader(http.StatusOK)
-		return
-	case slackService.TriageReviewReinvestigateActionID:
-		if err := uc.HandleReviewReinvestigateOpen(ctx, ticketID, channelID, messageTS, triggerID); err != nil {
-			errutil.Handle(ctx, goerr.Wrap(err, "review reinvestigate open"))
-		}
-		w.WriteHeader(http.StatusOK)
+
+		async.Dispatch(ctx, func(ctx context.Context) error {
+			switch actionID {
+			case slackService.TriageSubmitActionID:
+				return triageUC.HandleSubmit(ctx, triage.Submission{
+					TicketID:  ticketID,
+					ChannelID: channelID,
+					MessageTS: messageTS,
+					State:     state,
+				})
+			case slackService.TriageRetryActionID:
+				return triageUC.HandleRetry(ctx, ticketID, channelID, messageTS)
+			case slackService.TriageReviewSubmitActionID:
+				return triageUC.HandleReviewSubmit(ctx, ticketID, channelID, messageTS, actorID)
+			}
+			return nil
+		})
 		return
 	}
 
+	// Quick-actions path — ack first, then dispatch.
 	w.WriteHeader(http.StatusOK)
 
-	async.Dispatch(ctx, func(ctx context.Context) error {
-		switch actionID {
-		case slackService.TriageSubmitActionID:
-			return uc.HandleSubmit(ctx, triage.Submission{
-				TicketID:  ticketID,
-				ChannelID: channelID,
-				MessageTS: messageTS,
-				State:     state,
-			})
-		case slackService.TriageRetryActionID:
-			return uc.HandleRetry(ctx, ticketID, channelID, messageTS)
-		case slackService.TriageReviewSubmitActionID:
-			return uc.HandleReviewSubmit(ctx, ticketID, channelID, messageTS, actorID)
+	if quickUC == nil {
+		logger.Debug("quick action ignored: usecase not configured")
+		return
+	}
+
+	if quickAssignee != nil {
+		userIDs := append([]string(nil), quickAssignee.SelectedUsers...)
+		async.Dispatch(ctx, func(ctx context.Context) error {
+			return quickUC.HandleAssigneeChange(ctx, channelID, threadTS, userIDs)
+		})
+	}
+	if quickStatus != nil {
+		statusID := ""
+		if quickStatus.SelectedOption.Value != "" {
+			statusID = quickStatus.SelectedOption.Value
 		}
-		return nil
-	})
+		async.Dispatch(ctx, func(ctx context.Context) error {
+			return quickUC.HandleStatusChange(ctx, channelID, threadTS, statusID)
+		})
+	}
 }
 
 func handleViewSubmission(ctx context.Context, w http.ResponseWriter, uc TriageInteractionsUC, cb *slackgo.InteractionCallback) {

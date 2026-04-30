@@ -18,6 +18,7 @@ import (
 	"github.com/m-mizutani/shepherd/pkg/repository/memory"
 	slackService "github.com/m-mizutani/shepherd/pkg/service/slack"
 	"github.com/m-mizutani/shepherd/pkg/usecase"
+	slackgo "github.com/slack-go/slack"
 )
 
 const (
@@ -29,7 +30,14 @@ type fakeSlackClient struct {
 	mu             sync.Mutex
 	threadReplies  []threadReplyCall
 	ticketCreated  []ticketCreatedCall
+	threadBlocks   []threadBlocksCall
 	usersByID      map[string]*slackService.UserInfo
+}
+
+type threadBlocksCall struct {
+	channelID string
+	threadTS  string
+	blocks    []slackgo.Block
 }
 
 type threadReplyCall struct {
@@ -57,6 +65,13 @@ func (f *fakeSlackClient) ReplyTicketCreated(_ context.Context, channelID, threa
 	defer f.mu.Unlock()
 	f.ticketCreated = append(f.ticketCreated, ticketCreatedCall{channelID, threadTS, seqNum, ticketURL})
 	return nil
+}
+
+func (f *fakeSlackClient) PostThreadBlocks(_ context.Context, channelID, threadTS string, blocks []slackgo.Block) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.threadBlocks = append(f.threadBlocks, threadBlocksCall{channelID, threadTS, blocks})
+	return "ts-" + threadTS, nil
 }
 
 func (f *fakeSlackClient) GetUserInfo(_ context.Context, userID string) (*slackService.UserInfo, error) {
@@ -269,4 +284,68 @@ func containsMentionToken(s string) bool {
 		}
 	}
 	return false
+}
+
+// seedQuickActionsTicket plants a triaged ticket already bound to the
+// test channel + thread so HandleAppMention's empty-mention branch has
+// a real ticket to resolve. Done through the repo (not Create) so the
+// quick-actions test is decoupled from the ticket-creation flow.
+func seedQuickActionsTicket(t *testing.T, repo *memory.Repository, channelID, threadTS string, assignees []types.SlackUserID) *model.Ticket {
+	t.Helper()
+	ctx := context.Background()
+	ticket := &model.Ticket{
+		ID:             "tkt-quick",
+		WorkspaceID:    testWS,
+		Title:          "Title",
+		StatusID:       "open",
+		AssigneeIDs:    assignees,
+		SlackChannelID: types.SlackChannelID(channelID),
+		SlackThreadTS:  types.SlackThreadTS(threadTS),
+	}
+	created := gt.R1(repo.Ticket().Create(ctx, testWS, ticket)).NoError(t)
+	return created
+}
+
+func TestSlackUseCase_HandleAppMention_EmptyMention_PostsQuickActions(t *testing.T) {
+	// LLM mock fails the test if invoked — empty mention must NOT touch the LLM.
+	llm := &mock.LLMClientMock{
+		NewSessionFunc: func(_ context.Context, _ ...gollem.SessionOption) (gollem.Session, error) {
+			t.Fatalf("LLM must not be invoked for empty mentions")
+			return nil, nil
+		},
+	}
+	uc, slack, repo, _, _ := newSlackTestRig(t, llm)
+	seedQuickActionsTicket(t, repo, testChannel, "500.000", []types.SlackUserID{"U-pre"})
+
+	gt.NoError(t, uc.HandleAppMention(context.Background(), testChannel, "U1", "<@UBOT>   ", "500.001", "500.000"))
+
+	gt.A(t, slack.threadReplies).Length(0)
+	gt.A(t, slack.threadBlocks).Length(1)
+	call := slack.threadBlocks[0]
+	gt.S(t, call.channelID).Equal(testChannel)
+	gt.S(t, call.threadTS).Equal("500.000")
+	// Header (ticket ref) + section header + assignee + status = 4 blocks.
+	gt.A(t, call.blocks).Length(4)
+}
+
+func TestSlackUseCase_HandleAppMention_EmptyMention_NoLLMRequired(t *testing.T) {
+	// LLM is nil — the empty-mention branch must still post Quick Actions.
+	uc, slack, repo, _, _ := newSlackTestRig(t, nil)
+	seedQuickActionsTicket(t, repo, testChannel, "600.000", nil)
+
+	gt.NoError(t, uc.HandleAppMention(context.Background(), testChannel, "U1", "<@UBOT>", "600.001", "600.000"))
+
+	gt.A(t, slack.threadBlocks).Length(1)
+}
+
+func TestSlackUseCase_HandleAppMention_NonEmpty_DoesNotPostQuickActions(t *testing.T) {
+	// Non-empty mention with LLM nil should be a no-op (existing contract);
+	// crucially, it must not post Quick Actions.
+	uc, slack, repo, _, _ := newSlackTestRig(t, nil)
+	seedQuickActionsTicket(t, repo, testChannel, "700.000", nil)
+
+	gt.NoError(t, uc.HandleAppMention(context.Background(), testChannel, "U1", "<@UBOT> please help", "700.001", "700.000"))
+
+	gt.A(t, slack.threadBlocks).Length(0)
+	gt.A(t, slack.threadReplies).Length(0)
 }

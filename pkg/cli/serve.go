@@ -219,11 +219,14 @@ func cmdServe() *cli.Command {
 			}
 
 			if slackUC != nil {
+				ticketUC := usecaseroot.NewTicketUseCase(repo, registry, slackClient)
+				quickUC := usecaseroot.NewQuickActionsUseCase(repo, registry, ticketUC)
 				serverOpts = append(serverOpts, httpController.WithSlack(httpController.SlackConfig{
 					SigningSecret: slackCfg.SignSecret(),
 					SlackUC:       slackUC,
 					Notifier:      slackClient,
 					TriageUC:      triageUC,
+					QuickUC:       quickUC,
 				}))
 			}
 

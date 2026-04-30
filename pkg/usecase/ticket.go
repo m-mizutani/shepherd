@@ -11,21 +11,26 @@ import (
 	"github.com/m-mizutani/shepherd/pkg/domain/model"
 	"github.com/m-mizutani/shepherd/pkg/domain/model/auth"
 	"github.com/m-mizutani/shepherd/pkg/domain/types"
+	slackService "github.com/m-mizutani/shepherd/pkg/service/slack"
 	"github.com/m-mizutani/shepherd/pkg/utils/errutil"
 	"github.com/m-mizutani/shepherd/pkg/utils/logging"
 )
 
-type StatusChangeNotifier interface {
-	ReplyStatusChange(ctx context.Context, channelID, threadTS, oldStatusName, newStatusName string) error
+// TicketChangeNotifier delivers a context-block notification about a ticket
+// mutation back to the originating Slack thread. Implementations are
+// responsible for rendering both status and assignee blocks in a single
+// message when both are present in the TicketChange payload.
+type TicketChangeNotifier interface {
+	NotifyTicketChange(ctx context.Context, channelID, threadTS string, change slackService.TicketChange) error
 }
 
 type TicketUseCase struct {
 	repo     interfaces.Repository
 	registry *model.WorkspaceRegistry
-	notifier StatusChangeNotifier
+	notifier TicketChangeNotifier
 }
 
-func NewTicketUseCase(repo interfaces.Repository, registry *model.WorkspaceRegistry, notifier StatusChangeNotifier) *TicketUseCase {
+func NewTicketUseCase(repo interfaces.Repository, registry *model.WorkspaceRegistry, notifier TicketChangeNotifier) *TicketUseCase {
 	return &TicketUseCase{
 		repo:     repo,
 		registry: registry,
@@ -113,6 +118,7 @@ func (uc *TicketUseCase) Update(ctx context.Context, workspaceID types.Workspace
 	}
 
 	oldStatusID := existing.StatusID
+	oldAssigneeIDs := append([]types.SlackUserID(nil), existing.AssigneeIDs...)
 
 	if title != nil {
 		existing.Title = *title
@@ -141,7 +147,10 @@ func (uc *TicketUseCase) Update(ctx context.Context, workspaceID types.Workspace
 		return nil, goerr.Wrap(err, "failed to update ticket")
 	}
 
-	if oldStatusID != updated.StatusID {
+	statusChanged := oldStatusID != updated.StatusID
+	assigneeChanged := !sameSlackUserIDSet(oldAssigneeIDs, updated.AssigneeIDs)
+
+	if statusChanged {
 		changedBy := changedByFromContext(ctx)
 		history := &model.TicketHistory{
 			ID:          uuid.Must(uuid.NewV7()).String(),
@@ -154,14 +163,16 @@ func (uc *TicketUseCase) Update(ctx context.Context, workspaceID types.Workspace
 		if _, err := uc.repo.TicketHistory().Create(ctx, workspaceID, ticketID, history); err != nil {
 			errutil.Handle(ctx, goerr.Wrap(err, "failed to create ticket history"))
 		}
+	}
 
-		uc.notifyStatusChange(ctx, workspaceID, updated, oldStatusID)
+	if statusChanged || assigneeChanged {
+		uc.notifyTicketChange(ctx, workspaceID, updated, oldStatusID, oldAssigneeIDs, statusChanged, assigneeChanged)
 	}
 
 	return updated, nil
 }
 
-func (uc *TicketUseCase) notifyStatusChange(ctx context.Context, workspaceID types.WorkspaceID, ticket *model.Ticket, oldStatusID types.StatusID) {
+func (uc *TicketUseCase) notifyTicketChange(ctx context.Context, workspaceID types.WorkspaceID, ticket *model.Ticket, oldStatusID types.StatusID, oldAssigneeIDs []types.SlackUserID, statusChanged, assigneeChanged bool) {
 	if uc.notifier == nil || ticket.SlackChannelID == "" || ticket.SlackThreadTS == "" {
 		return
 	}
@@ -171,16 +182,54 @@ func (uc *TicketUseCase) notifyStatusChange(ctx context.Context, workspaceID typ
 		return
 	}
 
-	oldName := statusName(entry, oldStatusID)
-	newName := statusName(entry, ticket.StatusID)
+	change := slackService.TicketChange{
+		StatusChanged:   statusChanged,
+		AssigneeChanged: assigneeChanged,
+	}
+	if statusChanged {
+		change.OldStatusName = statusName(entry, oldStatusID)
+		change.NewStatusName = statusName(entry, ticket.StatusID)
+	}
+	if assigneeChanged {
+		change.OldAssigneeIDs = toUserIDStrings(oldAssigneeIDs)
+		change.NewAssigneeIDs = toUserIDStrings(ticket.AssigneeIDs)
+	}
 
 	logger := logging.From(ctx)
-	if err := uc.notifier.ReplyStatusChange(ctx, string(ticket.SlackChannelID), string(ticket.SlackThreadTS), oldName, newName); err != nil {
-		logger.Warn("failed to notify status change to slack",
+	if err := uc.notifier.NotifyTicketChange(ctx, string(ticket.SlackChannelID), string(ticket.SlackThreadTS), change); err != nil {
+		logger.Warn("failed to notify ticket change to slack",
 			slog.String("ticket_id", string(ticket.ID)),
 			slog.Any("error", err),
 		)
 	}
+}
+
+func toUserIDStrings(ids []types.SlackUserID) []string {
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, string(id))
+	}
+	return out
+}
+
+// sameSlackUserIDSet treats assignee lists as unordered sets — order in
+// AssigneeIDs is not meaningful, so a reorder alone must not trigger a
+// "changed" notification.
+func sameSlackUserIDSet(a, b []types.SlackUserID) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	seen := make(map[types.SlackUserID]int, len(a))
+	for _, id := range a {
+		seen[id]++
+	}
+	for _, id := range b {
+		seen[id]--
+		if seen[id] < 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func statusName(entry *model.WorkspaceEntry, statusID types.StatusID) string {

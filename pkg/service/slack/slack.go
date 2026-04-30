@@ -201,26 +201,6 @@ func (c *Client) ReplyTicketCreated(ctx context.Context, channelID, threadTS str
 	return c.ReplyThread(ctx, channelID, threadTS, text)
 }
 
-func (c *Client) ReplyStatusChange(ctx context.Context, channelID, threadTS, oldStatusName, newStatusName string) error {
-	text := i18n.From(ctx).T(i18n.MsgStatusChange, "old", oldStatusName, "new", newStatusName)
-	_, _, err := c.api.PostMessageContext(ctx, channelID,
-		slackgo.MsgOptionTS(threadTS),
-		slackgo.MsgOptionBlocks(
-			slackgo.NewContextBlock("",
-				slackgo.NewTextBlockObject("mrkdwn", text, false, false),
-			),
-		),
-	)
-	if err != nil {
-		return goerr.Wrap(err, "failed to post status change notification",
-			goerr.V("channel_id", channelID),
-			goerr.V("thread_ts", threadTS),
-			goerr.Tag(errutil.TagSlackError),
-		)
-	}
-	return nil
-}
-
 // Message is a minimal representation of a Slack message used by tools and
 // downstream consumers. It hides the noisy slack-go Message struct behind a
 // small surface of fields that LLMs actually care about.

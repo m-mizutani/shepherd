@@ -7,6 +7,24 @@ const (
 	MsgStatusChange      MsgKey = "status_change"
 	MsgStatusChangeLabel MsgKey = "status_change_label"
 
+	// Ticket change notification (context block) — emitted whenever a
+	// TicketUseCase.Update mutation flips the ticket's status or assignee
+	// regardless of which entry point (HTTP API, Slack quick-actions menu,
+	// future surfaces) drove the change. The two pieces are interpolated
+	// into a single context block so simultaneous status + assignee
+	// transitions render as one notification, not two.
+	MsgAssigneeChange MsgKey = "assignee_change"
+	MsgUnassigned     MsgKey = "unassigned"
+
+	// Slack empty-mention quick-actions menu — posted into the ticket
+	// thread when a user @-mentions the bot with no body. Lets the user
+	// switch the ticket's assignee or status without leaving Slack.
+	MsgQuickActionsHeader            MsgKey = "quick_actions_header"
+	MsgQuickActionsAssigneeLabel     MsgKey = "quick_actions_assignee_label"
+	MsgQuickActionsStatusLabel       MsgKey = "quick_actions_status_label"
+	MsgQuickActionsStatusPlaceholder MsgKey = "quick_actions_status_placeholder"
+	MsgQuickActionsAssigneePlaceholder MsgKey = "quick_actions_assignee_placeholder"
+
 	// Three rendering forms for the ticket reference line, applied at the
 	// top of every ticket-scoped Slack message. The form is chosen by the
 	// message's lifecycle state so a thread reader can tell at a glance

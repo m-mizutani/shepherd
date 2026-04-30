@@ -5,6 +5,15 @@ var en = map[MsgKey]string{
 	MsgStatusChange:      "Status: *{old}* → *{new}*",
 	MsgStatusChangeLabel: "Status",
 
+	MsgAssigneeChange: "Assignee: {old} → {new}",
+	MsgUnassigned:     "(unassigned)",
+
+	MsgQuickActionsHeader:              "*Quick actions*",
+	MsgQuickActionsAssigneeLabel:       "Assignee",
+	MsgQuickActionsStatusLabel:         "Status",
+	MsgQuickActionsStatusPlaceholder:   "Select a status",
+	MsgQuickActionsAssigneePlaceholder: "Select assignees",
+
 	MsgTicketRefActive:    "🎫 <{url}|Ticket #{id}> — {title}",
 	MsgTicketRefInactive:  "<{url}|Ticket #{id}> — {title}",
 	MsgTicketRefDismissed: "~<{url}|Ticket #{id}> — {title}~",
