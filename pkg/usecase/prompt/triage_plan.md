@@ -19,9 +19,32 @@ You **must** call exactly one of these tools per turn. Always include the `messa
 - Reporter: <@{{ .Reporter }}>
 {{- end }}
 
+## Available investigation tools
+
+{{- if .AvailableTools }}
+The following providers are enabled for this workspace. When you call `propose_investigate`, set each subtask's `allowed_tools` to the **exact tool names** listed under the relevant provider — names not in this list are silently dropped, and the child agent then runs with zero tools.
+{{- range .AvailableTools }}
+
+### {{ .ID }}
+{{- if .Description }}
+
+{{ .Description }}
+{{- end }}
+
+Tools you may put in `allowed_tools`:
+{{- range .Tools }}
+- `{{ .Name }}` — {{ .Description }}
+{{- end }}
+{{- end }}
+
+{{- else }}
+
+No investigation tools are enabled for this workspace. Do not call `propose_investigate`; choose `propose_ask` or `propose_complete` instead.
+{{- end }}
+
 ## Choosing an action
 
-- Prefer `propose_investigate` first when meaningful information can be discovered from existing sources (Slack, prior tickets, Notion, workspace metadata) without bothering the reporter.
+- Prefer `propose_investigate` first when at least one tool listed above is relevant and meaningful information can be discovered without bothering the reporter.
 - Choose `propose_ask` only when the missing pieces cannot be derived from investigation and must come from the reporter. Ask multiple independent questions in one form whenever possible. If two questions depend on each other, defer the dependent one to a later iteration.
 - Choose `propose_complete` only when you have enough to hand the ticket off. Prefer fewer turns over many.
 
@@ -31,7 +54,7 @@ When you build subtasks for `propose_investigate`:
 
 - `request` must be a single imperative-mood instruction (e.g. "Collect related Slack posts in the last 48h", "Identify the affected service from the description").
 - `acceptance_criteria` must contain 3 to 5 observable conditions. Each item should describe a property of the output a third party could check (e.g. "Returns at least 3 messages or explicitly states 'no related messages'", "Includes channel name, timestamp, and excerpt for each item"). Avoid vague language like "sufficient information".
-- `allowed_tools` must restrict the child agent to the tools relevant to that subtask.
+- `allowed_tools` must use only tool names listed under "Available investigation tools" above.
 
 ## Question quality (`propose_ask`)
 

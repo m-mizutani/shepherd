@@ -23,10 +23,10 @@ func newListSourcesTool(repo interfaces.SourceRepository) gollem.Tool {
 func (t *listSourcesTool) Spec() gollem.ToolSpec {
 	return gollem.ToolSpec{
 		Name: "notion_list_sources",
-		Description: "List Notion pages/databases registered as Sources for this workspace. " +
-			"Each entry has a user-supplied description explaining what it contains — " +
-			"call this first to decide which Source to target with notion_search or " +
-			"notion_query_database.",
+		Description: "List the Notion pages/databases registered as Sources for this workspace. " +
+			"No arguments. " +
+			"Returns `{ sources: [{id, description, object_type, object_id, title, url}], count }`. " +
+			"Call this first to decide which Source to target with `notion_search` / `notion_query_database` / `notion_get_page`.",
 		Parameters: map[string]*gollem.Parameter{},
 	}
 }

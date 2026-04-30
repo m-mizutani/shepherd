@@ -26,7 +26,9 @@ func newGetThreadTool(s SlackTooler) gollem.Tool {
 func (t *getThreadTool) Spec() gollem.ToolSpec {
 	return gollem.ToolSpec{
 		Name:        "slack_get_thread",
-		Description: "Fetch all messages in a Slack thread (the parent message and its replies). Use this to read the full conversation context behind a ticket or a search hit.",
+		Description: "Fetch the full conversation in a Slack thread (parent message plus replies). " +
+			"Args: `channel_id` (required, e.g. 'C0123456'); `thread_ts` (required, the root message's timestamp); optional `limit` (default 50, max 200). " +
+			"Returns `{ messages: [{user, text, timestamp, thread_ts, bot_id}], count }`.",
 		Parameters: map[string]*gollem.Parameter{
 			"channel_id": {
 				Type:        gollem.TypeString,

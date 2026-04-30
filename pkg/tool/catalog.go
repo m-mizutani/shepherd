@@ -7,6 +7,7 @@ import (
 	"github.com/m-mizutani/gollem"
 	"github.com/m-mizutani/shepherd/pkg/domain/interfaces"
 	"github.com/m-mizutani/shepherd/pkg/domain/types"
+	"github.com/m-mizutani/shepherd/pkg/utils/errutil"
 )
 
 // GateFn is an extra precondition applied per workspace, on top of
@@ -137,6 +138,69 @@ func (c *Catalog) evalGate(ctx context.Context, ws types.WorkspaceID, p Provider
 		return true, nil
 	}
 	return gate(ctx, ws)
+}
+
+// ProviderBriefing is the per-provider data the catalog produces for the
+// triage planner system prompt: the provider's narrative (from
+// ToolFactory.Prompt) plus its tool list. Only enabled providers — those
+// whose State.Enabled is true — appear in the slice.
+type ProviderBriefing struct {
+	ID          ProviderID
+	Description string // markdown narrative; empty when factory returns "" or errors
+	Tools       []ToolEntry
+}
+
+// ToolEntry is the planner-facing summary of a single gollem.Tool. It mirrors
+// the fields the planner needs in order to fill `allowed_tools` correctly.
+type ToolEntry struct {
+	Name        string
+	Description string
+}
+
+// ToolBriefing returns enabled providers (Available × workspace toggle ×
+// gate) with their narrative and tool listings, in factory registration
+// order. Per-provider Prompt() errors are routed through errutil.Handle so
+// they reach slog/Sentry, but the provider's tool entries still surface
+// with an empty Description — losing one provider's narrative must not
+// abort the whole call, since triage relies on this for planner prompts.
+func (c *Catalog) ToolBriefing(ctx context.Context, ws types.WorkspaceID) ([]ProviderBriefing, error) {
+	states, err := c.States(ctx, ws)
+	if err != nil {
+		return nil, err
+	}
+	enabled := make(map[ProviderID]bool, len(states))
+	for _, s := range states {
+		if s.Enabled {
+			enabled[s.ID] = true
+		}
+	}
+	out := make([]ProviderBriefing, 0, len(c.factories))
+	for _, f := range c.factories {
+		if !enabled[f.ID()] {
+			continue
+		}
+		desc, perr := f.Prompt(ctx, ws)
+		if perr != nil {
+			errutil.Handle(ctx, goerr.Wrap(perr, "render provider prompt for triage briefing",
+				goerr.V("provider_id", string(f.ID())),
+				goerr.V("workspace_id", string(ws))))
+			desc = ""
+		}
+		entries := make([]ToolEntry, 0, len(f.Tools()))
+		for _, t := range f.Tools() {
+			spec := t.Spec()
+			entries = append(entries, ToolEntry{
+				Name:        spec.Name,
+				Description: spec.Description,
+			})
+		}
+		out = append(out, ProviderBriefing{
+			ID:          f.ID(),
+			Description: desc,
+			Tools:       entries,
+		})
+	}
+	return out, nil
 }
 
 type settingsView struct {

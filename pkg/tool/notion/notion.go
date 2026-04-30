@@ -71,6 +71,13 @@ func (f *Factory) Available() bool      { return f.client != nil }
 func (f *Factory) Tools() []gollem.Tool { return f.tools }
 func (f *Factory) DefaultEnabled() bool { return false }
 
+// Prompt returns workspace-aware narrative for the Notion provider. The
+// real implementation is provided in prompt.go; this signature satisfies
+// tool.ToolFactory.
+func (f *Factory) Prompt(ctx context.Context, ws types.WorkspaceID) (string, error) {
+	return f.renderPrompt(ctx, ws)
+}
+
 // Client exposes the inner *notion.Client so the HTTP API layer can reuse it
 // for Source verification. Returns nil when Init has not been called or token
 // was unset.

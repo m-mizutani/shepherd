@@ -2,6 +2,7 @@ package tool_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/m-mizutani/gollem"
@@ -17,6 +18,8 @@ type stubFactory struct {
 	available bool
 	def       bool
 	tools     []gollem.Tool
+	prompt    string
+	promptErr error
 }
 
 func (f *stubFactory) ID() tool.ProviderID    { return f.id }
@@ -30,6 +33,9 @@ func (f *stubFactory) Init(context.Context) error {
 func (f *stubFactory) Available() bool      { return f.available }
 func (f *stubFactory) Tools() []gollem.Tool { return f.tools }
 func (f *stubFactory) DefaultEnabled() bool { return f.def }
+func (f *stubFactory) Prompt(context.Context, types.WorkspaceID) (string, error) {
+	return f.prompt, f.promptErr
+}
 
 type stubTool string
 
@@ -101,4 +107,111 @@ func stateMap(states []tool.State) map[tool.ProviderID]tool.State {
 		out[s.ID] = s
 	}
 	return out
+}
+
+func TestCatalog_ToolBriefing(t *testing.T) {
+	ws := types.WorkspaceID("ws-briefing")
+	repo := memory.New()
+	t.Cleanup(func() { _ = repo.Close() })
+
+	slack := &stubFactory{
+		id:        tool.ProviderSlack,
+		available: true,
+		def:       true,
+		tools: []gollem.Tool{
+			describedTool{name: "slack_search_messages", desc: "Search Slack messages."},
+			describedTool{name: "slack_get_thread", desc: "Read a Slack thread."},
+		},
+		prompt: "slack provider narrative",
+	}
+	ticket := &stubFactory{
+		id:        tool.ProviderTicket,
+		available: true,
+		def:       true,
+		tools:     []gollem.Tool{describedTool{name: "ticket_get", desc: "Fetch a ticket."}},
+		prompt:    "ticket provider narrative",
+	}
+	notion := &stubFactory{
+		id:        tool.ProviderNotion,
+		available: true,
+		def:       false, // not enabled by default → won't show up unless toggled on
+		tools:     []gollem.Tool{describedTool{name: "notion_search", desc: "Search Notion."}},
+		prompt:    "notion provider narrative",
+	}
+	flaky := &stubFactory{
+		id:        tool.ProviderID("flaky"),
+		available: true,
+		def:       true,
+		tools:     []gollem.Tool{describedTool{name: "flaky_op", desc: "Flaky tool."}},
+		promptErr: errors.New("source repo unavailable"),
+	}
+
+	for _, f := range []tool.ToolFactory{slack, ticket, notion, flaky} {
+		gt.NoError(t, f.Init(context.Background()))
+	}
+
+	cat := tool.NewCatalog(
+		[]tool.ToolFactory{slack, ticket, notion, flaky},
+		repo.ToolSettings(),
+	)
+
+	t.Run("returns only enabled providers in registration order", func(t *testing.T) {
+		got, err := cat.ToolBriefing(context.Background(), ws)
+		gt.NoError(t, err)
+		// notion is not DefaultEnabled and never toggled on, so it must be absent.
+		gt.Equal(t, len(got), 3)
+		gt.Equal(t, got[0].ID, tool.ProviderSlack)
+		gt.Equal(t, got[1].ID, tool.ProviderTicket)
+		gt.Equal(t, got[2].ID, tool.ProviderID("flaky"))
+
+		// slack briefing carries narrative + tool entries.
+		gt.Equal(t, got[0].Description, "slack provider narrative")
+		gt.Equal(t, len(got[0].Tools), 2)
+		gt.Equal(t, got[0].Tools[0].Name, "slack_search_messages")
+		gt.Equal(t, got[0].Tools[0].Description, "Search Slack messages.")
+		gt.Equal(t, got[0].Tools[1].Name, "slack_get_thread")
+	})
+
+	t.Run("provider Prompt error blanks Description but keeps Tools", func(t *testing.T) {
+		got, err := cat.ToolBriefing(context.Background(), ws)
+		gt.NoError(t, err)
+		flakyEntry := got[2]
+		gt.Equal(t, flakyEntry.ID, tool.ProviderID("flaky"))
+		gt.Equal(t, flakyEntry.Description, "")
+		gt.Equal(t, len(flakyEntry.Tools), 1)
+		gt.Equal(t, flakyEntry.Tools[0].Name, "flaky_op")
+	})
+
+	t.Run("toggling notion on surfaces it in the briefing", func(t *testing.T) {
+		gt.NoError(t, repo.ToolSettings().Set(context.Background(), ws, "notion", true))
+		got, err := cat.ToolBriefing(context.Background(), ws)
+		gt.NoError(t, err)
+		gt.Equal(t, len(got), 4)
+		gt.Equal(t, got[2].ID, tool.ProviderNotion)
+		gt.Equal(t, got[2].Description, "notion provider narrative")
+		gt.Equal(t, len(got[2].Tools), 1)
+		gt.Equal(t, got[2].Tools[0].Name, "notion_search")
+	})
+
+	t.Run("disabling everything yields empty briefing", func(t *testing.T) {
+		gt.NoError(t, repo.ToolSettings().Set(context.Background(), ws, "slack", false))
+		gt.NoError(t, repo.ToolSettings().Set(context.Background(), ws, "ticket", false))
+		gt.NoError(t, repo.ToolSettings().Set(context.Background(), ws, "notion", false))
+		gt.NoError(t, repo.ToolSettings().Set(context.Background(), ws, "flaky", false))
+		got, err := cat.ToolBriefing(context.Background(), ws)
+		gt.NoError(t, err)
+		gt.Equal(t, len(got), 0)
+	})
+}
+
+type describedTool struct {
+	name string
+	desc string
+}
+
+func (d describedTool) Spec() gollem.ToolSpec {
+	return gollem.ToolSpec{Name: d.name, Description: d.desc}
+}
+func (d describedTool) Run(context.Context, map[string]any) (map[string]any, error) {
+	return map[string]any{}, nil
 }

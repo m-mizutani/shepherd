@@ -17,8 +17,10 @@ func newCurrentTimeTool(now func() time.Time) gollem.Tool {
 
 func (t *currentTimeTool) Spec() gollem.ToolSpec {
 	return gollem.ToolSpec{
-		Name:        "current_time",
-		Description: "Return the current server time. Useful for resolving relative date phrases like 'last week' before issuing other tool calls.",
+		Name: "current_time",
+		Description: "Return the current server time in UTC. " +
+			"No arguments. " +
+			"Returns `{ rfc3339: '2026-01-01T00:00:00Z', unix: 1767225600 }`. Call this once when you need to anchor relative phrases like 'yesterday' or 'last week' before issuing other tool calls.",
 		Parameters:  map[string]*gollem.Parameter{},
 	}
 }

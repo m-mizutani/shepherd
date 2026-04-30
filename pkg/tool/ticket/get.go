@@ -20,8 +20,10 @@ func newGetTool(r interfaces.Repository) gollem.Tool {
 
 func (t *getTool) Spec() gollem.ToolSpec {
 	return gollem.ToolSpec{
-		Name:        "ticket_get",
-		Description: "Fetch a single ticket in the active workspace by its UUID id, or by its sequence number. Provide exactly one of 'ticket_id' or 'seq_num'. Returns the full ticket including custom field values.",
+		Name: "ticket_get",
+		Description: "Fetch a single ticket from the active workspace. " +
+			"Args: provide exactly one of `ticket_id` (UUID) or `seq_num` (workspace-scoped sequence number, the human-friendly ID surfaced in Slack). " +
+			"Returns `{ found: bool }` when not found; otherwise `{ found: true, ticket: {id, seq_num, title, description, status_id, status_name, assignees, reporter, slack_channel_id, slack_thread_ts, fields, created_at, updated_at} }`.",
 		Parameters: map[string]*gollem.Parameter{
 			"ticket_id": {
 				Type:        gollem.TypeString,

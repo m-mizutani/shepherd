@@ -19,7 +19,9 @@ func newGetUserInfoTool(s SlackTooler) gollem.Tool {
 func (t *getUserInfoTool) Spec() gollem.ToolSpec {
 	return gollem.ToolSpec{
 		Name:        "slack_get_user_info",
-		Description: "Resolve a Slack user ID (e.g. 'U0123456') to a human-readable display name and email. Use this to translate user mentions found in messages or tickets into people.",
+		Description: "Resolve a Slack user ID into a human-readable profile. " +
+			"Args: `user_id` (required, e.g. 'U0123456'). " +
+			"Returns `{ found: bool }` when not found, otherwise `{ found: true, id, name, email, image_url }`. Use to translate `<@U…>` mentions seen in messages or tickets into people.",
 		Parameters: map[string]*gollem.Parameter{
 			"user_id": {
 				Type:        gollem.TypeString,

@@ -7,6 +7,7 @@ import (
 	"context"
 
 	"github.com/m-mizutani/gollem"
+	"github.com/m-mizutani/shepherd/pkg/domain/types"
 	slackService "github.com/m-mizutani/shepherd/pkg/service/slack"
 	"github.com/m-mizutani/shepherd/pkg/tool"
 	"github.com/urfave/cli/v3"
@@ -52,3 +53,9 @@ func (f *Factory) Tools() []gollem.Tool { return f.tools }
 // messages, so each workspace owner has to opt in explicitly from the Tools
 // settings page.
 func (f *Factory) DefaultEnabled() bool { return false }
+
+// Prompt returns provider-level narrative for the Slack tools. Static
+// markdown rendered from prompt.go; satisfies tool.ToolFactory.
+func (f *Factory) Prompt(ctx context.Context, ws types.WorkspaceID) (string, error) {
+	return renderPrompt()
+}

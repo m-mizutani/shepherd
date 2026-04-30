@@ -9,6 +9,7 @@ import (
 	"context"
 
 	"github.com/m-mizutani/gollem"
+	"github.com/m-mizutani/shepherd/pkg/domain/types"
 	"github.com/urfave/cli/v3"
 )
 
@@ -52,4 +53,12 @@ type ToolFactory interface {
 
 	// DefaultEnabled is the initial per-workspace toggle for new workspaces.
 	DefaultEnabled() bool
+
+	// Prompt returns provider-level narrative (markdown) suitable for
+	// embedding into a planner system prompt. Implementations may include
+	// workspace-scoped data (e.g. registered Sources). Returning "" means
+	// the provider has no extra narrative beyond per-tool Spec descriptions.
+	// The catalog isolates errors per provider, so an error here only blanks
+	// out this provider's narrative — the tool list still surfaces.
+	Prompt(ctx context.Context, ws types.WorkspaceID) (string, error)
 }
