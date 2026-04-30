@@ -11,6 +11,7 @@ var (
 	ErrInvalidWorkspaceID   = goerr.New("invalid workspace ID")
 	ErrDuplicateWorkspaceID = goerr.New("duplicate workspace ID")
 	ErrMissingChannelID     = goerr.New("slack channel is required")
+	ErrInvalidChannelFormat = goerr.New("invalid slack channel format")
 	ErrDuplicateChannelID   = goerr.New("duplicate slack channel across workspaces")
 )
 

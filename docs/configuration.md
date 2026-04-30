@@ -70,7 +70,7 @@ verification. The full provisioning walkthrough lives in [docs/slack.md](slack.m
 |---|---|---|
 | `--slack-client-id` | `SHEPHERD_SLACK_CLIENT_ID` | Slack OAuth client ID for Sign in with Slack. |
 | `--slack-client-secret` | `SHEPHERD_SLACK_CLIENT_SECRET` | Slack OAuth client secret. |
-| `--slack-bot-token` | `SHEPHERD_SLACK_BOT_TOKEN` | Bot token (`xoxb-...`) used to read channels, post replies, resolve `#channel-name` to channel IDs, and invoke the Slack-backed LLM tools. |
+| `--slack-bot-token` | `SHEPHERD_SLACK_BOT_TOKEN` | Bot token (`xoxb-...`) used to read channels, post replies, and invoke the Slack-backed LLM tools. |
 | `--slack-signing-secret` | `SHEPHERD_SLACK_SIGNING_SECRET` | Signing secret used to verify incoming events on `/hooks/slack/event` and interactive payloads on `/hooks/slack/interaction`. |
 | `--no-authn` | `SHEPHERD_NO_AUTHN` | Development-only: bypass OAuth and authenticate every request as the given Slack User ID. Mutually intended-exclusive with the OAuth flags. |
 
@@ -167,7 +167,7 @@ default_status = "open"
 closed_statuses = ["resolved"]
 
 [slack]
-channel = "#team-support"
+channel = "C0123456789"
 
 [[statuses]]
 id = "open"
@@ -201,7 +201,7 @@ A fuller example, including custom fields and labels, lives at
 
 | Key | Type | Required | Description |
 |---|---|---|---|
-| `channel` | string | yes | Slack channel to monitor. Either a channel ID (`C0123456789`) or a channel name prefixed with `#` (`#team-support`). When the `#name` form is used, `--slack-bot-token` is required at startup so Shepherd can resolve the name to an ID. |
+| `channel` | string | yes | Slack channel ID to monitor (e.g. `C0123456789`). Must match `^[CDG][A-Z0-9]{8,}$`. The `#channel-name` form is **not** supported — copy the channel ID from Slack via "View channel details → About → Channel ID". |
 
 ### `[[statuses]]`
 
@@ -271,5 +271,5 @@ Pointers for the most frequent misconfigurations:
 | `agent storage is required: set either --agent-storage-fs-dir or --agent-storage-gcs-bucket` | Neither agent-storage backend was configured. |
 | `--agent-storage-fs-dir and --agent-storage-gcs-bucket are mutually exclusive` | Both backends were set; pick one. |
 | `--base-url is required when Slack OAuth is enabled` | Slack OAuth flags are set but `--base-url` is empty. |
-| `channel name resolution requires --slack-bot-token` | Workspace TOML uses `#channel-name` form but no bot token is configured. |
+| `invalid slack channel format` | Workspace TOML's `[slack] channel` is not a valid Slack channel ID. Channel names (`#team-support`) are no longer supported — use the channel ID (`C0123456789`) instead. |
 | `firestore-project-id is required when using firestore backend` | `--repository-backend=firestore` was set without `--firestore-project-id`. |

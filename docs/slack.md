@@ -33,9 +33,7 @@ Add the following **Bot Token Scopes**:
 | `chat:write` | Post ticket creation replies in threads |
 | `app_mentions:read` | Receive `app_mention` events for LLM-assisted replies |
 | `channels:history` | Read messages in public channels |
-| `channels:read` | Resolve `#channel-name` to channel ID |
 | `groups:history` | Read messages in private channels |
-| `groups:read` | Resolve private `#channel-name` to channel ID |
 | `users:read` | Fetch user profile (name) for NoAuthn mode and `slack_get_user_info` LLM tool |
 | `users:read.email` | Fetch user email for NoAuthn mode |
 | `search:read` | Required by the `slack_search_messages` LLM tool (Slack `search.messages` API). User-token scope on classic apps; on Slack Marketplace apps this scope must be approved for bot tokens or the search tool returns "not_allowed_token_type". |
@@ -165,21 +163,20 @@ shepherd serve \
 
 ### Workspace Configuration
 
-Each workspace's TOML config must specify the Slack channel to monitor:
+Each workspace's TOML config must specify the Slack channel ID to monitor:
 
 ```toml
 [slack]
-channel = "#my-channel"       # Channel name (resolved to ID at startup via Slack API)
+channel = "C0123456789"       # Channel ID (must match ^[CDG][A-Z0-9]{8,}$)
 ```
 
-Or use a raw channel ID directly:
+The `#channel-name` form is **not** supported. To find a channel's ID:
 
-```toml
-[slack]
-channel = "C0123456789"       # Channel ID (used as-is)
-```
+1. Open the channel in the Slack desktop or web client
+2. Click the channel name in the header to open **View channel details**
+3. Scroll to **About** at the bottom; the **Channel ID** is shown there with a copy button
 
-When using `#channel-name` format, `--slack-bot-token` must be set so Shepherd can resolve the name to a channel ID at startup. The bot also needs the `channels:read` and `groups:read` scopes.
+If you previously used the `#channel-name` form, replace it with the channel ID copied this way — Shepherd will refuse to start with a clear error message otherwise.
 
 ## 8. Invite the Bot
 

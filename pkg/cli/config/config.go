@@ -1,7 +1,6 @@
 package config
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -17,6 +16,18 @@ import (
 )
 
 var idPattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
+
+// slackChannelIDPattern matches a Slack channel/DM/group ID.
+// Prefix [CDG] is documented at:
+//
+//	https://docs.slack.dev/apis/web-api/using-the-conversations-api/
+//
+// (C: public/private channel, D: DM, G: legacy private channel + mpim.)
+// The body character class [A-Z0-9] and the length lower bound (8) are
+// implementation conventions, not part of any documented contract; no
+// upper bound is enforced because Slack does not guarantee channel ID
+// length stability.
+var slackChannelIDPattern = regexp.MustCompile(`^[CDG][A-Z0-9]{8,}$`)
 
 type WorkspaceFiles struct {
 	paths []string
@@ -124,6 +135,18 @@ func (a *AppConfig) Validate() error {
 	if a.Slack.Channel == "" {
 		return goerr.Wrap(ErrMissingChannelID, "[slack] channel is required",
 			goerr.V(WorkspaceIDKey, wsID))
+	}
+	if strings.HasPrefix(a.Slack.Channel, "#") {
+		return goerr.Wrap(ErrInvalidChannelFormat,
+			`[slack] channel must be a Slack channel ID (e.g. "C0123456789"); the "#channel-name" form is no longer supported. Copy the channel ID from Slack via "View channel details → About → Channel ID"`,
+			goerr.V(WorkspaceIDKey, wsID),
+			goerr.V("channel", a.Slack.Channel))
+	}
+	if !slackChannelIDPattern.MatchString(a.Slack.Channel) {
+		return goerr.Wrap(ErrInvalidChannelFormat,
+			`[slack] channel must be a Slack channel ID matching ^[CDG][A-Z0-9]{8,}$ (e.g. "C0123456789")`,
+			goerr.V(WorkspaceIDKey, wsID),
+			goerr.V("channel", a.Slack.Channel))
 	}
 
 	// [triage] auto defaults to false (zero value), which means a human review
@@ -300,41 +323,21 @@ func loadSingleWorkspaceConfig(path string) (*WorkspaceConfig, error) {
 	}, nil
 }
 
-type ChannelResolver func(ctx context.Context, name string) (string, error)
-
-func BuildRegistry(ctx context.Context, configs []*WorkspaceConfig, resolve ChannelResolver) (*model.WorkspaceRegistry, error) {
+func BuildRegistry(configs []*WorkspaceConfig) *model.WorkspaceRegistry {
 	registry := model.NewWorkspaceRegistry()
 	logger := logging.Default()
 
 	for _, wc := range configs {
-		channelID := wc.SlackChannel
-		if strings.HasPrefix(channelID, "#") {
-			if resolve == nil {
-				return nil, goerr.New("channel name resolution requires --slack-bot-token",
-					goerr.V(WorkspaceIDKey, wc.ID),
-					goerr.V("channel", wc.SlackChannel))
-			}
-			name := strings.TrimPrefix(channelID, "#")
-			resolved, err := resolve(ctx, name)
-			if err != nil {
-				return nil, goerr.Wrap(err, "failed to resolve slack channel name",
-					goerr.V(WorkspaceIDKey, wc.ID),
-					goerr.V("channel", wc.SlackChannel))
-			}
-			logger.Info("Resolved slack channel", "name", wc.SlackChannel, "id", resolved)
-			channelID = resolved
-		}
-
 		registry.Register(&model.WorkspaceEntry{
 			Workspace: model.Workspace{
 				ID:   types.WorkspaceID(wc.ID),
 				Name: wc.Name,
 			},
-			FieldSchema:         wc.FieldSchema,
-			SlackChannelID:      types.SlackChannelID(channelID),
-			AutoTriage:          wc.AutoTriage,
+			FieldSchema:    wc.FieldSchema,
+			SlackChannelID: types.SlackChannelID(wc.SlackChannel),
+			AutoTriage:     wc.AutoTriage,
 		})
-		logger.Info("Registered workspace", "id", wc.ID, "name", wc.Name, "channel", channelID)
+		logger.Info("Registered workspace", "id", wc.ID, "name", wc.Name, "channel", wc.SlackChannel)
 	}
-	return registry, nil
+	return registry
 }
