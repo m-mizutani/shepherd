@@ -26,7 +26,9 @@ func newSearchMessagesTool(s SlackTooler) gollem.Tool {
 func (t *searchMessagesTool) Spec() gollem.ToolSpec {
 	return gollem.ToolSpec{
 		Name:        "slack_search_messages",
-		Description: "Search Slack messages across channels the bot can access. Returns matches with channel, author, text, timestamp, and permalink. Use Slack search modifiers like 'from:@user', 'in:#channel', 'after:2026-01-01' to narrow results.",
+		Description: "Search Slack messages across channels the bot has access to. " +
+			"Args: `query` (required, supports Slack modifiers like `from:@user`, `in:#channel`, `after:YYYY-MM-DD`); optional `limit` (default 20, max 50); optional `sort` ('score' = relevance default, or 'timestamp' = newest first). " +
+			"Returns `{ matches: [{channel_id, channel_name, user, username, text, timestamp, permalink}], count }`.",
 		Parameters: map[string]*gollem.Parameter{
 			"query": {
 				Type:        gollem.TypeString,

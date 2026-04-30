@@ -73,6 +73,10 @@ func RenderMention(in MentionInput) (string, error) {
 // as a Go template — and embedded into the base template as a separate block
 // so that user content starting with a markdown heading does not collide with
 // the base template's heading hierarchy.
+//
+// AvailableTools is the catalog briefing for this workspace: each enabled
+// provider's narrative and the names/descriptions of its tools. The planner
+// reads it before filling `allowed_tools` so it never invents a tool name.
 type TriagePlanInput struct {
 	Title          string
 	Description    string
@@ -80,6 +84,23 @@ type TriagePlanInput struct {
 	Reporter       string
 	UserGuidance   string
 	AutoFillFields []AutoFillField
+	AvailableTools []ProviderBriefing
+}
+
+// ProviderBriefing mirrors tool.ProviderBriefing for the prompt-template's
+// purposes. Keeping a separate struct in this package means the template
+// only depends on prompt-shaped data, not the domain `tool` package — and
+// follows the same pattern as AutoFillField above.
+type ProviderBriefing struct {
+	ID          string
+	Description string
+	Tools       []ToolEntry
+}
+
+// ToolEntry is the planner-facing summary of a single tool.
+type ToolEntry struct {
+	Name        string
+	Description string
 }
 
 // AutoFillField is the per-field briefing the planner sees when a workspace

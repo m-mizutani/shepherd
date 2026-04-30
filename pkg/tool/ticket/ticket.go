@@ -40,6 +40,12 @@ func (f *Factory) Available() bool      { return f.repo != nil }
 func (f *Factory) Tools() []gollem.Tool { return f.tools }
 func (f *Factory) DefaultEnabled() bool { return true }
 
+// Prompt returns provider-level narrative for the ticket tools. The real
+// content is rendered in prompt.go; this signature satisfies tool.ToolFactory.
+func (f *Factory) Prompt(ctx context.Context, ws types.WorkspaceID) (string, error) {
+	return renderPrompt()
+}
+
 // workspaceFromCtx returns the active workspace ID, erroring out cleanly when
 // the caller forgot to bind one. The error message is structured for the LLM.
 func workspaceFromCtx(ctx context.Context) (types.WorkspaceID, error) {

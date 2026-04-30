@@ -8,6 +8,7 @@ import (
 
 	"github.com/m-mizutani/gollem"
 	"github.com/m-mizutani/shepherd/pkg/domain/model"
+	"github.com/m-mizutani/shepherd/pkg/domain/types"
 	"github.com/m-mizutani/shepherd/pkg/tool"
 	"github.com/urfave/cli/v3"
 )
@@ -41,3 +42,9 @@ func (f *Factory) Init(_ context.Context) error {
 func (f *Factory) Available() bool      { return true }
 func (f *Factory) Tools() []gollem.Tool { return f.tools }
 func (f *Factory) DefaultEnabled() bool { return true }
+
+// Prompt returns provider-level narrative for meta tools. Static markdown
+// rendered from prompt.go; this signature satisfies tool.ToolFactory.
+func (f *Factory) Prompt(ctx context.Context, ws types.WorkspaceID) (string, error) {
+	return renderPrompt()
+}

@@ -3,6 +3,7 @@ package triage_test
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -11,8 +12,10 @@ import (
 	"github.com/m-mizutani/gt"
 	domainConfig "github.com/m-mizutani/shepherd/pkg/domain/model/config"
 	"github.com/m-mizutani/shepherd/pkg/domain/types"
+	"github.com/m-mizutani/shepherd/pkg/tool"
 	"github.com/m-mizutani/shepherd/pkg/usecase/triage"
 	slackgo "github.com/slack-go/slack"
+	"github.com/urfave/cli/v3"
 )
 
 // newPlanSessionMock returns a stub session whose Generate emits the supplied
@@ -241,6 +244,121 @@ func (f *fakeWorkspaceLookup) WorkspaceSchema(ws types.WorkspaceID) *domainConfi
 		return nil
 	}
 	return f.schemas[ws]
+}
+
+// triageStubFactory is a tool.ToolFactory used by the briefing-injection test.
+// It implements only what the catalog needs at briefing time: ID, Init,
+// Available, Tools, DefaultEnabled, Prompt. Flags is unused.
+type triageStubFactory struct {
+	id     tool.ProviderID
+	tools  []gollem.Tool
+	prompt string
+}
+
+func (f *triageStubFactory) ID() tool.ProviderID         { return f.id }
+func (f *triageStubFactory) Flags() []cli.Flag           { return nil }
+func (f *triageStubFactory) Init(context.Context) error  { return nil }
+func (f *triageStubFactory) Available() bool             { return true }
+func (f *triageStubFactory) Tools() []gollem.Tool        { return f.tools }
+func (f *triageStubFactory) DefaultEnabled() bool        { return true }
+func (f *triageStubFactory) Prompt(context.Context, types.WorkspaceID) (string, error) {
+	return f.prompt, nil
+}
+
+type triageStubTool struct {
+	name string
+	desc string
+}
+
+func (t triageStubTool) Spec() gollem.ToolSpec {
+	return gollem.ToolSpec{Name: t.name, Description: t.desc}
+}
+func (t triageStubTool) Run(context.Context, map[string]any) (map[string]any, error) {
+	return map[string]any{}, nil
+}
+
+// TestExecutorRun_AvailableToolsInjectedIntoSystemPrompt verifies the
+// catalog.ToolBriefing → TriagePlanInput.AvailableTools → triage_plan.md
+// pipeline by capturing the system prompt the LLM session is created with
+// and checking that the rendered "Available investigation tools" section
+// contains every enabled provider's narrative and tool listing.
+func TestExecutorRun_AvailableToolsInjectedIntoSystemPrompt(t *testing.T) {
+	_, _, repo, hist, slack := newRig(t, nil)
+
+	stub := &triageStubFactory{
+		id: tool.ProviderSlack,
+		tools: []gollem.Tool{
+			triageStubTool{name: "slack_search_messages", desc: "Search Slack messages."},
+			triageStubTool{name: "slack_get_thread", desc: "Read a Slack thread."},
+		},
+		prompt: "stub slack provider narrative",
+	}
+	gt.NoError(t, stub.Init(context.Background()))
+	catalog := tool.NewCatalog([]tool.ToolFactory{stub}, repo.ToolSettings())
+
+	var captured string
+	llm := &mock.LLMClientMock{
+		NewSessionFunc: func(_ context.Context, opts ...gollem.SessionOption) (gollem.Session, error) {
+			cfg := gollem.NewSessionConfig(opts...)
+			captured = cfg.SystemPrompt()
+			return newPlanSessionMock(t, []string{completePlanJSON}), nil
+		},
+	}
+
+	exec := triage.NewPlanExecutor(repo, hist, llm, slack, catalog, nil,
+		&fakeWorkspaceLookup{auto: map[types.WorkspaceID]bool{tWS: true}},
+		triage.Config{IterationCap: 5})
+
+	ticket := mustCreateTicket(t, repo, false)
+	gt.NoError(t, exec.RunForTest(context.Background(), tWS, ticket.ID))
+
+	if captured == "" {
+		t.Fatalf("expected captured system prompt to be non-empty")
+	}
+	for _, want := range []string{
+		"Available investigation tools",
+		"### slack",
+		"stub slack provider narrative",
+		"`slack_search_messages` — Search Slack messages.",
+		"`slack_get_thread` — Read a Slack thread.",
+	} {
+		if !strings.Contains(captured, want) {
+			t.Errorf("system prompt missing %q\n---\n%s", want, captured)
+		}
+	}
+}
+
+// TestExecutorRun_NoToolsConfigured_FallbackInSystemPrompt verifies the
+// "no investigation tools" branch of the planner template fires when the
+// catalog is empty (every workspace toggle off / nil factories).
+func TestExecutorRun_NoToolsConfigured_FallbackInSystemPrompt(t *testing.T) {
+	_, exec, repo, _, _ := newRig(t, nil) // newRig already wires an empty catalog
+
+	var captured string
+	llm := &mock.LLMClientMock{
+		NewSessionFunc: func(_ context.Context, opts ...gollem.SessionOption) (gollem.Session, error) {
+			cfg := gollem.NewSessionConfig(opts...)
+			captured = cfg.SystemPrompt()
+			return newPlanSessionMock(t, []string{completePlanJSON}), nil
+		},
+	}
+
+	// Replace exec with one that uses the captured-prompt llm. Reuse the rest
+	// of the rig (repo / hist / catalog / slack) by constructing a fresh
+	// PlanExecutor sharing those.
+	_ = exec // discard the rig's executor; we rebuild with the capturing LLM
+	hist := newFakeHistory()
+	slack := &fakeTriageSlack{}
+	catalog := tool.NewCatalog(nil, repo.ToolSettings())
+	exec2 := triage.NewPlanExecutor(repo, hist, llm, slack, catalog, nil,
+		&fakeWorkspaceLookup{auto: map[types.WorkspaceID]bool{tWS: true}},
+		triage.Config{IterationCap: 5})
+
+	ticket := mustCreateTicket(t, repo, false)
+	gt.NoError(t, exec2.RunForTest(context.Background(), tWS, ticket.ID))
+
+	gt.S(t, captured).Contains("No investigation tools are enabled for this workspace")
+	gt.S(t, captured).Contains("Do not call `propose_investigate`")
 }
 
 // TestExecutorRun_LLMProposesComplete_DefaultRequiresReview_PostsReviewWithoutFinalize

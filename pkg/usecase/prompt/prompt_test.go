@@ -198,6 +198,73 @@ func TestRenderTriagePlan_NoAutoFillSectionWhenEmpty(t *testing.T) {
 	}
 }
 
+func TestRenderTriagePlan_AvailableToolsRendered(t *testing.T) {
+	got, err := prompt.RenderTriagePlan(prompt.TriagePlanInput{
+		Title: "Sign-in broken",
+		AvailableTools: []prompt.ProviderBriefing{
+			{
+				ID:          "slack",
+				Description: "Searches the connected Slack workspace.",
+				Tools: []prompt.ToolEntry{
+					{Name: "slack_search_messages", Description: "Search Slack messages by query."},
+					{Name: "slack_get_thread", Description: "Read a Slack thread by channel + ts."},
+				},
+			},
+			{
+				ID:          "notion",
+				Description: "Reads Notion content scoped to registered Sources.",
+				Tools: []prompt.ToolEntry{
+					{Name: "notion_search", Description: "Full-text search inside sources."},
+				},
+			},
+		},
+	})
+	gt.NoError(t, err)
+	for _, want := range []string{
+		"Available investigation tools",
+		"### slack",
+		"Searches the connected Slack workspace.",
+		"`slack_search_messages` — Search Slack messages by query.",
+		"`slack_get_thread`",
+		"### notion",
+		"Reads Notion content scoped to registered Sources.",
+		"`notion_search` — Full-text search inside sources.",
+		"silently dropped",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("triage_plan AvailableTools section missing %q\n---\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "No investigation tools are enabled") {
+		t.Errorf("expected populated tools branch, got fallback message:\n%s", got)
+	}
+}
+
+func TestRenderTriagePlan_NoToolsFallback(t *testing.T) {
+	got, err := prompt.RenderTriagePlan(prompt.TriagePlanInput{Title: "x"})
+	gt.NoError(t, err)
+	gt.S(t, got).Contains("No investigation tools are enabled for this workspace")
+	gt.S(t, got).Contains("Do not call `propose_investigate`")
+}
+
+func TestRenderTriagePlan_ProviderWithEmptyDescriptionStillListsTools(t *testing.T) {
+	got, err := prompt.RenderTriagePlan(prompt.TriagePlanInput{
+		Title: "x",
+		AvailableTools: []prompt.ProviderBriefing{
+			{
+				ID:          "ticket",
+				Description: "", // factory.Prompt errored — narrative blanked
+				Tools: []prompt.ToolEntry{
+					{Name: "ticket_get", Description: "Fetch a ticket."},
+				},
+			},
+		},
+	})
+	gt.NoError(t, err)
+	gt.S(t, got).Contains("### ticket")
+	gt.S(t, got).Contains("`ticket_get` — Fetch a ticket.")
+}
+
 func TestRenderTriageSubtask_RendersCriteria(t *testing.T) {
 	got, err := prompt.RenderTriageSubtask(prompt.TriageSubtaskInput{
 		Request: "Collect related Slack posts in the last 48h",

@@ -35,8 +35,9 @@ func newQueryDatabaseTool(client databaseQuerier, guard authorizer) gollem.Tool 
 func (t *queryDatabaseTool) Spec() gollem.ToolSpec {
 	return gollem.ToolSpec{
 		Name: "notion_query_database",
-		Description: "Query rows of a Notion database (must be a registered Source). " +
-			"Returns row metadata; set include_body=true to also fetch each row's page body as Markdown (capped at 10 bodies per call).",
+		Description: "Query rows of a Notion database registered as a Source. " +
+			"Args: `database_id` (required, ID or URL); optional `filter` and `sorts` (Notion API objects, passed through verbatim); optional `limit` (default 25, max 100); optional `include_body` (bool) to inline each row's page body as markdown (capped at 10 bodies per call). " +
+			"Returns `{ rows: [{id, title, url, markdown?}], count, has_more, next_cursor }`.",
 		Parameters: map[string]*gollem.Parameter{
 			"database_id": {
 				Type:        gollem.TypeString,

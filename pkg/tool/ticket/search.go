@@ -29,8 +29,10 @@ func newSearchTool(r interfaces.Repository) gollem.Tool {
 
 func (t *searchTool) Spec() gollem.ToolSpec {
 	return gollem.ToolSpec{
-		Name:        "ticket_search",
-		Description: "Search past tickets in the active workspace by case-insensitive substring match against title and description. Optionally filter by status IDs. Results are sorted newest-updated first.",
+		Name: "ticket_search",
+		Description: "Search past tickets in the active workspace by case-insensitive substring match on title and description. " +
+			"Args: optional `query` (empty means no text filter); optional `status_ids` (array of status IDs to whitelist; empty = all statuses); optional `limit` (default 20, max 50). " +
+			"Returns `{ tickets: [{id, seq_num, title, status_id, status_name, updated_at}], count }`, sorted newest-updated first. Useful for finding precedents or similar tickets.",
 		Parameters: map[string]*gollem.Parameter{
 			"query": {
 				Type:        gollem.TypeString,

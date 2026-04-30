@@ -45,8 +45,9 @@ func newSearchTool(client searcher, guard authorizer) gollem.Tool {
 func (t *searchTool) Spec() gollem.ToolSpec {
 	return gollem.ToolSpec{
 		Name: "notion_search",
-		Description: "Search Notion content within this workspace's allowed sources " +
-			"(registered pages and databases). Returns matches scoped to those roots.",
+		Description: "Full-text search across the workspace's registered Notion sources (pages and databases). " +
+			"Args: `query` (required, free text); optional `object_type` ('page'|'database'|'any', default any); optional `limit` (default 20, max 50). " +
+			"Returns `{ matches: [{id, type, title, url}], count }`. Hits outside any registered source are filtered out before being returned.",
 		Parameters: map[string]*gollem.Parameter{
 			"query": {
 				Type:        gollem.TypeString,

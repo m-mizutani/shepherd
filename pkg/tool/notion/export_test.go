@@ -31,3 +31,8 @@ func BuildToolsForTest(api notionAPI, guard *source.NotionGuard) []gollem.Tool {
 // SetTokenForTest binds the --notion-token value into the factory without
 // going through urfave/cli. Used only by tests.
 func SetTokenForTest(f *Factory, token string) { f.token = token }
+
+// RenderPromptFromSourcesForTest exposes the pure-function half of the
+// provider prompt renderer so tests can exercise the template without
+// constructing a real Factory.
+var RenderPromptFromSourcesForTest = renderPromptFromSources

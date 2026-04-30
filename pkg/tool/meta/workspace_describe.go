@@ -19,8 +19,11 @@ func newWorkspaceDescribeTool(r *model.WorkspaceRegistry) gollem.Tool {
 
 func (t *workspaceDescribeTool) Spec() gollem.ToolSpec {
 	return gollem.ToolSpec{
-		Name:        "workspace_describe",
-		Description: "Describe the active workspace's status definitions and custom field schema. Use this to translate status IDs returned by other tools into human-readable names, and to discover what custom fields tickets carry.",
+		Name: "workspace_describe",
+		Description: "Describe the active workspace's status definitions and custom field schema. " +
+			"No arguments. " +
+			"Returns `{ workspace_id, workspace_name, slack_channel_id, default_status_id, statuses: [{id, name, color, order, closed}], fields: [{id, name, type, required, description, options: [{id, name}]}] }`. " +
+			"Use this to translate raw status IDs returned by other tools into names, or to discover what custom fields tickets carry.",
 		Parameters:  map[string]*gollem.Parameter{},
 	}
 }

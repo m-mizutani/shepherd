@@ -15,6 +15,7 @@ import (
 	domainConfig "github.com/m-mizutani/shepherd/pkg/domain/model/config"
 	"github.com/m-mizutani/shepherd/pkg/domain/model"
 	"github.com/m-mizutani/shepherd/pkg/domain/types"
+	"github.com/m-mizutani/shepherd/pkg/tool"
 	"github.com/m-mizutani/shepherd/pkg/usecase/prompt"
 	"github.com/m-mizutani/shepherd/pkg/utils/errutil"
 	"github.com/m-mizutani/shepherd/pkg/utils/i18n"
@@ -48,6 +49,7 @@ func (e *PlanExecutor) llmPlan(ctx context.Context, ticket *model.Ticket) (*mode
 		InitialMessage: ticket.InitialMessage,
 		Reporter:       string(ticket.ReporterSlackUserID),
 		AutoFillFields: autoFillBriefing(autoFill),
+		AvailableTools: e.availableToolBriefings(ctx, ticket.WorkspaceID),
 	}
 	var systemPrompt string
 	var err error
@@ -336,4 +338,47 @@ func anyToStringSlice(v any) ([]string, bool) {
 		return out, true
 	}
 	return nil, false
+}
+
+// availableToolBriefings returns the per-provider briefing the planner
+// system prompt embeds under "Available investigation tools". Errors from
+// the catalog are routed through errutil and the function returns nil so
+// the planner falls back to the "no tools enabled" branch — losing the
+// briefing once must not block triage from running at all.
+func (e *PlanExecutor) availableToolBriefings(ctx context.Context, ws types.WorkspaceID) []prompt.ProviderBriefing {
+	if e.catalog == nil {
+		return nil
+	}
+	brief, err := e.catalog.ToolBriefing(ctx, ws)
+	if err != nil {
+		errutil.Handle(ctx, goerr.Wrap(err, "load tool briefing for triage prompt",
+			goerr.V("workspace_id", string(ws))))
+		return nil
+	}
+	return toPromptBriefings(brief)
+}
+
+// toPromptBriefings converts catalog-shaped briefings into the prompt
+// package's mirror struct. Kept in this package so prompt remains free of
+// any tool-package import (matches how AutoFillField is wired).
+func toPromptBriefings(brief []tool.ProviderBriefing) []prompt.ProviderBriefing {
+	if len(brief) == 0 {
+		return nil
+	}
+	out := make([]prompt.ProviderBriefing, 0, len(brief))
+	for _, b := range brief {
+		entries := make([]prompt.ToolEntry, 0, len(b.Tools))
+		for _, t := range b.Tools {
+			entries = append(entries, prompt.ToolEntry{
+				Name:        t.Name,
+				Description: t.Description,
+			})
+		}
+		out = append(out, prompt.ProviderBriefing{
+			ID:          string(b.ID),
+			Description: b.Description,
+			Tools:       entries,
+		})
+	}
+	return out
 }

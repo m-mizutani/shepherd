@@ -21,8 +21,10 @@ func newGetHistoryTool(r interfaces.Repository) gollem.Tool {
 
 func (t *getHistoryTool) Spec() gollem.ToolSpec {
 	return gollem.ToolSpec{
-		Name:        "ticket_get_history",
-		Description: "Return the audit history (status transitions, creation, etc.) of a ticket in the active workspace, oldest-first.",
+		Name: "ticket_get_history",
+		Description: "Return the audit log of a ticket: creation, status transitions, and other lifecycle events. " +
+			"Args: `ticket_id` (required, UUID). " +
+			"Returns `{ history: [{id, action, old_status_id, new_status_id, changed_by, created_at}], count }`, oldest-first.",
 		Parameters: map[string]*gollem.Parameter{
 			"ticket_id": {
 				Type:        gollem.TypeString,

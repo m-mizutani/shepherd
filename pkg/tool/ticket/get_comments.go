@@ -27,8 +27,10 @@ func newGetCommentsTool(r interfaces.Repository) gollem.Tool {
 
 func (t *getCommentsTool) Spec() gollem.ToolSpec {
 	return gollem.ToolSpec{
-		Name:        "ticket_get_comments",
-		Description: "List comments attached to a ticket in the active workspace, oldest-first. Useful for retrieving the conversation history that accompanied a past ticket.",
+		Name: "ticket_get_comments",
+		Description: "List comments attached to a ticket — the conversation history that accompanied past triage / discussion. " +
+			"Args: `ticket_id` (required, UUID); optional `limit` (default 50, max 200). " +
+			"Returns `{ comments: [{id, author, author_id, is_bot, body, slack_ts, created_at}], count }`, oldest-first.",
 		Parameters: map[string]*gollem.Parameter{
 			"ticket_id": {
 				Type:        gollem.TypeString,

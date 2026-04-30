@@ -26,7 +26,9 @@ func newGetChannelHistoryTool(s SlackTooler) gollem.Tool {
 func (t *getChannelHistoryTool) Spec() gollem.ToolSpec {
 	return gollem.ToolSpec{
 		Name:        "slack_get_channel_history",
-		Description: "Fetch recent top-level messages from a Slack channel (not thread replies). Use 'oldest' / 'latest' Slack timestamps to bracket a time range, e.g. when investigating activity around an incident.",
+		Description: "Fetch recent top-level messages from a Slack channel (excludes thread replies). " +
+			"Args: `channel_id` (required, e.g. 'C0123456'); optional `oldest` / `latest` Slack timestamps (e.g. '1700000000.000000') to bracket a time range; optional `limit` (default 50, max 200). " +
+			"Returns `{ messages: [{user, text, timestamp, thread_ts, bot_id}], count }`. Useful for surveying activity around an incident timestamp.",
 		Parameters: map[string]*gollem.Parameter{
 			"channel_id": {
 				Type:        gollem.TypeString,

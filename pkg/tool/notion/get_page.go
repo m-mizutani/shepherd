@@ -36,8 +36,9 @@ func newGetPageTool(client pageReader, guard authorizer) gollem.Tool {
 func (t *getPageTool) Spec() gollem.ToolSpec {
 	return gollem.ToolSpec{
 		Name: "notion_get_page",
-		Description: "Fetch a Notion page as Markdown. With recursive=true, walks linked " +
-			"child pages within the workspace's allowed sources up to max_depth/max_pages.",
+		Description: "Fetch a Notion page's body as Markdown. " +
+			"Args: `page_id` (required, Notion page ID or full URL); optional `recursive` (bool, default false) to also walk linked child pages within the workspace's registered sources, bounded by `max_depth` (default 2, max 4) and `max_pages` (default 20, max 50). " +
+			"Returns `{ markdown, fetched: [page_id], skipped: [{id, reason}], truncated }`. Pages outside the registered sources are skipped, not fetched.",
 		Parameters: map[string]*gollem.Parameter{
 			"page_id": {
 				Type:        gollem.TypeString,
