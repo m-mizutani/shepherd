@@ -1,7 +1,7 @@
 package config_test
 
 import (
-	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -79,7 +79,7 @@ func TestLoadWorkspaceConfigs_Directory(t *testing.T) {
 [workspace]
 id = "ws-two"
 [slack]
-channel = "C9999"
+channel = "C9999000000"
 [[statuses]]
 id = "open"
 name = "Open"
@@ -99,7 +99,7 @@ func TestLoadWorkspaceConfigs_DuplicateWorkspaceID(t *testing.T) {
 [workspace]
 id = "test-ws"
 [slack]
-channel = "C9999"
+channel = "C9999000000"
 [[statuses]]
 id = "open"
 name = "Open"
@@ -137,7 +137,7 @@ func TestLoadWorkspaceConfigs_MissingWorkspaceID(t *testing.T) {
 [workspace]
 name = "No ID"
 [slack]
-channel = "C111"
+channel = "C1110000000"
 [[statuses]]
 id = "open"
 name = "Open"
@@ -155,7 +155,7 @@ func TestLoadWorkspaceConfigs_InvalidWorkspaceID(t *testing.T) {
 [workspace]
 id = "INVALID_ID"
 [slack]
-channel = "C111"
+channel = "C1110000000"
 [[statuses]]
 id = "open"
 name = "Open"
@@ -202,7 +202,7 @@ func TestLoadWorkspaceConfigs_DefaultLabels(t *testing.T) {
 [workspace]
 id = "test-ws"
 [slack]
-channel = "C111"
+channel = "C1110000000"
 [[statuses]]
 id = "open"
 name = "Open"
@@ -221,7 +221,7 @@ func TestLoadWorkspaceConfigs_DefaultStatusFromFirst(t *testing.T) {
 [workspace]
 id = "test-ws"
 [slack]
-channel = "C111"
+channel = "C1110000000"
 [[statuses]]
 id = "new"
 name = "New"
@@ -243,7 +243,7 @@ func TestLoadWorkspaceConfigs_NameFallsBackToID(t *testing.T) {
 [workspace]
 id = "my-ws"
 [slack]
-channel = "C111"
+channel = "C1110000000"
 [[statuses]]
 id = "open"
 name = "Open"
@@ -261,8 +261,7 @@ func TestBuildRegistry(t *testing.T) {
 
 	configs := gt.R1(config.LoadWorkspaceConfigs([]string{dir})).NoError(t)
 
-	ctx := context.Background()
-	registry := gt.R1(config.BuildRegistry(ctx, configs, nil)).NoError(t)
+	registry := gt.R1(config.BuildRegistry(configs)).NoError(t)
 	entry, ok := registry.Get(types.WorkspaceID("test-ws"))
 	gt.B(t, ok).True()
 	gt.S(t, entry.Workspace.Name).Equal("Test Workspace")
@@ -298,9 +297,87 @@ func TestBuildRegistry_PropagatesAutoTriage(t *testing.T) {
 	writeToml(t, dir, "ws.toml", tomlBody)
 
 	configs := gt.R1(config.LoadWorkspaceConfigs([]string{dir})).NoError(t)
-	ctx := context.Background()
-	registry := gt.R1(config.BuildRegistry(ctx, configs, nil)).NoError(t)
+	registry := gt.R1(config.BuildRegistry(configs)).NoError(t)
 	entry, ok := registry.Get(types.WorkspaceID("test-ws"))
 	gt.B(t, ok).True()
 	gt.B(t, entry.AutoTriage).True()
+}
+
+func TestLoadWorkspaceConfigs_RejectsHashChannelName(t *testing.T) {
+	dir := t.TempDir()
+	body := `
+[workspace]
+id = "test-ws"
+[slack]
+channel = "#team-support"
+[[statuses]]
+id = "open"
+name = "Open"
+color = "#fff"
+`
+	path := writeToml(t, dir, "bad.toml", body)
+
+	_, err := config.LoadWorkspaceConfigs([]string{path})
+	gt.Error(t, err)
+	gt.B(t, errors.Is(err, config.ErrInvalidChannelFormat)).True()
+	// Migration hint should be in the error so operators can self-recover.
+	gt.S(t, err.Error()).Contains("no longer supported")
+	gt.S(t, err.Error()).Contains("View channel details")
+}
+
+func TestLoadWorkspaceConfigs_RejectsInvalidChannelFormat(t *testing.T) {
+	cases := map[string]string{
+		"lowercase":      "c0123abcd1",
+		"contains_space": "C 1234567",
+		"too_short":      "C12",
+		"user_id":        "U01234567",
+		"hyphen":         "C-12345678",
+	}
+	for name, channel := range cases {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			body := `
+[workspace]
+id = "test-ws"
+[slack]
+channel = "` + channel + `"
+[[statuses]]
+id = "open"
+name = "Open"
+color = "#fff"
+`
+			path := writeToml(t, dir, "bad.toml", body)
+
+			_, err := config.LoadWorkspaceConfigs([]string{path})
+			gt.Error(t, err)
+			gt.B(t, errors.Is(err, config.ErrInvalidChannelFormat)).True()
+		})
+	}
+}
+
+func TestLoadWorkspaceConfigs_AcceptsValidChannelIDs(t *testing.T) {
+	cases := map[string]string{
+		"public_channel":  "C0123456789",
+		"dm":              "D01ABC23DE",
+		"legacy_or_mpim":  "G99XYZ12345",
+	}
+	for name, channel := range cases {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			body := `
+[workspace]
+id = "test-ws"
+[slack]
+channel = "` + channel + `"
+[[statuses]]
+id = "open"
+name = "Open"
+color = "#fff"
+`
+			path := writeToml(t, dir, "ok.toml", body)
+
+			configs := gt.R1(config.LoadWorkspaceConfigs([]string{path})).NoError(t)
+			gt.S(t, configs[0].SlackChannel).Equal(channel)
+		})
+	}
 }

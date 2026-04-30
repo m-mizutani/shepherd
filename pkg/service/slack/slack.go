@@ -330,34 +330,3 @@ func convertMessages(msgs []slackgo.Message) []*Message {
 	return out
 }
 
-func (c *Client) ResolveChannelName(ctx context.Context, name string) (string, error) {
-	var cursor string
-	for {
-		params := &slackgo.GetConversationsParameters{
-			Cursor:          cursor,
-			Limit:           200,
-			Types:           []string{"public_channel", "private_channel"},
-			ExcludeArchived: true,
-		}
-		channels, nextCursor, err := c.api.GetConversationsContext(ctx, params)
-		if err != nil {
-			return "", goerr.Wrap(err, "failed to list slack channels",
-				goerr.V("channel_name", name),
-				goerr.Tag(errutil.TagSlackError),
-			)
-		}
-		for _, ch := range channels {
-			if ch.Name == name {
-				return ch.ID, nil
-			}
-		}
-		if nextCursor == "" {
-			break
-		}
-		cursor = nextCursor
-	}
-	return "", goerr.New("slack channel not found",
-		goerr.V("channel_name", name),
-		goerr.Tag(errutil.TagSlackError),
-	)
-}

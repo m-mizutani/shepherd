@@ -155,7 +155,7 @@ default_status = "open"
 closed_statuses = ["resolved"]
 
 [slack]
-channel = "#team-support"
+channel = "C0123456789"
 
 [[statuses]]
 id = "open"

@@ -121,13 +121,7 @@ func cmdServe() *cli.Command {
 				return goerr.Wrap(err, "failed to load workspace configs")
 			}
 
-			var channelResolver config.ChannelResolver
-			if slackCfg.BotToken() != "" {
-				slackClient := slackCfg.NewSlackClient()
-				channelResolver = slackClient.ResolveChannelName
-			}
-
-			registry, err := config.BuildRegistry(ctx, workspaceConfigs, channelResolver)
+			registry, err := config.BuildRegistry(workspaceConfigs)
 			if err != nil {
 				return goerr.Wrap(err, "failed to build workspace registry")
 			}
