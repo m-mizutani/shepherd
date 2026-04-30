@@ -99,8 +99,8 @@ func TestHandleReviewEditSubmit_AppliesEditedAssigneeAndFinalizes(t *testing.T) 
 		slackService.TriageReviewTitleBlockID: {
 			slackService.TriageReviewTitleActionID: {Value: "Edited title"},
 		},
-		slackService.TriageReviewSummaryBlockID: {
-			slackService.TriageReviewSummaryActionID: {Value: "Edited summary"},
+		slackService.TriageReviewDescriptionBlockID: {
+			slackService.TriageReviewDescriptionActionID: {Value: "Edited description"},
 		},
 		slackService.TriageReviewAssigneeBlockID: {
 			slackService.TriageReviewAssigneeActionID: {SelectedUsers: []string{"U999", "U888"}},
@@ -121,11 +121,11 @@ func TestHandleReviewEditSubmit_AppliesEditedAssigneeAndFinalizes(t *testing.T) 
 	gt.A(t, got.AssigneeIDs).Length(2)
 	gt.Equal(t, got.AssigneeIDs[0], types.SlackUserID("U999"))
 	gt.Equal(t, got.AssigneeIDs[1], types.SlackUserID("U888"))
-	// Edited title / summary are persisted onto the ticket itself so the
+	// Edited title / description are persisted onto the ticket itself so the
 	// values the user confirmed in the modal become the authoritative
 	// ticket headline + body.
 	gt.S(t, got.Title).Equal("Edited title")
-	gt.S(t, got.Description).Equal("Edited summary")
+	gt.S(t, got.Description).Equal("Edited description")
 
 	// Edit submit deactivates the original review message (1 update) and
 	// posts the LLM hand-off as a fresh reply (1 post).

@@ -33,13 +33,13 @@ func (e *PlanExecutor) finalizeComplete(ctx context.Context, ticket *model.Ticke
 		assignees = &ids
 	}
 
-	// Persist the LLM's (or human-edited) Title and Summary as the ticket's
-	// Title / Description so the values visible in the review message become
-	// the authoritative ticket body. We do this BEFORE FinalizeTriage so a
-	// failure leaves the ticket cleanly un-finalised. Empty Title leaves the
-	// existing ticket.Title intact (older plans pre-date the field).
+	// Persist the LLM's (or human-edited) Title and Description as the
+	// ticket's Title / Description so the values visible in the review message
+	// become the authoritative ticket body. We do this BEFORE FinalizeTriage
+	// so a failure leaves the ticket cleanly un-finalised. Empty Title leaves
+	// the existing ticket.Title intact (older plans pre-date the field).
 	titleChanged := strings.TrimSpace(comp.Title) != "" && ticket.Title != comp.Title
-	descChanged := strings.TrimSpace(comp.Summary) != "" && ticket.Description != comp.Summary
+	descChanged := strings.TrimSpace(comp.Description) != "" && ticket.Description != comp.Description
 
 	// Promote the planner's auto-filled suggestions into the ticket's
 	// FieldValues so the web UI / hand-off see real values, not "—". Skipped
@@ -57,7 +57,7 @@ func (e *PlanExecutor) finalizeComplete(ctx context.Context, ticket *model.Ticke
 			ticket.Title = comp.Title
 		}
 		if descChanged {
-			ticket.Description = comp.Summary
+			ticket.Description = comp.Description
 		}
 		if _, err := e.repo.Ticket().Update(ctx, ticket.WorkspaceID, ticket); err != nil {
 			return goerr.Wrap(err, "persist triage title/description", goerr.V("ticket_id", ticket.ID))

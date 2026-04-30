@@ -42,7 +42,7 @@ func completePlan(values map[string]any) *model.TriagePlan {
 		Kind:    types.PlanComplete,
 		Message: "done",
 		Complete: &model.Complete{
-			Summary: "ok",
+			Description: "ok",
 			Assignee: model.AssigneeDecision{
 				Kind:      types.AssigneeAssigned,
 				UserIDs:   []types.SlackUserID{"U123"},

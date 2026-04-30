@@ -138,7 +138,7 @@ type ReviewFieldErrors map[string]string
 
 // HandleReviewEditSubmit parses the Edit modal's view state, persists the
 // edited field values to the ticket, and finalises the ticket using the
-// edited title / summary / assignee / suggested_fields. Like HandleReviewSubmit,
+// edited title / description / assignee / suggested_fields. Like HandleReviewSubmit,
 // it deactivates the original review message and posts the LLM hand-off.
 // Required-field validation failures return ErrReviewFieldRequired with a
 // populated ReviewFieldErrors, which the HTTP handler should surface as
@@ -341,9 +341,9 @@ func applyEditModalState(ctx context.Context, base *model.Complete, schema *doma
 				out.Title = s
 			}
 		}
-		if v, ok := lookupAction(state, slackService.TriageReviewSummaryBlockID, slackService.TriageReviewSummaryActionID); ok {
+		if v, ok := lookupAction(state, slackService.TriageReviewDescriptionBlockID, slackService.TriageReviewDescriptionActionID); ok {
 			if s := strings.TrimSpace(v.Value); s != "" {
-				out.Summary = s
+				out.Description = s
 			}
 		}
 		if v, ok := lookupAction(state, slackService.TriageReviewAssigneeBlockID, slackService.TriageReviewAssigneeActionID); ok {

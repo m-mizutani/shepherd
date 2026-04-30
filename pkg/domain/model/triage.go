@@ -200,7 +200,7 @@ func (a *Answer) IsValid() bool {
 
 // Complete carries the LLM's final triage summary for the assignee.
 //
-// Title and Summary are written back to the ticket as ticket.Title and
+// Title and Description are written back to the ticket as ticket.Title and
 // ticket.Description respectively when triage finalises (or when a human
 // confirms the proposal in the review modal). Existing tests / data may
 // still carry plans without Title; Validate accepts an empty Title for
@@ -212,13 +212,13 @@ type Complete struct {
 	KeyFindings     []string          `json:"key_findings,omitempty"`
 	AnswerSummary   map[string]string `json:"answer_summary,omitempty"`
 	Title           string            `json:"title,omitempty"`
-	Summary         string            `json:"summary"`
+	Description     string            `json:"description"`
 	NextSteps       []string          `json:"next_steps,omitempty"`
 }
 
 func (c *Complete) Validate() error {
-	if c.Summary == "" {
-		return goerr.New("complete summary is empty")
+	if c.Description == "" {
+		return goerr.New("complete description is empty")
 	}
 	return c.Assignee.Validate()
 }

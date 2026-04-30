@@ -57,7 +57,7 @@ var ja = map[MsgKey]string{
 	MsgTriageReviewMissingProposal:               "対応可能なtriage提案が見つかりません。",
 	MsgTriageReviewEditModalTitle:                "triage提案の編集",
 	MsgTriageReviewEditTitleLabel:                "タイトル",
-	MsgTriageReviewEditSummaryLabel:              "サマリ",
+	MsgTriageReviewEditDescriptionLabel:          "サマリ",
 	MsgTriageReviewEditAssigneeLabel:             "担当者",
 	MsgTriageReviewEditFieldsHeader:              "カスタムフィールド",
 	MsgTriageReviewEditModalSubmit:               "保存して提出",

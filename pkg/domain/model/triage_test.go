@@ -53,7 +53,7 @@ func validCompletePlan() *model.TriagePlan {
 		Kind:    types.PlanComplete,
 		Message: "triage completed",
 		Complete: &model.Complete{
-			Summary: "Investigation done",
+			Description: "Investigation done",
 			Assignee: model.AssigneeDecision{
 				Kind:      types.AssigneeAssigned,
 				UserIDs:   []types.SlackUserID{"U1"},
@@ -209,7 +209,7 @@ func TestAnswerIsValid(t *testing.T) {
 func TestCompleteValidate(t *testing.T) {
 	base := func() *model.Complete {
 		return &model.Complete{
-			Summary: "summary",
+			Description: "description",
 			Assignee: model.AssigneeDecision{
 				Kind:      types.AssigneeAssigned,
 				UserIDs:   []types.SlackUserID{"U1"},
@@ -219,9 +219,9 @@ func TestCompleteValidate(t *testing.T) {
 	}
 	gt.NoError(t, base().Validate())
 
-	t.Run("empty summary", func(t *testing.T) {
+	t.Run("empty description", func(t *testing.T) {
 		c := base()
-		c.Summary = ""
+		c.Description = ""
 		gt.Error(t, c.Validate())
 	})
 	t.Run("invalid assignee propagates", func(t *testing.T) {

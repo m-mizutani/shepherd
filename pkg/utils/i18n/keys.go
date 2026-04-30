@@ -88,7 +88,7 @@ const (
 	MsgTriageReviewMissingProposal              MsgKey = "triage_review_missing_proposal"
 	MsgTriageReviewEditModalTitle               MsgKey = "triage_review_edit_modal_title"
 	MsgTriageReviewEditTitleLabel               MsgKey = "triage_review_edit_title_label"
-	MsgTriageReviewEditSummaryLabel             MsgKey = "triage_review_edit_summary_label"
+	MsgTriageReviewEditDescriptionLabel         MsgKey = "triage_review_edit_description_label"
 	MsgTriageReviewEditAssigneeLabel            MsgKey = "triage_review_edit_assignee_label"
 	MsgTriageReviewEditFieldsHeader             MsgKey = "triage_review_edit_fields_header"
 	MsgTriageReviewEditModalSubmit              MsgKey = "triage_review_edit_modal_submit"

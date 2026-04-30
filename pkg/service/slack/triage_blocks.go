@@ -382,9 +382,9 @@ func BuildCompleteBlocks(ctx context.Context, ref TicketRef, comp *model.Complet
 
 	blocks = append(blocks, slackgo.NewDividerBlock())
 
-	if comp.Summary != "" {
+	if comp.Description != "" {
 		blocks = append(blocks,
-			sectionLabeled(loc.T(i18n.MsgTriageCompleteSectionSummary), comp.Summary),
+			sectionLabeled(loc.T(i18n.MsgTriageCompleteSectionSummary), comp.Description),
 		)
 	}
 	blocks = append(blocks, fieldValuesBlocks(ctx, schema, fieldValues)...)

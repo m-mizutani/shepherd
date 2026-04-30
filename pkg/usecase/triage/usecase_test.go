@@ -628,7 +628,7 @@ const completePlanInvalidAutoFillJSON = `{
   "kind": "complete",
   "message": "Done",
   "complete": {
-    "summary": "Investigation done",
+    "description": "Investigation done",
     "assignee": {
       "kind": "assigned",
       "user_ids": ["U123"],
@@ -645,7 +645,7 @@ const completePlanValidAutoFillJSON = `{
   "kind": "complete",
   "message": "Done",
   "complete": {
-    "summary": "Investigation done",
+    "description": "Investigation done",
     "assignee": {
       "kind": "assigned",
       "user_ids": ["U123"],
