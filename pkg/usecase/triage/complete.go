@@ -28,7 +28,7 @@ func (e *PlanExecutor) finalizeComplete(ctx context.Context, ticket *model.Ticke
 	}
 
 	var assignees *[]types.SlackUserID
-	if comp.Assignee.Kind == types.AssigneeAssigned && len(comp.Assignee.UserIDs) > 0 {
+	if comp.Assignee.Assigned() {
 		ids := append([]types.SlackUserID(nil), comp.Assignee.UserIDs...)
 		assignees = &ids
 	}

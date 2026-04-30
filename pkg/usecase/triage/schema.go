@@ -161,23 +161,17 @@ func completeSchema(autoFill []domainConfig.FieldDefinition) *gollem.Parameter {
 			},
 			"assignee": {
 				Type:        gollem.TypeObject,
-				Description: "Assignment decision. Use kind=unassigned when you cannot confidently pick at least one owner.",
+				Description: "Assignment decision. Populate user_ids with one or more Slack user ids when you can confidently pick owners; leave user_ids empty (or omit it) to leave the ticket unassigned for the team to pick up.",
 				Required:    true,
 				Properties: map[string]*gollem.Parameter{
-					"kind": {
-						Type:        gollem.TypeString,
-						Description: "Either 'assigned' or 'unassigned'.",
-						Required:    true,
-						Enum:        []string{"assigned", "unassigned"},
-					},
 					"user_ids": {
 						Type:        gollem.TypeArray,
-						Description: "One or more Slack user ids (e.g. ['U123ABC']). Required and non-empty when kind=='assigned'; omit when kind=='unassigned'.",
+						Description: "Slack user id strings (e.g. ['U123ABC'] or ['U123ABC', 'U456DEF']). Empty / omitted means unassigned.",
 						Items:       &gollem.Parameter{Type: gollem.TypeString},
 					},
 					"reasoning": {
 						Type:        gollem.TypeString,
-						Description: "Why these people (or why nobody is being assigned).",
+						Description: "Why these people were picked, or why no confident owner can be chosen.",
 						Required:    true,
 						MinLength:   intPtr(1),
 					},
