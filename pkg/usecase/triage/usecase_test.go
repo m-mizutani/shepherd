@@ -379,6 +379,11 @@ func (f *fakeUserSlack) ReplyTicketCreated(_ context.Context, ch, ts string, seq
 	return nil
 }
 
+func (f *fakeUserSlack) PostThreadBlocks(_ context.Context, ch, ts string, _ []slackgo.Block) (string, error) {
+	_, _ = ch, ts
+	return "", nil
+}
+
 func (f *fakeUserSlack) GetUserInfo(_ context.Context, id string) (*slackService.UserInfo, error) {
 	return &slackService.UserInfo{ID: id, Name: id}, nil
 }

@@ -46,8 +46,9 @@ func WithPrompt(promptUC *prompt.UseCase) ServerOption {
 type SlackConfig struct {
 	SigningSecret string
 	SlackUC       *usecase.SlackUseCase
-	Notifier      usecase.StatusChangeNotifier
+	Notifier      usecase.TicketChangeNotifier
 	TriageUC      TriageInteractionsUC
+	QuickUC       QuickActionsInteractionsUC
 }
 
 func WithSlack(cfg SlackConfig) ServerOption {
@@ -78,7 +79,7 @@ func New(registry *model.WorkspaceRegistry, repo interfaces.Repository, authUC u
 	})
 
 	// API endpoints (auth required)
-	var notifier usecase.StatusChangeNotifier
+	var notifier usecase.TicketChangeNotifier
 	var slackUC *usecase.SlackUseCase
 	if s.slackCfg != nil {
 		notifier = s.slackCfg.Notifier
@@ -95,8 +96,8 @@ func New(registry *model.WorkspaceRegistry, repo interfaces.Repository, authUC u
 		s.mux.Route("/hooks/slack", func(r chi.Router) {
 			r.Use(slackSignatureMiddleware(s.slackCfg.SigningSecret))
 			r.Post("/event", slackEventHandler(s.slackCfg.SlackUC))
-			if s.slackCfg.TriageUC != nil {
-				r.Post("/interaction", slackInteractionsHandler(s.slackCfg.TriageUC))
+			if s.slackCfg.TriageUC != nil || s.slackCfg.QuickUC != nil {
+				r.Post("/interaction", slackInteractionsHandler(s.slackCfg.TriageUC, s.slackCfg.QuickUC))
 			}
 		})
 	}

@@ -20,6 +20,7 @@ import (
 	"github.com/m-mizutani/shepherd/pkg/usecase/prompt"
 	"github.com/m-mizutani/shepherd/pkg/utils/errutil"
 	"github.com/m-mizutani/shepherd/pkg/utils/logging"
+	slackgo "github.com/slack-go/slack"
 )
 
 // SlackClient captures the subset of the Slack service the usecase depends on.
@@ -27,6 +28,7 @@ import (
 type SlackClient interface {
 	ReplyThread(ctx context.Context, channelID, threadTS, text string) error
 	ReplyTicketCreated(ctx context.Context, channelID, threadTS string, seqNum int64, ticketURL string) error
+	PostThreadBlocks(ctx context.Context, channelID, threadTS string, blocks []slackgo.Block) (string, error)
 	GetUserInfo(ctx context.Context, userID string) (*slackService.UserInfo, error)
 	ListUsers(ctx context.Context) ([]*slackService.UserInfo, error)
 }
@@ -214,19 +216,19 @@ func (uc *SlackUseCase) HandleThreadReply(ctx context.Context, channelID, thread
 	return nil
 }
 
-// HandleAppMention responds to an app_mention event by feeding the ticket
-// thread context to the configured LLM and posting the reply back to Slack.
-// When the LLM is not configured, or when the mentioned thread does not map to
-// a known ticket, the call is a debug-logged no-op.
+// HandleAppMention responds to an app_mention event. Two flavours are
+// handled:
+//   - empty mention (no body text after the bot's <@…> token): post a
+//     quick-actions menu so the user can flip the ticket's status or
+//     assignee inline. Works regardless of whether an LLM is configured.
+//   - non-empty mention: feed the ticket thread context to the configured
+//     LLM and post the reply back to Slack. When the LLM is not
+//     configured, this branch is a debug-logged no-op.
+//
+// In both cases, when the mentioned thread does not map to a known
+// ticket, the call is a debug-logged no-op.
 func (uc *SlackUseCase) HandleAppMention(ctx context.Context, channelID, userID, text, messageTS, threadTS string) error {
 	logger := logging.From(ctx)
-
-	if uc.llm == nil {
-		logger.Debug("app_mention ignored: LLM not configured",
-			slog.String("channel_id", channelID),
-		)
-		return nil
-	}
 
 	rootTS := threadTS
 	if rootTS == "" {
@@ -254,6 +256,18 @@ func (uc *SlackUseCase) HandleAppMention(ctx context.Context, channelID, userID,
 		return nil
 	}
 
+	body := stripMentionTokens(text)
+	if body == "" {
+		return uc.postQuickActionsMenu(ctx, entry, ticket, rootTS)
+	}
+
+	if uc.llm == nil {
+		logger.Debug("app_mention ignored: LLM not configured",
+			slog.String("channel_id", channelID),
+		)
+		return nil
+	}
+
 	comments, err := uc.repo.Comment().List(ctx, wsID, ticket.ID)
 	if err != nil {
 		return goerr.Wrap(err, "failed to list comments for app_mention")
@@ -271,7 +285,7 @@ func (uc *SlackUseCase) HandleAppMention(ctx context.Context, channelID, userID,
 	mentionAuthor := uc.resolveDisplayName(ctx, userID)
 	userPrompt, err := prompt.RenderMention(prompt.MentionInput{
 		MentionAuthor: mentionAuthor,
-		Mention:       stripMentionTokens(text),
+		Mention:       body,
 	})
 	if err != nil {
 		return goerr.Wrap(err, "failed to render mention prompt")
@@ -335,6 +349,31 @@ func (uc *SlackUseCase) HandleAppMention(ctx context.Context, channelID, userID,
 		slog.String("ticket_id", string(ticket.ID)),
 		slog.String("channel_id", channelID),
 	)
+	return nil
+}
+
+// postQuickActionsMenu builds and posts the empty-mention Quick Actions
+// menu (assignee multi-select + status select) into the ticket's thread.
+// The thread_ts of the posted message equals rootTS, so a subsequent
+// block_actions payload from the menu carries the same thread_ts and the
+// interactions handler can resolve back to the same ticket.
+func (uc *SlackUseCase) postQuickActionsMenu(ctx context.Context, entry *model.WorkspaceEntry, ticket *model.Ticket, rootTS string) error {
+	tURL, _ := url.JoinPath(uc.baseURL, "ws", string(entry.Workspace.ID), "tickets", string(ticket.ID))
+	ref := slackService.TicketRef{
+		ID:     ticket.ID,
+		SeqNum: ticket.SeqNum,
+		Title:  ticket.Title,
+		URL:    tURL,
+	}
+	state := slackService.QuickActionsTicketState{
+		StatusID:    ticket.StatusID,
+		AssigneeIDs: append([]types.SlackUserID(nil), ticket.AssigneeIDs...),
+	}
+	statuses := entry.FieldSchema.Statuses
+	blocks := slackService.BuildQuickActionsBlocks(ctx, ref, state, statuses)
+	if _, err := uc.slack.PostThreadBlocks(ctx, string(ticket.SlackChannelID), rootTS, blocks); err != nil {
+		return goerr.Wrap(err, "failed to post quick actions menu")
+	}
 	return nil
 }
 

@@ -96,6 +96,8 @@ This endpoint is signed with the same signing secret as `/hooks/slack/event` and
 | `triage_review_edit` | Anyone clicked **Edit** on the triage review message. Bot opens the Edit modal synchronously via `views.open` (Slack's `trigger_id` is only valid for ~3 seconds). |
 | `triage_review_submit` | Anyone clicked **Submit** on the triage review message. Bot finalises the planner's latest `PlanComplete` proposal as-is, posts a follow-up "Submitted" message into the thread mentioning every selected assignee. The original review message is not rewritten. |
 | `triage_review_reinvestigate` | Anyone clicked **Re-investigate** on the triage review message. Bot opens the instruction modal synchronously via `views.open`. |
+| `quick_actions_assignee_select` | User changed the assignee multi-select in an empty-mention quick-actions menu. Bot updates the ticket's assignees through `TicketUseCase.Update`, which fires the unified `NotifyTicketChange` notification. |
+| `quick_actions_status_select` | User changed the status select in an empty-mention quick-actions menu. Bot updates the ticket's status through `TicketUseCase.Update`, which fires the unified `NotifyTicketChange` notification. |
 
 ### `view_submission`
 
@@ -186,9 +188,26 @@ Invite the Shepherd bot to each channel configured in your workspace TOML files:
 /invite @Shepherd
 ```
 
+## Empty Mentions: Quick Actions Menu
+
+When a user mentions the bot **with no body text** (just `@Shepherd` on its own) inside a ticket thread, Shepherd posts an inline **Quick Actions** menu into the thread instead of an LLM reply. The menu lets the user flip the ticket's assignee or status without leaving Slack:
+
+- A `multi_users_select` seeded with the ticket's current assignees.
+- A `static_select` seeded with the ticket's current status, populated from the workspace's `FieldSchema.Statuses`.
+
+Each select dispatches a `block_actions` payload to `/hooks/slack/interaction`; the bot resolves the underlying ticket from the message's `channel_id` + `thread_ts` and applies the change through the same `TicketUseCase.Update` entry point used by the HTTP API.
+
+The empty-mention branch works **regardless of whether an LLM provider is configured**, since it does not call any LLM.
+
+## Ticket Change Notifications (unified)
+
+Whenever a ticket's status or assignee changes — through the HTTP API (Web UI), the empty-mention quick-actions menu, or any future surface that goes through `TicketUseCase.Update` — Shepherd posts a single context-block notification into the ticket's Slack thread summarising the transition. When status and assignee change in the same update, both rows render in one message rather than two.
+
+The notification is delivered through `TicketChangeNotifier.NotifyTicketChange`, implemented by the Slack service `Client`. The triage flow's hand-off message (posted at the end of a successful triage submit) is intentionally a separate message produced by the triage usecase, since it carries planner output beyond the scope of a status / assignee transition.
+
 ## LLM-Assisted Replies (required)
 
-When a user mentions the bot (`@Shepherd ...`) inside a ticket thread, Shepherd generates a reply using an LLM. The bot reads the ticket title, description, prior comments, and the latest mention, then posts a generated answer in the thread.
+When a user mentions the bot (`@Shepherd ...`) **with body text** inside a ticket thread, Shepherd generates a reply using an LLM. The bot reads the ticket title, description, prior comments, and the latest mention, then posts a generated answer in the thread. Empty mentions take the Quick Actions path described above instead.
 
 Configuring an LLM provider is **required** — `serve` aborts at startup when no provider is set. Choose one of the providers below:
 

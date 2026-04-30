@@ -5,14 +5,40 @@ import (
 	"testing"
 
 	"github.com/m-mizutani/gt"
+	"github.com/m-mizutani/shepherd/pkg/domain/interfaces"
 	"github.com/m-mizutani/shepherd/pkg/domain/model"
 	"github.com/m-mizutani/shepherd/pkg/domain/model/config"
 	"github.com/m-mizutani/shepherd/pkg/domain/types"
 	"github.com/m-mizutani/shepherd/pkg/repository/memory"
+	slackService "github.com/m-mizutani/shepherd/pkg/service/slack"
 	"github.com/m-mizutani/shepherd/pkg/usecase"
 )
 
+type fakeTicketChangeNotifier struct {
+	calls []fakeTicketChangeCall
+}
+
+type fakeTicketChangeCall struct {
+	channelID string
+	threadTS  string
+	change    slackService.TicketChange
+}
+
+func (f *fakeTicketChangeNotifier) NotifyTicketChange(_ context.Context, channelID, threadTS string, change slackService.TicketChange) error {
+	f.calls = append(f.calls, fakeTicketChangeCall{
+		channelID: channelID,
+		threadTS:  threadTS,
+		change:    change,
+	})
+	return nil
+}
+
 func setupTicketUseCase(t *testing.T) (*usecase.TicketUseCase, *model.WorkspaceRegistry) {
+	uc, _, _, registry := setupTicketUseCaseFull(t, nil)
+	return uc, registry
+}
+
+func setupTicketUseCaseFull(t *testing.T, notifier usecase.TicketChangeNotifier) (*usecase.TicketUseCase, interfaces.Repository, *fakeTicketChangeNotifier, *model.WorkspaceRegistry) {
 	t.Helper()
 	repo := memory.New()
 	t.Cleanup(func() { _ = repo.Close() })
@@ -35,8 +61,14 @@ func setupTicketUseCase(t *testing.T) (*usecase.TicketUseCase, *model.WorkspaceR
 		SlackChannelID: "C111",
 	})
 
-	uc := usecase.NewTicketUseCase(repo, registry, nil)
-	return uc, registry
+	var fake *fakeTicketChangeNotifier
+	if notifier == nil {
+		fake = &fakeTicketChangeNotifier{}
+		notifier = fake
+	}
+
+	uc := usecase.NewTicketUseCase(repo, registry, notifier)
+	return uc, repo, fake, registry
 }
 
 func TestTicketUseCase_Create(t *testing.T) {
@@ -191,4 +223,103 @@ func TestTicketUseCase_Update_NoStatusChange_NoHistory(t *testing.T) {
 
 	histories := gt.R1(uc.ListHistory(ctx, "ws-test", ticket.ID)).NoError(t)
 	gt.A(t, histories).Length(1) // only the "created" entry
+}
+
+// seedSlackTicket creates a ticket and immediately attaches Slack
+// metadata to it via the repository so subsequent Update calls go
+// through the Slack notifier path. The metadata seed itself bypasses
+// the usecase to avoid a spurious notification on a freshly created
+// ticket that has no observable status / assignee transition yet.
+func seedSlackTicket(t *testing.T, uc *usecase.TicketUseCase, repo interfaces.Repository, assignees []types.SlackUserID) *model.Ticket {
+	t.Helper()
+	ctx := context.Background()
+	created := gt.R1(uc.Create(ctx, "ws-test", "Seeded", "desc", "", assignees, nil)).NoError(t)
+	got := gt.R1(repo.Ticket().Get(ctx, "ws-test", created.ID)).NoError(t)
+	got.SlackChannelID = "C111"
+	got.SlackThreadTS = "1700000000.000100"
+	updated := gt.R1(repo.Ticket().Update(ctx, "ws-test", got)).NoError(t)
+	return updated
+}
+
+func TestTicketUseCase_Update_StatusChange_NotifiesOnce(t *testing.T) {
+	uc, repo, notifier, _ := setupTicketUseCaseFull(t, nil)
+	ctx := context.Background()
+
+	ticket := seedSlackTicket(t, uc, repo, nil)
+
+	newStatus := types.StatusID("in-progress")
+	gt.R1(uc.Update(ctx, "ws-test", ticket.ID, nil, nil, &newStatus, nil, nil)).NoError(t)
+
+	gt.A(t, notifier.calls).Length(1)
+	call := notifier.calls[0]
+	gt.S(t, call.channelID).Equal("C111")
+	gt.S(t, call.threadTS).Equal("1700000000.000100")
+	gt.V(t, call.change.StatusChanged).Equal(true)
+	gt.V(t, call.change.AssigneeChanged).Equal(false)
+	gt.S(t, call.change.OldStatusName).Equal("Open")
+	gt.S(t, call.change.NewStatusName).Equal("In Progress")
+}
+
+func TestTicketUseCase_Update_AssigneeChange_NotifiesOnce(t *testing.T) {
+	uc, repo, notifier, _ := setupTicketUseCaseFull(t, nil)
+	ctx := context.Background()
+
+	ticket := seedSlackTicket(t, uc, repo, nil)
+
+	newAssignees := []types.SlackUserID{"U111", "U222"}
+	gt.R1(uc.Update(ctx, "ws-test", ticket.ID, nil, nil, nil, &newAssignees, nil)).NoError(t)
+
+	gt.A(t, notifier.calls).Length(1)
+	call := notifier.calls[0]
+	gt.V(t, call.change.StatusChanged).Equal(false)
+	gt.V(t, call.change.AssigneeChanged).Equal(true)
+	gt.A(t, call.change.OldAssigneeIDs).Length(0)
+	gt.A(t, call.change.NewAssigneeIDs).Length(2)
+	gt.S(t, call.change.NewAssigneeIDs[0]).Equal("U111")
+}
+
+func TestTicketUseCase_Update_StatusAndAssignee_NotifiesOnce(t *testing.T) {
+	uc, repo, notifier, _ := setupTicketUseCaseFull(t, nil)
+	ctx := context.Background()
+
+	ticket := seedSlackTicket(t, uc, repo, []types.SlackUserID{"U000"})
+
+	newStatus := types.StatusID("resolved")
+	newAssignees := []types.SlackUserID{"U999"}
+	gt.R1(uc.Update(ctx, "ws-test", ticket.ID, nil, nil, &newStatus, &newAssignees, nil)).NoError(t)
+
+	gt.A(t, notifier.calls).Length(1)
+	call := notifier.calls[0]
+	gt.V(t, call.change.StatusChanged).Equal(true)
+	gt.V(t, call.change.AssigneeChanged).Equal(true)
+	gt.S(t, call.change.NewStatusName).Equal("Resolved")
+	gt.A(t, call.change.OldAssigneeIDs).Length(1)
+	gt.S(t, call.change.OldAssigneeIDs[0]).Equal("U000")
+	gt.S(t, call.change.NewAssigneeIDs[0]).Equal("U999")
+}
+
+func TestTicketUseCase_Update_NoChange_NoNotify(t *testing.T) {
+	uc, repo, notifier, _ := setupTicketUseCaseFull(t, nil)
+	ctx := context.Background()
+
+	ticket := seedSlackTicket(t, uc, repo, []types.SlackUserID{"U000"})
+
+	// Title-only change must not fire the notifier.
+	newTitle := "Renamed"
+	gt.R1(uc.Update(ctx, "ws-test", ticket.ID, &newTitle, nil, nil, nil, nil)).NoError(t)
+
+	gt.A(t, notifier.calls).Length(0)
+}
+
+func TestTicketUseCase_Update_AssigneeReorder_NoNotify(t *testing.T) {
+	uc, repo, notifier, _ := setupTicketUseCaseFull(t, nil)
+	ctx := context.Background()
+
+	ticket := seedSlackTicket(t, uc, repo, []types.SlackUserID{"U001", "U002"})
+
+	// Same set, different order — assignee membership is unchanged.
+	reordered := []types.SlackUserID{"U002", "U001"}
+	gt.R1(uc.Update(ctx, "ws-test", ticket.ID, nil, nil, nil, &reordered, nil)).NoError(t)
+
+	gt.A(t, notifier.calls).Length(0)
 }

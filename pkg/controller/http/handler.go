@@ -29,7 +29,7 @@ type APIHandler struct {
 
 var _ ServerInterface = (*APIHandler)(nil)
 
-func NewAPIHandler(registry *model.WorkspaceRegistry, repo interfaces.Repository, notifier usecase.StatusChangeNotifier, slackUC *usecase.SlackUseCase, sourceUC *source.UseCase, catalog *tool.Catalog, promptUC *prompt.UseCase) *APIHandler {
+func NewAPIHandler(registry *model.WorkspaceRegistry, repo interfaces.Repository, notifier usecase.TicketChangeNotifier, slackUC *usecase.SlackUseCase, sourceUC *source.UseCase, catalog *tool.Catalog, promptUC *prompt.UseCase) *APIHandler {
 	return &APIHandler{
 		workspaceUC: usecase.NewWorkspaceUseCase(registry),
 		ticketUC:    usecase.NewTicketUseCase(repo, registry, notifier),
