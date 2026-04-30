@@ -92,12 +92,15 @@ func slackInteractionsHandler(triageUC TriageInteractionsUC, quickUC QuickAction
 func handleBlockActions(ctx context.Context, w http.ResponseWriter, triageUC TriageInteractionsUC, quickUC QuickActionsInteractionsUC, cb *slackgo.InteractionCallback) {
 	logger := logging.From(ctx)
 
-	// Quick-actions selects (assignee / status) and triage buttons can in
-	// principle co-arrive in the same payload, though Slack's UI delivers
-	// at most one action per click. Iterate once, classify, and dispatch
-	// each match. Quick-actions resolve the underlying ticket from
-	// channel + thread_ts (the menu lives as a thread reply on the
-	// ticket's root message), so we forward those raw fields.
+	// A block_actions payload is always scoped to a single Slack message,
+	// and triage review messages and quick-actions menus are distinct
+	// messages — the two action families therefore never co-arrive in
+	// one payload. We classify the payload, branch on whichever family
+	// is present, and have the triage path return early so the
+	// quick-actions tail only runs when no triage action was seen.
+	// Quick-actions resolve the underlying ticket from channel +
+	// thread_ts (the menu lives as a thread reply on the ticket's root
+	// message), so we forward those raw fields.
 	channelID := cb.Channel.ID
 	threadTS := cb.Message.ThreadTimestamp
 	if threadTS == "" {
