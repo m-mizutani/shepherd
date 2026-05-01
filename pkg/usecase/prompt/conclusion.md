@@ -1,4 +1,4 @@
-You are summarizing a ticket that has just been closed in Shepherd. Read the ticket context and the thread conversation, then write a single short paragraph that captures what actually happened: the underlying issue, what was investigated or done, and the outcome / resolution.
+You are summarizing a ticket that has just been closed in Shepherd. The reader already has the title and description in front of them, so do **not** restate them. Instead, write a focused retrospective in Slack-flavored markdown (mrkdwn) covering the points below.
 
 ## Ticket context
 
@@ -28,15 +28,27 @@ Respond with a JSON object that matches this schema exactly:
 
 ```json
 {
-  "conclusion": "<one short paragraph in {{ .Language }}>"
+  "conclusion": "<focused retrospective in {{ .Language }}, formatted as Slack mrkdwn>"
 }
 ```
 
+The `conclusion` field must be **brief**. Aim for **at most 2 to 3 short sections** and overall length on the order of 8–15 lines. A short, dense retrospective beats a long generic summary.
+
+Cover the perspectives below. Pick the 2–3 that actually have something concrete to say for this ticket; skip any section where you would only be padding.
+
+1. **問題の本質 (Essence of the problem)** — distil what was *actually* going on underneath the surface symptom. Do not paraphrase the title or description. If the thread revealed that the real problem differed from how it was initially reported, name that delta explicitly.
+2. **解決方法 (How it was resolved)** — the concrete action that ended the ticket (patch, configuration change, decision, hand-off, won't-fix, duplicate, abandoned, …). One or two sentences.
+3. **振り返り (Process retrospective)** — was the path to resolution efficient? If yes, say so briefly. If there is room to improve, call out concrete next-time actions for each of:
+   - **依頼者 (Requester)** — e.g. information they could have provided upfront, repro details, prior context links.
+   - **対応者 (Responder)** — e.g. earlier hypothesis to test, tool to consult sooner, person to loop in.
+   - **AI / 自動化** — e.g. signals the agent could have surfaced automatically, prompts that could have been refined.
+
 Style rules for the `conclusion` field:
 
-- Plain prose. **Do not** use Markdown headings, bullet lists, bold, italics, code fences, or block quotes. Newlines are allowed but use them sparingly.
+- **Slack mrkdwn only**, not GitHub markdown. Allowed: bold (`*bold*`), italic (`_italic_`), bullet lists with `-` or `•`, inline code with backticks, line breaks. **Do not** use `#` headings, ordered numeric lists with leading `1.`, tables, or block quotes — Slack will render them as raw characters.
+- For the section labels, use **bold** for the heading on its own line (e.g. `*問題の本質*`), then the body underneath. Do not number the sections.
+- Keep each section to roughly 1–3 short sentences or 2–4 short bullet points. Be specific; concrete > exhaustive.
 - **Do not include any emoji.** A single decorative emoji is added by the system later — your output must not contain any.
-- Keep it concise (roughly 2 to 5 sentences). Aim for what a teammate skimming the thread later would actually want to read.
-- Cover, in order: what the ticket was about, what was investigated or attempted, and how it ended (resolved / wontfix / duplicate / abandoned, etc.). If any of these is unknown from the thread, say so briefly instead of inventing.
-- Refer to people by their `<@user_id>` mention form when you need to attribute an action; do not invent display names.
-- Write in the language requested above. Do not switch languages mid-paragraph.
+- Refer to people by their `<@user_id>` mention form when attributing actions; do not invent display names.
+- Write everything in {{ .Language }}. Do not switch languages mid-output.
+- If a section has no real content for this ticket, omit it entirely rather than writing "N/A" or filler.

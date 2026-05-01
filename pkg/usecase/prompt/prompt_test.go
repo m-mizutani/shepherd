@@ -328,8 +328,18 @@ func TestRenderConclusion_FullInput(t *testing.T) {
 		"<@U_OWNER>",
 		"Patch landed in #1234",
 		"\"conclusion\":",
-		"in English",
+		// New retrospective shape
+		"do **not** restate",
+		"問題の本質",
+		"解決方法",
+		"振り返り",
+		"依頼者",
+		"対応者",
+		"AI / 自動化",
+		"at most 2 to 3 short sections",
+		"Slack mrkdwn",
 		"Do not include any emoji",
+		"in English",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("conclusion prompt missing %q\n---\n%s", want, got)
