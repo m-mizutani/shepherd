@@ -117,4 +117,10 @@ const (
 	MsgTriageReviewReinvestigateModalClose      MsgKey = "triage_review_reinvestigate_modal_close"
 	MsgTriageReviewFieldRequiredError           MsgKey = "triage_review_field_required_error"
 	MsgTriageReviewFieldSelectPlaceholder       MsgKey = "triage_review_field_select_placeholder"
+
+	// Conclusion message posted to the ticket thread when the ticket
+	// transitions to a closed status. Rendered as a single Slack context
+	// block with minimal decoration; the leading emoji is hard-coded by the
+	// service layer so the LLM output never carries extra ornaments.
+	MsgConclusionBody MsgKey = "conclusion_body"
 )

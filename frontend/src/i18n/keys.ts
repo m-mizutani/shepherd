@@ -255,6 +255,11 @@ export const msgKeys = {
   ticketDetailUnassigned: "ticketDetailUnassigned",
   ticketDetailUserPickerSelectUsers: "ticketDetailUserPickerSelectUsers",
   ticketDetailUrlInvalid: "ticketDetailUrlInvalid",
+  ticketDetailConclusionLabel: "ticketDetailConclusionLabel",
+  ticketDetailConclusionEmpty: "ticketDetailConclusionEmpty",
+  ticketDetailConclusionPending: "ticketDetailConclusionPending",
+  ticketDetailConclusionEditLockedHint: "ticketDetailConclusionEditLockedHint",
+  ticketDetailConclusionEditNotAllowed: "ticketDetailConclusionEditNotAllowed",
 
   // Generic placeholders / aria
   placeholderTitle: "placeholderTitle",

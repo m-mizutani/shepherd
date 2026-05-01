@@ -43,6 +43,10 @@ export default function TicketDetailPage() {
   const [editFields, setEditFields] = useState<Record<string, unknown>>({});
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
+  const [isEditingConclusion, setIsEditingConclusion] = useState(false);
+  const [editConclusion, setEditConclusion] = useState("");
+  const [conclusionError, setConclusionError] = useState<string | null>(null);
+
   const { data: configData } = useQuery({
     queryKey: ["workspace-config", workspaceId],
     queryFn: async () => {
@@ -112,6 +116,7 @@ export default function TicketDetailPage() {
       statusId?: string;
       assigneeIds?: string[];
       fields?: { fieldId: string; value: unknown }[];
+      conclusion?: string;
     }) => {
       const { data, error } = await api.PATCH(
         "/api/v1/ws/{workspaceId}/tickets/{ticketId}",
@@ -507,6 +512,43 @@ export default function TicketDetailPage() {
                 </div>
               )}
 
+              {/* Conclusion */}
+              <ConclusionSection
+                conclusion={ticket.conclusion ?? ""}
+                isEditable={Boolean(currentStatus?.isClosed)}
+                isEditing={isEditingConclusion}
+                editValue={editConclusion}
+                error={conclusionError}
+                isSaving={updateTicket.isPending}
+                onStartEdit={() => {
+                  setEditConclusion(ticket.conclusion ?? "");
+                  setConclusionError(null);
+                  setIsEditingConclusion(true);
+                }}
+                onCancel={() => {
+                  setIsEditingConclusion(false);
+                  setConclusionError(null);
+                }}
+                onChange={setEditConclusion}
+                onSave={() => {
+                  setConclusionError(null);
+                  updateTicket.mutate(
+                    { conclusion: editConclusion },
+                    {
+                      onSuccess: () => setIsEditingConclusion(false),
+                      onError: (e) => {
+                        const status = (e as { response?: { status?: number } })?.response?.status;
+                        setConclusionError(
+                          status === 409
+                            ? t("ticketDetailConclusionEditNotAllowed")
+                            : t("ticketDetailSaveFailed"),
+                        );
+                      },
+                    },
+                  );
+                }}
+              />
+
               {/* Activity */}
               <div className="mt-7 flex items-center gap-2">
                 <h2 className="m-0 text-[14px] font-semibold text-ink-1">
@@ -818,6 +860,80 @@ function FieldRow({
       </div>
       <div className="min-w-0">{children}</div>
     </div>
+  );
+}
+
+function ConclusionSection({
+  conclusion,
+  isEditable,
+  isEditing,
+  editValue,
+  error,
+  isSaving,
+  onStartEdit,
+  onCancel,
+  onChange,
+  onSave,
+}: {
+  conclusion: string;
+  isEditable: boolean;
+  isEditing: boolean;
+  editValue: string;
+  error: string | null;
+  isSaving: boolean;
+  onStartEdit: () => void;
+  onCancel: () => void;
+  onChange: (next: string) => void;
+  onSave: () => void;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <section className="mt-5">
+      <div className="flex items-center gap-2 mb-2">
+        <h2 className="m-0 text-[14px] font-semibold text-ink-1">
+          {t("ticketDetailConclusionLabel")}
+        </h2>
+        {isEditable && !isEditing && (
+          <Button variant="ghost" size="sm" type="button" onClick={onStartEdit}>
+            {t("ticketDetailEdit")}
+          </Button>
+        )}
+        {!isEditable && !isEditing && (
+          <span className="text-[12px] text-ink-4">
+            {t("ticketDetailConclusionEditLockedHint")}
+          </span>
+        )}
+      </div>
+
+      {isEditing ? (
+        <div className="space-y-2">
+          <textarea
+            value={editValue}
+            onChange={(e) => onChange(e.target.value)}
+            rows={6}
+            className="w-full px-3 py-2 bg-bg-elev border border-line-strong rounded-3 text-[13.5px] text-ink-1 focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand-soft"
+          />
+          {error && <ErrorBox message={error} />}
+          <div className="flex gap-2">
+            <Button variant="primary" size="sm" type="button" onClick={onSave} disabled={isSaving}>
+              {isSaving ? t("ticketDetailSaving") : t("ticketDetailSaveChanges")}
+            </Button>
+            <Button variant="ghost" size="sm" type="button" onClick={onCancel} disabled={isSaving}>
+              {t("ticketDetailCancel")}
+            </Button>
+          </div>
+        </div>
+      ) : conclusion ? (
+        <Card className="p-4">
+          <SlackMarkdown text={conclusion} />
+        </Card>
+      ) : (
+        <div className="text-[12.5px] text-ink-4 italic">
+          {t("ticketDetailConclusionEmpty")}
+        </div>
+      )}
+    </section>
   );
 }
 

@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/m-mizutani/gollem"
 	"github.com/m-mizutani/shepherd/frontend"
 	"github.com/m-mizutani/shepherd/pkg/domain/interfaces"
 	"github.com/m-mizutani/shepherd/pkg/domain/model"
@@ -23,6 +24,7 @@ type Server struct {
 	sourceUC *source.UseCase
 	catalog  *tool.Catalog
 	promptUC *prompt.UseCase
+	llm      gollem.LLMClient
 }
 
 type ServerOption func(*Server)
@@ -40,6 +42,15 @@ func WithSource(sourceUC *source.UseCase, catalog *tool.Catalog) ServerOption {
 func WithPrompt(promptUC *prompt.UseCase) ServerOption {
 	return func(s *Server) {
 		s.promptUC = promptUC
+	}
+}
+
+// WithLLM wires the LLM client used by ticket-side close-time conclusion
+// generation. When omitted, the conclusion generator on TicketUseCase
+// gracefully no-ops (status updates and notifications still run).
+func WithLLM(llm gollem.LLMClient) ServerOption {
+	return func(s *Server) {
+		s.llm = llm
 	}
 }
 
@@ -85,7 +96,7 @@ func New(registry *model.WorkspaceRegistry, repo interfaces.Repository, authUC u
 		notifier = s.slackCfg.Notifier
 		slackUC = s.slackCfg.SlackUC
 	}
-	apiHandler := NewAPIHandler(registry, repo, notifier, slackUC, s.sourceUC, s.catalog, s.promptUC)
+	apiHandler := NewAPIHandler(registry, repo, notifier, s.llm, slackUC, s.sourceUC, s.catalog, s.promptUC)
 	s.mux.Group(func(r chi.Router) {
 		r.Use(authMiddleware(authUC))
 		HandlerFromMux(apiHandler, r)

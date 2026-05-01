@@ -77,4 +77,6 @@ var ja = map[MsgKey]string{
 	MsgTriageReviewReinvestigateModalClose:       "キャンセル",
 	MsgTriageReviewFieldRequiredError:            "この項目は必須です。",
 	MsgTriageReviewFieldSelectPlaceholder:        "選択してください",
+
+	MsgConclusionBody: "📝 {conclusion}",
 }

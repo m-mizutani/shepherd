@@ -20,11 +20,15 @@ var triagePlanTemplateSource string
 //go:embed triage_subtask.md
 var triageSubtaskTemplateSource string
 
+//go:embed conclusion.md
+var conclusionTemplateSource string
+
 var (
 	systemTemplate        = template.Must(template.New("system").Parse(systemTemplateSource))
 	mentionTemplate       = template.Must(template.New("mention").Parse(mentionTemplateSource))
 	triagePlanTemplate    = template.Must(template.New("triage_plan").Parse(triagePlanTemplateSource))
 	triageSubtaskTemplate = template.Must(template.New("triage_subtask").Parse(triageSubtaskTemplateSource))
+	conclusionTemplate    = template.Must(template.New("conclusion").Parse(conclusionTemplateSource))
 )
 
 // SystemInput is the data for the system prompt template. It carries the
@@ -150,6 +154,40 @@ func RenderTriageSubtask(in TriageSubtaskInput) (string, error) {
 	var buf strings.Builder
 	if err := triageSubtaskTemplate.Execute(&buf, in); err != nil {
 		return "", goerr.Wrap(err, "failed to execute triage_subtask template")
+	}
+	return buf.String(), nil
+}
+
+// ConclusionInput is the data for the close-time conclusion prompt. It carries
+// the ticket's static context plus the captured thread conversation that the
+// model summarizes.
+type ConclusionInput struct {
+	Title          string
+	Description    string
+	InitialMessage string
+	Comments       []ConclusionComment
+	// Language is the BCP-47-ish language tag (e.g. "English", "Japanese") in
+	// which the model is asked to write the conclusion. The active i18n
+	// language is resolved at call time and passed in here.
+	Language string
+}
+
+// ConclusionComment is the per-comment projection the prompt template walks.
+// Author is the Slack user id of whoever posted the comment, or "" when the
+// comment was emitted by Shepherd / another bot. Whether the body came from
+// a bot is not surfaced separately — for the close-time retrospective it
+// rarely matters who literally typed each turn, only what got said.
+type ConclusionComment struct {
+	Author string
+	Body   string
+}
+
+// RenderConclusion renders the system prompt that drives the close-time
+// conclusion generation.
+func RenderConclusion(in ConclusionInput) (string, error) {
+	var buf strings.Builder
+	if err := conclusionTemplate.Execute(&buf, in); err != nil {
+		return "", goerr.Wrap(err, "failed to execute conclusion template")
 	}
 	return buf.String(), nil
 }
