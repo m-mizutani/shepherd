@@ -77,4 +77,6 @@ var en = map[MsgKey]string{
 	MsgTriageReviewReinvestigateModalClose:       "Cancel",
 	MsgTriageReviewFieldRequiredError:            "This field is required.",
 	MsgTriageReviewFieldSelectPlaceholder:        "Select an option",
+
+	MsgConclusionBody: "📝 {conclusion}",
 }

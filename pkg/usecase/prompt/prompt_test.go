@@ -302,3 +302,50 @@ func TestRenderTriageSubtask_EmptyCriteriaStillRenders(t *testing.T) {
 	gt.NoError(t, err)
 	gt.S(t, got).Contains("Identify owner of the affected service")
 }
+
+func TestRenderConclusion_FullInput(t *testing.T) {
+	got, err := prompt.RenderConclusion(prompt.ConclusionInput{
+		Title:          "Login fails on Safari",
+		Description:    "Users on Safari 17 see a blank page after sign-in.",
+		InitialMessage: "Hi, login is broken on Safari.",
+		Comments: []prompt.ConclusionComment{
+			{Author: "U_REPORTER", Body: "Repro on Safari 17, Chrome works."},
+			{IsBot: true, Body: "Triage: investigating CSP violations."},
+			{Author: "U_OWNER", Body: "Patch landed in #1234, please verify."},
+		},
+		Language: "English",
+	})
+	gt.NoError(t, err)
+
+	for _, want := range []string{
+		"Login fails on Safari",
+		"Users on Safari 17",
+		"Hi, login is broken on Safari.",
+		"<@U_REPORTER>",
+		"Repro on Safari 17, Chrome works.",
+		"[bot]",
+		"Triage: investigating CSP violations.",
+		"<@U_OWNER>",
+		"Patch landed in #1234",
+		"\"conclusion\":",
+		"in English",
+		"Do not include any emoji",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("conclusion prompt missing %q\n---\n%s", want, got)
+		}
+	}
+}
+
+func TestRenderConclusion_NoCommentsFallback(t *testing.T) {
+	got, err := prompt.RenderConclusion(prompt.ConclusionInput{
+		Title:    "Empty thread",
+		Language: "Japanese",
+	})
+	gt.NoError(t, err)
+	gt.S(t, got).Contains("No thread messages were captured")
+	if strings.Contains(got, "- Description:") {
+		t.Errorf("expected description block to be omitted for empty input, got:\n%s", got)
+	}
+	gt.S(t, got).Contains("in Japanese")
+}

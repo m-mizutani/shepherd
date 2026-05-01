@@ -2,8 +2,12 @@ package usecase_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
+	"github.com/m-mizutani/goerr/v2"
+	"github.com/m-mizutani/gollem"
+	"github.com/m-mizutani/gollem/mock"
 	"github.com/m-mizutani/gt"
 	"github.com/m-mizutani/shepherd/pkg/domain/interfaces"
 	"github.com/m-mizutani/shepherd/pkg/domain/model"
@@ -12,16 +16,25 @@ import (
 	"github.com/m-mizutani/shepherd/pkg/repository/memory"
 	slackService "github.com/m-mizutani/shepherd/pkg/service/slack"
 	"github.com/m-mizutani/shepherd/pkg/usecase"
+	"github.com/m-mizutani/shepherd/pkg/utils/async"
 )
 
 type fakeTicketChangeNotifier struct {
-	calls []fakeTicketChangeCall
+	calls            []fakeTicketChangeCall
+	conclusionCalls  []fakeConclusionCall
+	conclusionErr    error
 }
 
 type fakeTicketChangeCall struct {
 	channelID string
 	threadTS  string
 	change    slackService.TicketChange
+}
+
+type fakeConclusionCall struct {
+	channelID  string
+	threadTS   string
+	conclusion string
 }
 
 func (f *fakeTicketChangeNotifier) NotifyTicketChange(_ context.Context, channelID, threadTS string, change slackService.TicketChange) error {
@@ -31,6 +44,15 @@ func (f *fakeTicketChangeNotifier) NotifyTicketChange(_ context.Context, channel
 		change:    change,
 	})
 	return nil
+}
+
+func (f *fakeTicketChangeNotifier) PostConclusion(_ context.Context, channelID, threadTS, conclusion string) error {
+	f.conclusionCalls = append(f.conclusionCalls, fakeConclusionCall{
+		channelID:  channelID,
+		threadTS:   threadTS,
+		conclusion: conclusion,
+	})
+	return f.conclusionErr
 }
 
 func setupTicketUseCase(t *testing.T) (*usecase.TicketUseCase, *model.WorkspaceRegistry) {
@@ -67,7 +89,7 @@ func setupTicketUseCaseFull(t *testing.T, notifier usecase.TicketChangeNotifier)
 		notifier = fake
 	}
 
-	uc := usecase.NewTicketUseCase(repo, registry, notifier)
+	uc := usecase.NewTicketUseCase(repo, registry, notifier, nil)
 	return uc, repo, fake, registry
 }
 
@@ -147,7 +169,7 @@ func TestTicketUseCase_Update(t *testing.T) {
 
 	newTitle := "Updated"
 	newStatus := types.StatusID("in-progress")
-	updated := gt.R1(uc.Update(ctx, "ws-test", created.ID, &newTitle, nil, &newStatus, nil, nil)).NoError(t)
+	updated := gt.R1(uc.Update(ctx, "ws-test", created.ID, &newTitle, nil, &newStatus, nil, nil, nil)).NoError(t)
 	gt.S(t, updated.Title).Equal("Updated")
 	gt.S(t, string(updated.StatusID)).Equal("in-progress")
 	gt.S(t, updated.Description).Equal("desc")
@@ -165,7 +187,7 @@ func TestTicketUseCase_Update_MergeFields(t *testing.T) {
 	newFields := map[string]model.FieldValue{
 		"category": {FieldID: "category", Value: "bug"},
 	}
-	updated := gt.R1(uc.Update(ctx, "ws-test", created.ID, nil, nil, nil, nil, newFields)).NoError(t)
+	updated := gt.R1(uc.Update(ctx, "ws-test", created.ID, nil, nil, nil, nil, newFields, nil)).NoError(t)
 	gt.M(t, updated.FieldValues).HasKey("priority")
 	gt.M(t, updated.FieldValues).HasKey("category")
 }
@@ -202,7 +224,7 @@ func TestTicketUseCase_Update_StatusChange_RecordsHistory(t *testing.T) {
 	ticket := gt.R1(uc.Create(ctx, "ws-test", "Status Change", "", "", nil, nil)).NoError(t)
 
 	newStatus := types.StatusID("in-progress")
-	gt.R1(uc.Update(ctx, "ws-test", ticket.ID, nil, nil, &newStatus, nil, nil)).NoError(t)
+	gt.R1(uc.Update(ctx, "ws-test", ticket.ID, nil, nil, &newStatus, nil, nil, nil)).NoError(t)
 
 	histories := gt.R1(uc.ListHistory(ctx, "ws-test", ticket.ID)).NoError(t)
 	gt.A(t, histories).Length(2)
@@ -219,7 +241,7 @@ func TestTicketUseCase_Update_NoStatusChange_NoHistory(t *testing.T) {
 	ticket := gt.R1(uc.Create(ctx, "ws-test", "No Status Change", "", "", nil, nil)).NoError(t)
 
 	newTitle := "Updated Title"
-	gt.R1(uc.Update(ctx, "ws-test", ticket.ID, &newTitle, nil, nil, nil, nil)).NoError(t)
+	gt.R1(uc.Update(ctx, "ws-test", ticket.ID, &newTitle, nil, nil, nil, nil, nil)).NoError(t)
 
 	histories := gt.R1(uc.ListHistory(ctx, "ws-test", ticket.ID)).NoError(t)
 	gt.A(t, histories).Length(1) // only the "created" entry
@@ -248,7 +270,7 @@ func TestTicketUseCase_Update_StatusChange_NotifiesOnce(t *testing.T) {
 	ticket := seedSlackTicket(t, uc, repo, nil)
 
 	newStatus := types.StatusID("in-progress")
-	gt.R1(uc.Update(ctx, "ws-test", ticket.ID, nil, nil, &newStatus, nil, nil)).NoError(t)
+	gt.R1(uc.Update(ctx, "ws-test", ticket.ID, nil, nil, &newStatus, nil, nil, nil)).NoError(t)
 
 	gt.A(t, notifier.calls).Length(1)
 	call := notifier.calls[0]
@@ -267,7 +289,7 @@ func TestTicketUseCase_Update_AssigneeChange_NotifiesOnce(t *testing.T) {
 	ticket := seedSlackTicket(t, uc, repo, nil)
 
 	newAssignees := []types.SlackUserID{"U111", "U222"}
-	gt.R1(uc.Update(ctx, "ws-test", ticket.ID, nil, nil, nil, &newAssignees, nil)).NoError(t)
+	gt.R1(uc.Update(ctx, "ws-test", ticket.ID, nil, nil, nil, &newAssignees, nil, nil)).NoError(t)
 
 	gt.A(t, notifier.calls).Length(1)
 	call := notifier.calls[0]
@@ -286,7 +308,7 @@ func TestTicketUseCase_Update_StatusAndAssignee_NotifiesOnce(t *testing.T) {
 
 	newStatus := types.StatusID("resolved")
 	newAssignees := []types.SlackUserID{"U999"}
-	gt.R1(uc.Update(ctx, "ws-test", ticket.ID, nil, nil, &newStatus, &newAssignees, nil)).NoError(t)
+	gt.R1(uc.Update(ctx, "ws-test", ticket.ID, nil, nil, &newStatus, &newAssignees, nil, nil)).NoError(t)
 
 	gt.A(t, notifier.calls).Length(1)
 	call := notifier.calls[0]
@@ -306,7 +328,7 @@ func TestTicketUseCase_Update_NoChange_NoNotify(t *testing.T) {
 
 	// Title-only change must not fire the notifier.
 	newTitle := "Renamed"
-	gt.R1(uc.Update(ctx, "ws-test", ticket.ID, &newTitle, nil, nil, nil, nil)).NoError(t)
+	gt.R1(uc.Update(ctx, "ws-test", ticket.ID, &newTitle, nil, nil, nil, nil, nil)).NoError(t)
 
 	gt.A(t, notifier.calls).Length(0)
 }
@@ -319,7 +341,215 @@ func TestTicketUseCase_Update_AssigneeReorder_NoNotify(t *testing.T) {
 
 	// Same set, different order — assignee membership is unchanged.
 	reordered := []types.SlackUserID{"U002", "U001"}
-	gt.R1(uc.Update(ctx, "ws-test", ticket.ID, nil, nil, nil, &reordered, nil)).NoError(t)
+	gt.R1(uc.Update(ctx, "ws-test", ticket.ID, nil, nil, nil, &reordered, nil, nil)).NoError(t)
 
 	gt.A(t, notifier.calls).Length(0)
+}
+
+// fixedConclusionLLM returns an LLMClientMock whose session emits the given
+// conclusion JSON exactly once. errOnGenerate, when non-nil, causes the
+// session's Generate to fail with that error so callers can exercise the
+// "LLM failed" branch.
+func fixedConclusionLLM(conclusion string, errOnGenerate error) *mock.LLMClientMock {
+	session := &mock.SessionMock{
+		GenerateFunc: func(_ context.Context, _ []gollem.Input, _ ...gollem.GenerateOption) (*gollem.Response, error) {
+			if errOnGenerate != nil {
+				return nil, errOnGenerate
+			}
+			return &gollem.Response{Texts: []string{`{"conclusion":"` + conclusion + `"}`}}, nil
+		},
+		HistoryFunc:       func() (*gollem.History, error) { return &gollem.History{LLType: gollem.LLMTypeOpenAI, Version: gollem.HistoryVersion}, nil },
+		AppendHistoryFunc: func(_ *gollem.History) error { return nil },
+	}
+	return &mock.LLMClientMock{
+		NewSessionFunc: func(_ context.Context, _ ...gollem.SessionOption) (gollem.Session, error) {
+			return session, nil
+		},
+	}
+}
+
+func setupTicketUseCaseWithLLM(t *testing.T, llm gollem.LLMClient) (*usecase.TicketUseCase, interfaces.Repository, *fakeTicketChangeNotifier) {
+	t.Helper()
+	repo := memory.New()
+	t.Cleanup(func() { _ = repo.Close() })
+
+	registry := model.NewWorkspaceRegistry()
+	registry.Register(&model.WorkspaceEntry{
+		Workspace: model.Workspace{ID: "ws-test", Name: "Test"},
+		FieldSchema: &config.FieldSchema{
+			Statuses: []config.StatusDef{
+				{ID: "open", Name: "Open"},
+				{ID: "in-progress", Name: "In Progress"},
+				{ID: "resolved", Name: "Resolved"},
+				{ID: "closed", Name: "Closed"},
+			},
+			TicketConfig: config.TicketConfig{
+				DefaultStatusID: "open",
+				ClosedStatusIDs: []types.StatusID{"resolved", "closed"},
+			},
+		},
+		SlackChannelID: "C111",
+	})
+	notifier := &fakeTicketChangeNotifier{}
+	uc := usecase.NewTicketUseCase(repo, registry, notifier, llm)
+	return uc, repo, notifier
+}
+
+func seedClosableTicket(t *testing.T, uc *usecase.TicketUseCase, repo interfaces.Repository) *model.Ticket {
+	t.Helper()
+	ctx := context.Background()
+	created := gt.R1(uc.Create(ctx, "ws-test", "Login broken", "Safari users see blank page", "open", nil, nil)).NoError(t)
+
+	stored := gt.R1(repo.Ticket().Get(ctx, "ws-test", created.ID)).NoError(t)
+	stored.SlackChannelID = "C-thread"
+	stored.SlackThreadTS = "1700000000.000100"
+	stored.InitialMessage = "Hi, login is broken on Safari."
+	stored = gt.R1(repo.Ticket().Update(ctx, "ws-test", stored)).NoError(t)
+
+	gt.R1(repo.Comment().Create(ctx, "ws-test", stored.ID, &model.Comment{
+		ID: "cmt-1", TicketID: stored.ID, SlackUserID: "U_REPORTER", Body: "Repro on Safari 17", SlackTS: "1700000001.000000",
+	})).NoError(t)
+	gt.R1(repo.Comment().Create(ctx, "ws-test", stored.ID, &model.Comment{
+		ID: "cmt-2", TicketID: stored.ID, IsBot: true, Body: "Investigating CSP violations", SlackTS: "1700000002.000000",
+	})).NoError(t)
+	gt.R1(repo.Comment().Create(ctx, "ws-test", stored.ID, &model.Comment{
+		ID: "cmt-3", TicketID: stored.ID, SlackUserID: "U_OWNER", Body: "Patch deployed", SlackTS: "1700000003.000000",
+	})).NoError(t)
+	return stored
+}
+
+func TestTicketUseCase_Update_GeneratesConclusionOnClose(t *testing.T) {
+	llm := fixedConclusionLLM("Login was broken on Safari due to a CSP violation; resolved by U_OWNER's patch.", nil)
+	uc, repo, notifier := setupTicketUseCaseWithLLM(t, llm)
+	ctx := context.Background()
+
+	ticket := seedClosableTicket(t, uc, repo)
+
+	closed := types.StatusID("closed")
+	updated := gt.R1(uc.Update(ctx, "ws-test", ticket.ID, nil, nil, &closed, nil, nil, nil)).NoError(t)
+	gt.S(t, string(updated.StatusID)).Equal("closed")
+
+	async.Wait()
+
+	got := gt.R1(repo.Ticket().Get(ctx, "ws-test", ticket.ID)).NoError(t)
+	gt.S(t, got.Conclusion).Equal("Login was broken on Safari due to a CSP violation; resolved by U_OWNER's patch.")
+
+	gt.A(t, notifier.conclusionCalls).Length(1)
+	call := notifier.conclusionCalls[0]
+	gt.S(t, call.channelID).Equal("C-thread")
+	gt.S(t, call.threadTS).Equal("1700000000.000100")
+	gt.S(t, call.conclusion).Equal("Login was broken on Safari due to a CSP violation; resolved by U_OWNER's patch.")
+}
+
+func TestTicketUseCase_Update_NoConclusionForNonClosingTransition(t *testing.T) {
+	llm := &mock.LLMClientMock{
+		NewSessionFunc: func(_ context.Context, _ ...gollem.SessionOption) (gollem.Session, error) {
+			t.Fatalf("LLM must not be invoked for non-closing transitions")
+			return nil, nil
+		},
+	}
+	uc, repo, notifier := setupTicketUseCaseWithLLM(t, llm)
+	ctx := context.Background()
+
+	ticket := seedClosableTicket(t, uc, repo)
+
+	inProgress := types.StatusID("in-progress")
+	gt.R1(uc.Update(ctx, "ws-test", ticket.ID, nil, nil, &inProgress, nil, nil, nil)).NoError(t)
+	async.Wait()
+
+	got := gt.R1(repo.Ticket().Get(ctx, "ws-test", ticket.ID)).NoError(t)
+	gt.S(t, got.Conclusion).Equal("")
+	gt.A(t, notifier.conclusionCalls).Length(0)
+}
+
+func TestTicketUseCase_Update_RegeneratesConclusionOnReopenThenClose(t *testing.T) {
+	first := fixedConclusionLLM("First close summary", nil)
+	uc, repo, notifier := setupTicketUseCaseWithLLM(t, first)
+	ctx := context.Background()
+
+	ticket := seedClosableTicket(t, uc, repo)
+	closed := types.StatusID("closed")
+	gt.R1(uc.Update(ctx, "ws-test", ticket.ID, nil, nil, &closed, nil, nil, nil)).NoError(t)
+	async.Wait()
+
+	open := types.StatusID("open")
+	gt.R1(uc.Update(ctx, "ws-test", ticket.ID, nil, nil, &open, nil, nil, nil)).NoError(t)
+	async.Wait()
+
+	mid := gt.R1(repo.Ticket().Get(ctx, "ws-test", ticket.ID)).NoError(t)
+	gt.S(t, mid.Conclusion).Equal("First close summary")
+
+	usecase.SetTicketUseCaseLLMForTest(uc, fixedConclusionLLM("Second close summary", nil))
+	gt.R1(uc.Update(ctx, "ws-test", ticket.ID, nil, nil, &closed, nil, nil, nil)).NoError(t)
+	async.Wait()
+
+	final := gt.R1(repo.Ticket().Get(ctx, "ws-test", ticket.ID)).NoError(t)
+	gt.S(t, final.Conclusion).Equal("Second close summary")
+	gt.A(t, notifier.conclusionCalls).Length(2)
+}
+
+func TestTicketUseCase_Update_ConclusionEditOnNonClosedRejected(t *testing.T) {
+	uc, repo, _ := setupTicketUseCaseWithLLM(t, nil)
+	ctx := context.Background()
+	ticket := seedClosableTicket(t, uc, repo)
+
+	body := "Manual conclusion attempt"
+	_, err := uc.Update(ctx, "ws-test", ticket.ID, nil, nil, nil, nil, nil, &body)
+	gt.True(t, errors.Is(err, usecase.ErrConclusionEditNotAllowed))
+
+	got := gt.R1(repo.Ticket().Get(ctx, "ws-test", ticket.ID)).NoError(t)
+	gt.S(t, got.Conclusion).Equal("")
+}
+
+func TestTicketUseCase_Update_ConclusionEditOnClosedSucceeds(t *testing.T) {
+	uc, repo, _ := setupTicketUseCaseWithLLM(t, nil)
+	ctx := context.Background()
+	ticket := seedClosableTicket(t, uc, repo)
+
+	stored := gt.R1(repo.Ticket().Get(ctx, "ws-test", ticket.ID)).NoError(t)
+	stored.StatusID = "closed"
+	gt.R1(repo.Ticket().Update(ctx, "ws-test", stored)).NoError(t)
+
+	body := "Manually authored conclusion"
+	updated := gt.R1(uc.Update(ctx, "ws-test", ticket.ID, nil, nil, nil, nil, nil, &body)).NoError(t)
+	gt.S(t, updated.Conclusion).Equal("Manually authored conclusion")
+
+	got := gt.R1(repo.Ticket().Get(ctx, "ws-test", ticket.ID)).NoError(t)
+	gt.S(t, got.Conclusion).Equal("Manually authored conclusion")
+}
+
+func TestTicketUseCase_Update_StatusAndConclusionTogetherRejected(t *testing.T) {
+	uc, repo, _ := setupTicketUseCaseWithLLM(t, nil)
+	ctx := context.Background()
+	ticket := seedClosableTicket(t, uc, repo)
+
+	stored := gt.R1(repo.Ticket().Get(ctx, "ws-test", ticket.ID)).NoError(t)
+	stored.StatusID = "closed"
+	gt.R1(repo.Ticket().Update(ctx, "ws-test", stored)).NoError(t)
+
+	body := "Manual"
+	closed := types.StatusID("closed")
+	_, err := uc.Update(ctx, "ws-test", ticket.ID, nil, nil, &closed, nil, nil, &body)
+	gt.True(t, errors.Is(err, usecase.ErrConclusionEditNotAllowed))
+}
+
+func TestTicketUseCase_Update_LLMFailureKeepsClose(t *testing.T) {
+	llm := fixedConclusionLLM("", goerr.New("simulated LLM outage"))
+	uc, repo, notifier := setupTicketUseCaseWithLLM(t, llm)
+	ctx := context.Background()
+	ticket := seedClosableTicket(t, uc, repo)
+
+	closed := types.StatusID("closed")
+	updated := gt.R1(uc.Update(ctx, "ws-test", ticket.ID, nil, nil, &closed, nil, nil, nil)).NoError(t)
+	gt.S(t, string(updated.StatusID)).Equal("closed")
+
+	async.Wait()
+
+	got := gt.R1(repo.Ticket().Get(ctx, "ws-test", ticket.ID)).NoError(t)
+	gt.S(t, got.Conclusion).Equal("")
+
+	if len(notifier.calls) == 0 {
+		t.Errorf("notifyTicketChange must still fire even when conclusion generation fails")
+	}
+	gt.A(t, notifier.conclusionCalls).Length(0)
 }

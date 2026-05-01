@@ -149,6 +149,8 @@ paths:
                 $ref: "#/components/schemas/Ticket"
         "404":
           description: Not Found
+        "409":
+          description: Conflict (e.g. conclusion edit attempted on a non-closed ticket)
     delete:
       operationId: deleteTicket
       parameters:
@@ -636,6 +638,8 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/FieldValue"
+        conclusion:
+          type: string
         createdAt:
           type: string
           format: date-time
@@ -680,6 +684,8 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/FieldValue"
+        conclusion:
+          type: string
 
     SlackUserInfo:
       type: object

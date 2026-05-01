@@ -255,6 +255,11 @@ export const en: Messages = {
   ticketDetailUnassigned: "Unassigned",
   ticketDetailUserPickerSelectUsers: "Select users…",
   ticketDetailUrlInvalid: "Invalid URL",
+  ticketDetailConclusionLabel: "Conclusion",
+  ticketDetailConclusionEmpty: "No conclusion yet.",
+  ticketDetailConclusionPending: "Generating conclusion…",
+  ticketDetailConclusionEditLockedHint: "Conclusion can only be edited while the ticket is closed.",
+  ticketDetailConclusionEditNotAllowed: "Cannot edit conclusion: ticket must be closed.",
 
   placeholderTitle: "Title",
   placeholderDescription: "Description",

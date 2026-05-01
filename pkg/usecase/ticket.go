@@ -2,39 +2,62 @@ package usecase
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/m-mizutani/goerr/v2"
+	"github.com/m-mizutani/gollem"
 	"github.com/m-mizutani/shepherd/pkg/domain/interfaces"
 	"github.com/m-mizutani/shepherd/pkg/domain/model"
 	"github.com/m-mizutani/shepherd/pkg/domain/model/auth"
 	"github.com/m-mizutani/shepherd/pkg/domain/types"
 	slackService "github.com/m-mizutani/shepherd/pkg/service/slack"
+	"github.com/m-mizutani/shepherd/pkg/usecase/prompt"
+	"github.com/m-mizutani/shepherd/pkg/utils/async"
 	"github.com/m-mizutani/shepherd/pkg/utils/errutil"
+	"github.com/m-mizutani/shepherd/pkg/utils/i18n"
 	"github.com/m-mizutani/shepherd/pkg/utils/logging"
 )
 
-// TicketChangeNotifier delivers a context-block notification about a ticket
-// mutation back to the originating Slack thread. Implementations are
-// responsible for rendering both status and assignee blocks in a single
-// message when both are present in the TicketChange payload.
+// ErrConclusionEditNotAllowed is returned when a conclusion edit is requested
+// against a ticket that is not currently in a closed status, or when a single
+// Update request tries to flip the status and rewrite the conclusion at the
+// same time. The HTTP layer translates it to 409 Conflict.
+var ErrConclusionEditNotAllowed = goerr.New("conclusion can only be edited while the ticket is closed",
+	goerr.Tag(errutil.TagConflict))
+
+// TicketChangeNotifier delivers context-block notifications about ticket
+// mutations back to the originating Slack thread.
+//
+// NotifyTicketChange renders the immediate status / assignee transition
+// summary; PostConclusion renders the close-time LLM-generated conclusion.
+// They are grouped on a single interface because both represent
+// post-update reflections back to the same thread, and the production
+// *slackService.Client implements both.
 type TicketChangeNotifier interface {
 	NotifyTicketChange(ctx context.Context, channelID, threadTS string, change slackService.TicketChange) error
+	PostConclusion(ctx context.Context, channelID, threadTS, conclusion string) error
 }
 
 type TicketUseCase struct {
 	repo     interfaces.Repository
 	registry *model.WorkspaceRegistry
 	notifier TicketChangeNotifier
+	llm      gollem.LLMClient
 }
 
-func NewTicketUseCase(repo interfaces.Repository, registry *model.WorkspaceRegistry, notifier TicketChangeNotifier) *TicketUseCase {
+// NewTicketUseCase wires the usecase dependencies. The llm argument is
+// optional: when nil, close-time conclusion generation is skipped (status
+// updates and notifications still run as usual).
+func NewTicketUseCase(repo interfaces.Repository, registry *model.WorkspaceRegistry, notifier TicketChangeNotifier, llm gollem.LLMClient) *TicketUseCase {
 	return &TicketUseCase{
 		repo:     repo,
 		registry: registry,
 		notifier: notifier,
+		llm:      llm,
 	}
 }
 
@@ -111,10 +134,25 @@ func (uc *TicketUseCase) List(ctx context.Context, workspaceID types.WorkspaceID
 	return tickets, nil
 }
 
-func (uc *TicketUseCase) Update(ctx context.Context, workspaceID types.WorkspaceID, ticketID types.TicketID, title, description *string, statusID *types.StatusID, assigneeIDs *[]types.SlackUserID, fields map[string]model.FieldValue) (*model.Ticket, error) {
+func (uc *TicketUseCase) Update(ctx context.Context, workspaceID types.WorkspaceID, ticketID types.TicketID, title, description *string, statusID *types.StatusID, assigneeIDs *[]types.SlackUserID, fields map[string]model.FieldValue, conclusion *string) (*model.Ticket, error) {
 	existing, err := uc.repo.Ticket().Get(ctx, workspaceID, ticketID)
 	if err != nil {
 		return nil, goerr.Wrap(err, "failed to get ticket for update")
+	}
+
+	entry, _ := uc.registry.Get(workspaceID)
+
+	if conclusion != nil {
+		// Manual conclusion edits are only permitted while the ticket is
+		// currently in a closed status. Combining a status flip with a
+		// conclusion rewrite in the same request is also rejected to avoid
+		// races with the auto-generation path.
+		if statusID != nil {
+			return nil, ErrConclusionEditNotAllowed
+		}
+		if entry == nil || !entry.FieldSchema.IsClosedStatus(existing.StatusID) {
+			return nil, ErrConclusionEditNotAllowed
+		}
 	}
 
 	oldStatusID := existing.StatusID
@@ -139,6 +177,9 @@ func (uc *TicketUseCase) Update(ctx context.Context, workspaceID types.Workspace
 		for k, v := range fields {
 			existing.FieldValues[k] = v
 		}
+	}
+	if conclusion != nil {
+		existing.Conclusion = *conclusion
 	}
 	existing.UpdatedAt = time.Now()
 
@@ -169,7 +210,180 @@ func (uc *TicketUseCase) Update(ctx context.Context, workspaceID types.Workspace
 		uc.notifyTicketChange(ctx, workspaceID, updated, oldStatusID, oldAssigneeIDs, statusChanged, assigneeChanged)
 	}
 
+	// Detect non-closed → closed transition and dispatch the conclusion
+	// generation. This is the single hook regardless of whether the change
+	// originated from a Slack QuickAction or the web PATCH endpoint, so both
+	// surfaces inherit the behaviour identically.
+	if statusChanged && entry != nil &&
+		entry.FieldSchema.IsClosedStatus(updated.StatusID) &&
+		!entry.FieldSchema.IsClosedStatus(oldStatusID) {
+		wsCopy := workspaceID
+		idCopy := updated.ID
+		async.Dispatch(ctx, func(ctx context.Context) error {
+			return uc.generateConclusion(ctx, wsCopy, idCopy)
+		})
+	}
+
 	return updated, nil
+}
+
+// generateConclusion runs in the async tail after a ticket transitions into
+// a closed status. It re-loads the ticket (the request goroutine has already
+// acked / returned), bails out when the status was rolled back before the
+// LLM ran, asks the LLM for a short prose summary, persists it, and posts a
+// single Slack context block back to the originating thread.
+//
+// Failures along the way are logged via errutil.Handle so the close action
+// itself stays "successful" — a missing conclusion is recoverable on the
+// next close transition or via manual edit, while pretending the close
+// failed would confuse the user.
+func (uc *TicketUseCase) generateConclusion(ctx context.Context, workspaceID types.WorkspaceID, ticketID types.TicketID) error {
+	if uc.llm == nil {
+		return nil
+	}
+	logger := logging.From(ctx)
+
+	entry, ok := uc.registry.Get(workspaceID)
+	if !ok {
+		return nil
+	}
+
+	ticket, err := uc.repo.Ticket().Get(ctx, workspaceID, ticketID)
+	if err != nil {
+		errutil.Handle(ctx, goerr.Wrap(err, "load ticket for conclusion generation",
+			goerr.V("workspace_id", string(workspaceID)),
+			goerr.V("ticket_id", string(ticketID)),
+		))
+		return nil
+	}
+	if ticket == nil {
+		return nil
+	}
+	if !entry.FieldSchema.IsClosedStatus(ticket.StatusID) {
+		// Lost a race with a re-open; nothing to summarise.
+		return nil
+	}
+
+	comments, err := uc.repo.Comment().List(ctx, workspaceID, ticketID)
+	if err != nil {
+		errutil.Handle(ctx, goerr.Wrap(err, "list comments for conclusion generation",
+			goerr.V("ticket_id", string(ticketID)),
+		))
+		return nil
+	}
+
+	body, err := buildConclusion(ctx, uc.llm, ticket, comments)
+	if err != nil {
+		errutil.Handle(ctx, goerr.Wrap(err, "build conclusion",
+			goerr.V("ticket_id", string(ticketID)),
+		))
+		return nil
+	}
+	if body == "" {
+		logger.Warn("conclusion generation produced empty body",
+			slog.String("ticket_id", string(ticketID)))
+		return nil
+	}
+
+	ticket.Conclusion = body
+	ticket.UpdatedAt = time.Now()
+	if _, err := uc.repo.Ticket().Update(ctx, workspaceID, ticket); err != nil {
+		errutil.Handle(ctx, goerr.Wrap(err, "persist generated conclusion",
+			goerr.V("ticket_id", string(ticketID)),
+		))
+		return nil
+	}
+
+	if uc.notifier == nil || ticket.SlackChannelID == "" || ticket.SlackThreadTS == "" {
+		return nil
+	}
+	if err := uc.notifier.PostConclusion(ctx, string(ticket.SlackChannelID), string(ticket.SlackThreadTS), body); err != nil {
+		errutil.Handle(ctx, goerr.Wrap(err, "post conclusion to slack",
+			goerr.V("ticket_id", string(ticketID)),
+		))
+	}
+	return nil
+}
+
+// buildConclusion renders the prompt, asks the LLM for a JSON-shaped
+// response, and returns the model's prose. The schema enforcement is the
+// gollem layer's job; we only validate that we got a non-empty string.
+func buildConclusion(ctx context.Context, llm gollem.LLMClient, ticket *model.Ticket, comments []*model.Comment) (string, error) {
+	in := prompt.ConclusionInput{
+		Title:          ticket.Title,
+		Description:    ticket.Description,
+		InitialMessage: ticket.InitialMessage,
+		Comments:       conclusionComments(comments),
+		Language:       conclusionLanguage(ctx),
+	}
+	systemPrompt, err := prompt.RenderConclusion(in)
+	if err != nil {
+		return "", goerr.Wrap(err, "render conclusion prompt")
+	}
+
+	agent := gollem.New(llm,
+		gollem.WithSystemPrompt(systemPrompt),
+		gollem.WithContentType(gollem.ContentTypeJSON),
+		gollem.WithResponseSchema(conclusionResponseSchema()),
+	)
+
+	resp, err := agent.Execute(ctx, gollem.Text("Write the conclusion now and return it as the JSON object specified above."))
+	if err != nil {
+		return "", goerr.Wrap(err, "agent execute")
+	}
+	if resp == nil || len(resp.Texts) == 0 {
+		return "", goerr.New("LLM returned no conclusion body")
+	}
+	raw := strings.Join(resp.Texts, "")
+
+	var out struct {
+		Conclusion string `json:"conclusion"`
+	}
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		return "", goerr.Wrap(err, "decode conclusion json", goerr.V("raw", raw))
+	}
+	return strings.TrimSpace(out.Conclusion), nil
+}
+
+func conclusionComments(in []*model.Comment) []prompt.ConclusionComment {
+	out := make([]prompt.ConclusionComment, 0, len(in))
+	for _, c := range in {
+		if c == nil {
+			continue
+		}
+		out = append(out, prompt.ConclusionComment{
+			Author: string(c.SlackUserID),
+			IsBot:  c.IsBot,
+			Body:   c.Body,
+		})
+	}
+	return out
+}
+
+func conclusionLanguage(ctx context.Context) string {
+	switch i18n.From(ctx).Lang() {
+	case i18n.LangJA:
+		return "Japanese"
+	default:
+		return "English"
+	}
+}
+
+// conclusionResponseSchema is the JSON Schema gollem enforces on the model's
+// output. It mirrors the inline shape buildConclusion decodes.
+func conclusionResponseSchema() *gollem.Parameter {
+	return &gollem.Parameter{
+		Title:       "TicketConclusion",
+		Description: "The close-time conclusion summarising the ticket.",
+		Type:        gollem.TypeObject,
+		Properties: map[string]*gollem.Parameter{
+			"conclusion": {
+				Type:        gollem.TypeString,
+				Description: "Short prose summary; no markdown decoration, no emoji.",
+				Required:    true,
+			},
+		},
+	}
 }
 
 func (uc *TicketUseCase) notifyTicketChange(ctx context.Context, workspaceID types.WorkspaceID, ticket *model.Ticket, oldStatusID types.StatusID, oldAssigneeIDs []types.SlackUserID, statusChanged, assigneeChanged bool) {

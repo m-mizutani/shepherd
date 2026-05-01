@@ -54,7 +54,7 @@ func (uc *QuickActionsUseCase) HandleAssigneeChange(ctx context.Context, channel
 		assignees = append(assignees, types.SlackUserID(id))
 	}
 
-	if _, err := uc.ticketUC.Update(ctx, wsID, ticket.ID, nil, nil, nil, &assignees, nil); err != nil {
+	if _, err := uc.ticketUC.Update(ctx, wsID, ticket.ID, nil, nil, nil, &assignees, nil, nil); err != nil {
 		return goerr.Wrap(err, "failed to update assignees from quick actions",
 			goerr.V("ticket_id", string(ticket.ID)),
 		)
@@ -80,7 +80,7 @@ func (uc *QuickActionsUseCase) HandleStatusChange(ctx context.Context, channelID
 	}
 
 	sid := types.StatusID(statusID)
-	if _, err := uc.ticketUC.Update(ctx, wsID, ticket.ID, nil, nil, &sid, nil, nil); err != nil {
+	if _, err := uc.ticketUC.Update(ctx, wsID, ticket.ID, nil, nil, &sid, nil, nil, nil); err != nil {
 		return goerr.Wrap(err, "failed to update status from quick actions",
 			goerr.V("ticket_id", string(ticket.ID)),
 		)

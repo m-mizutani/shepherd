@@ -256,6 +256,11 @@ export const ja: Messages = {
   ticketDetailUnassigned: "未割当",
   ticketDetailUserPickerSelectUsers: "ユーザーを選択…",
   ticketDetailUrlInvalid: "URL が不正です",
+  ticketDetailConclusionLabel: "振り返り",
+  ticketDetailConclusionEmpty: "まだ振り返りはありません。",
+  ticketDetailConclusionPending: "振り返りを生成中…",
+  ticketDetailConclusionEditLockedHint: "振り返りはチケットが close 状態のときだけ編集できます。",
+  ticketDetailConclusionEditNotAllowed: "振り返りは close 状態のチケットでのみ編集できます。",
 
   placeholderTitle: "タイトル",
   placeholderDescription: "説明",

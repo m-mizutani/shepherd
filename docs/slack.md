@@ -205,6 +205,15 @@ Whenever a ticket's status or assignee changes — through the HTTP API (Web UI)
 
 The notification is delivered through `TicketChangeNotifier.NotifyTicketChange`, implemented by the Slack service `Client`. The triage flow's hand-off message (posted at the end of a successful triage submit) is intentionally a separate message produced by the triage usecase, since it carries planner output beyond the scope of a status / assignee transition.
 
+## Close-time Conclusion
+
+When a ticket transitions from a non-closed status to a closed one (any status listed under `[ticket].closed_statuses`), Shepherd asks the configured LLM to summarise the ticket and post the result back to the originating thread.
+
+- The summary is written from the ticket title / description / initial reporter message plus every captured thread comment, in the active language (`--lang` / `SHEPHERD_LANG`).
+- The summary is persisted on the ticket as `conclusion`. Re-opening then re-closing the ticket overwrites it; manual edits are accepted from the Web UI but only while the ticket is currently in a closed status.
+- The Slack post is a single context block with one decorative emoji (`📝`) prepended server-side. Headings, lists, and additional emoji are deliberately suppressed so close summaries stay quiet.
+- Generation runs through `async.Dispatch` in the same usecase that handles status changes, so both the Slack quick-actions path and the Web `PATCH /tickets/{id}` path inherit the behaviour identically. LLM or Slack failures are logged through `errutil.Handle` and do not roll back the close itself.
+
 ## LLM-Assisted Replies (required)
 
 When a user mentions the bot (`@Shepherd ...`) **with body text** inside a ticket thread, Shepherd generates a reply using an LLM. The bot reads the ticket title, description, prior comments, and the latest mention, then posts a generated answer in the thread. Empty mentions take the Quick Actions path described above instead.

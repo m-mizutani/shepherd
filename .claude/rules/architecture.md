@@ -69,6 +69,106 @@ raw payload values the entry point captured. If a method takes both
 `workspaceID` and `channelID` "for convenience", the controller is
 probably resolving identifiers it shouldn't be.
 
+## Entry-point unification (NON-NEGOTIABLE)
+
+A given business operation has **one** usecase method, regardless of how
+many transport-level entry points trigger it. Slack interactivity, the web
+UI's HTTP API, the CLI, and any future trigger all funnel into the same
+usecase function — they MUST NOT each carry their own copy of the rules,
+side-effects, or notifications.
+
+This is the single most important invariant of this codebase. Every
+business rule (validation, persistence, history-recording, Slack
+notifications, conclusion generation, idempotency, etc.) must live below
+the controller layer so that *every* entry point triggers the same
+behaviour automatically. The controller's job is to decode the transport
+payload and call the usecase — nothing more.
+
+### What this looks like in practice
+
+- A status change has *one* implementation: `TicketUseCase.Update`.
+  - Slack QuickActions: `controller → QuickActionsUseCase.HandleStatusChange → TicketUseCase.Update`.
+  - Web PATCH `/tickets/{id}`: `controller → TicketUseCase.Update`.
+  - History writes, notifier fan-out, conclusion generation, etc. all
+    happen inside `TicketUseCase.Update` so both paths inherit them
+    identically.
+- A ticket creation has *one* implementation: `TicketUseCase.Create` (or
+  the Slack-driven equivalent that wraps it). New entry points wrap the
+  existing usecase; they do not re-implement it.
+- Future transports (gRPC, CLI, scheduled jobs) MUST reuse the same
+  usecase methods. Adding a new transport is a controller-only change.
+
+### Anti-patterns (do not write this code)
+
+```go
+// WRONG: Slack handler writes to the repository directly to "skip
+// the overhead" of the usecase. Now history, notifier, and any future
+// hook fire only on the web path.
+ticket.StatusID = newStatus
+if _, err := repo.Ticket().Update(ctx, wsID, ticket); err != nil { ... }
+
+// WRONG: business rule duplicated at the controller. The next reviewer
+// has to remember both copies and keep them in sync.
+if web {
+    if entry.FieldSchema.IsClosedStatus(newStatus) { recordClose(...) }
+}
+if slack {
+    if entry.FieldSchema.IsClosedStatus(newStatus) { recordClose(...) }
+}
+
+// WRONG: Slack-only side effect grafted onto the Slack path. If the web
+// UI triggers the same status change, the side effect silently disappears.
+if slack && oldStatus != newStatus {
+    notifySlackThread(...)
+}
+```
+
+```go
+// CORRECT: every entry point routes through TicketUseCase.Update; the
+// usecase owns the side-effects so the trigger is irrelevant.
+func (uc *QuickActionsUseCase) HandleStatusChange(...) error {
+    ...
+    _, err := uc.ticketUC.Update(ctx, wsID, ticketID, nil, nil, &sid, nil, nil)
+    return err
+}
+
+func (h *Handler) updateTicket(w http.ResponseWriter, r *http.Request) {
+    ...
+    _, err := h.ticketUC.Update(ctx, wsID, ticketID, &req.Title, &req.Description, &req.StatusID, ...)
+    ...
+}
+```
+
+### Checklist before adding a new entry point
+
+- [ ] Does an existing usecase method already implement this business
+      operation? If yes, call it. If you find yourself copy-pasting logic
+      from another handler, stop and refactor the shared logic into the
+      usecase first.
+- [ ] If you need to add a new side effect (history, notifier, generation
+      job), is it added inside the usecase method, not at the entry point?
+- [ ] Are repository writes confined to the usecase layer? A controller
+      or a wrapping handler-usecase that calls `repo.X().Update` directly
+      is a layering violation — push the write down into the entity's
+      usecase so all entry points share it.
+- [ ] If the operation has both a sync gate (validation) and an async tail
+      (LLM, Slack post), does the *single* usecase method own both halves
+      (validation sync, tail via `async.Dispatch`)? Splitting them across
+      handlers re-introduces the duplication this rule exists to prevent.
+
+### Why this matters
+
+- **Behaviour parity.** Users do not care whether a status change came
+  from Slack or the web UI; they expect the same notifications, the same
+  history entries, the same downstream effects. Duplicated logic drifts.
+- **Auditability.** A single usecase method is a single place to read,
+  test, and review the business rule. Two copies double the surface area
+  reviewers must verify.
+- **Future-proofing.** New entry points (CLI commands, scheduled jobs,
+  API integrations) become trivial: wire the transport, call the
+  existing usecase. If adding a new entry point requires re-implementing
+  business logic, the layering has already failed.
+
 ## Slack interactivity: ack-fast / dispatch-async (NON-NEGOTIABLE)
 
 Slack enforces a **3-second deadline** on every interactivity callback —
@@ -170,3 +270,7 @@ When reviewing or writing code, run these tests in your head:
   `errutil.HandleHTTP`?"* If yes, the layering is leaking up.
 - *"If I rewrote the transport (HTTP → gRPC → CLI), how much usecase code
   would I need to change?"* The answer should be "zero".
+- *"If I trigger the same business operation from Slack and from the web
+  UI, do they hit the same usecase method?"* If no — or if logic is
+  duplicated at the controller level — fix it before merging. See
+  "Entry-point unification" above.

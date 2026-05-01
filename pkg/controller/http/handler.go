@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/m-mizutani/goerr/v2"
+	"github.com/m-mizutani/gollem"
 	"github.com/m-mizutani/shepherd/pkg/domain/interfaces"
 	"github.com/m-mizutani/shepherd/pkg/domain/model"
 	"github.com/m-mizutani/shepherd/pkg/domain/model/config"
@@ -29,10 +30,10 @@ type APIHandler struct {
 
 var _ ServerInterface = (*APIHandler)(nil)
 
-func NewAPIHandler(registry *model.WorkspaceRegistry, repo interfaces.Repository, notifier usecase.TicketChangeNotifier, slackUC *usecase.SlackUseCase, sourceUC *source.UseCase, catalog *tool.Catalog, promptUC *prompt.UseCase) *APIHandler {
+func NewAPIHandler(registry *model.WorkspaceRegistry, repo interfaces.Repository, notifier usecase.TicketChangeNotifier, llm gollem.LLMClient, slackUC *usecase.SlackUseCase, sourceUC *source.UseCase, catalog *tool.Catalog, promptUC *prompt.UseCase) *APIHandler {
 	return &APIHandler{
 		workspaceUC: usecase.NewWorkspaceUseCase(registry),
-		ticketUC:    usecase.NewTicketUseCase(repo, registry, notifier),
+		ticketUC:    usecase.NewTicketUseCase(repo, registry, notifier, llm),
 		slackUC:     slackUC,
 		sourceUC:    sourceUC,
 		promptUC:    promptUC,
@@ -164,7 +165,7 @@ func (h *APIHandler) UpdateTicket(w http.ResponseWriter, r *http.Request, worksp
 		assigneeIDs = &ids
 	}
 
-	ticket, err := h.ticketUC.Update(r.Context(), types.WorkspaceID(workspaceId), types.TicketID(ticketId), req.Title, req.Description, statusID, assigneeIDs, fields)
+	ticket, err := h.ticketUC.Update(r.Context(), types.WorkspaceID(workspaceId), types.TicketID(ticketId), req.Title, req.Description, statusID, assigneeIDs, fields, req.Conclusion)
 	if err != nil {
 		handleUseCaseError(r.Context(), w, err)
 		return
@@ -288,6 +289,10 @@ func toTicketResponse(t *model.Ticket) Ticket {
 		s := string(t.SlackThreadTS)
 		ticket.SlackThreadTs = &s
 	}
+	if t.Conclusion != "" {
+		s := t.Conclusion
+		ticket.Conclusion = &s
+	}
 
 	return ticket
 }
@@ -373,6 +378,10 @@ func toModelFieldValues(fields *[]FieldValue) map[string]model.FieldValue {
 func handleUseCaseError(ctx context.Context, w http.ResponseWriter, err error) {
 	if goerr.HasTag(err, errutil.TagNotFound) {
 		errutil.HandleHTTP(ctx, w, err, http.StatusNotFound)
+		return
+	}
+	if goerr.HasTag(err, errutil.TagConflict) {
+		errutil.HandleHTTP(ctx, w, err, http.StatusConflict)
 		return
 	}
 	errutil.HandleHTTP(ctx, w, err, http.StatusInternalServerError)

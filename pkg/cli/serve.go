@@ -219,7 +219,7 @@ func cmdServe() *cli.Command {
 			}
 
 			if slackUC != nil {
-				ticketUC := usecaseroot.NewTicketUseCase(repo, registry, slackClient)
+				ticketUC := usecaseroot.NewTicketUseCase(repo, registry, slackClient, llmClient)
 				quickUC := usecaseroot.NewQuickActionsUseCase(repo, registry, ticketUC)
 				serverOpts = append(serverOpts, httpController.WithSlack(httpController.SlackConfig{
 					SigningSecret: slackCfg.SignSecret(),
@@ -233,6 +233,9 @@ func cmdServe() *cli.Command {
 			sourceUC := source.New(repo.Source(), notionFactory.Client(), time.Now)
 			serverOpts = append(serverOpts, httpController.WithSource(sourceUC, catalog))
 			serverOpts = append(serverOpts, httpController.WithPrompt(promptUC))
+			if llmClient != nil {
+				serverOpts = append(serverOpts, httpController.WithLLM(llmClient))
+			}
 
 			httpServer := httpController.New(registry, repo, authUC, serverOpts...)
 

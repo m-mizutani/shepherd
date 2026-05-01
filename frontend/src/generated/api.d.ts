@@ -340,6 +340,7 @@ export interface components {
             slackChannelId?: string;
             slackThreadTs?: string;
             fields: components["schemas"]["FieldValue"][];
+            conclusion?: string;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -358,6 +359,7 @@ export interface components {
             statusId?: string;
             assigneeIds?: string[];
             fields?: components["schemas"]["FieldValue"][];
+            conclusion?: string;
         };
         SlackUserInfo: {
             id: string;
@@ -722,6 +724,13 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Conflict (e.g. conclusion edit attempted on a non-closed ticket) */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
