@@ -173,10 +173,12 @@ type ConclusionInput struct {
 }
 
 // ConclusionComment is the per-comment projection the prompt template walks.
-// Author is the Slack user id of the human participant ("" when IsBot=true).
+// Author is the Slack user id of whoever posted the comment, or "" when the
+// comment was emitted by Shepherd / another bot. Whether the body came from
+// a bot is not surfaced separately — for the close-time retrospective it
+// rarely matters who literally typed each turn, only what got said.
 type ConclusionComment struct {
 	Author string
-	IsBot  bool
 	Body   string
 }
 

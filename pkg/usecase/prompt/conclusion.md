@@ -13,10 +13,10 @@ You are summarizing a ticket that has just been closed in Shepherd. The output i
 ## Thread conversation
 
 {{- if .Comments }}
-The following messages were posted in the ticket's Slack thread, in chronological order. Bot-generated messages are marked `[bot]`; everything else is from a human participant.
+The following messages were posted in the ticket's Slack thread, in chronological order. When the author is known, it is shown as a `<@user_id>` mention; otherwise the body stands on its own.
 
 {{ range .Comments }}
-- {{ if .IsBot }}[bot]{{ else }}<@{{ .Author }}>{{ end }}: {{ .Body }}
+- {{ if .Author }}<@{{ .Author }}>: {{ end }}{{ .Body }}
 {{- end }}
 {{- else }}
 No thread messages were captured for this ticket beyond the initial report.

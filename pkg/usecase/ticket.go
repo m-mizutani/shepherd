@@ -363,7 +363,6 @@ func conclusionComments(in []*model.Comment) []prompt.ConclusionComment {
 		}
 		out = append(out, prompt.ConclusionComment{
 			Author: string(c.SlackUserID),
-			IsBot:  c.IsBot,
 			Body:   c.Body,
 		})
 	}
