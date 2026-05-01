@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"time"
@@ -315,9 +316,19 @@ func (uc *TicketUseCase) generateConclusion(ctx context.Context, workspaceID typ
 	return nil
 }
 
+// conclusionRetryCap bounds how many extra LLM round-trips we are willing
+// to spend coaxing a parseable, non-empty conclusion out of the model when
+// the first attempt comes back malformed. The cap is small enough that
+// total wall-clock stays bounded for a background async task, but large
+// enough that occasional JSON glitches self-heal without giving up.
+const conclusionRetryCap = 3
+
 // buildConclusion renders the prompt, asks the LLM for a JSON-shaped
-// response, and returns the model's prose. The schema enforcement is the
-// gollem layer's job; we only validate that we got a non-empty string.
+// response, and returns the model's prose. The gollem layer enforces the
+// schema, but the response can still come back as malformed JSON or with
+// an empty `conclusion` field — both are validated here, with up to
+// conclusionRetryCap re-asks that hand the verbatim error back to the
+// model so it can self-correct on the same gollem session.
 func buildConclusion(ctx context.Context, llm gollem.LLMClient, ticket *model.Ticket, comments []*model.Comment) (string, error) {
 	in := prompt.ConclusionInput{
 		Title:          ticket.Title,
@@ -337,10 +348,53 @@ func buildConclusion(ctx context.Context, llm gollem.LLMClient, ticket *model.Ti
 		gollem.WithResponseSchema(conclusionResponseSchema()),
 	)
 
-	resp, err := agent.Execute(ctx, gollem.Text("Write the conclusion now and return it as the JSON object specified above."))
-	if err != nil {
-		return "", goerr.Wrap(err, "agent execute")
+	logger := logging.From(ctx)
+	kickoff := gollem.Text("Write the conclusion now and return it as the JSON object specified above.")
+
+	for attempt := 0; attempt <= conclusionRetryCap; attempt++ {
+		resp, err := agent.Execute(ctx, kickoff)
+		if err != nil {
+			return "", goerr.Wrap(err, "agent execute",
+				goerr.V("ticket_id", string(ticket.ID)),
+				goerr.V("attempt", attempt))
+		}
+
+		body, validationErr := decodeConclusionResponse(resp)
+		if validationErr == nil {
+			return body, nil
+		}
+
+		if attempt == conclusionRetryCap {
+			return "", goerr.Wrap(validationErr, "validate conclusion response",
+				goerr.V("ticket_id", string(ticket.ID)),
+				goerr.V("attempt", attempt))
+		}
+
+		logger.Warn("conclusion response invalid; re-asking",
+			slog.String("ticket_id", string(ticket.ID)),
+			slog.Int("attempt", attempt),
+			slog.Any("error", validationErr),
+		)
+
+		// Feed the verbatim error back as the next turn's user message so
+		// the model self-corrects on the same gollem session. The previous
+		// (invalid) assistant turn already lives in agent history.
+		kickoff = gollem.Text(fmt.Sprintf(
+			"Your previous response was invalid: %s. Re-emit a JSON object that strictly matches the schema, with a non-empty `conclusion` field, following every style rule from the system prompt.",
+			validationErr.Error(),
+		))
 	}
+
+	// Unreachable: the loop returns from inside on every path.
+	return "", goerr.New("conclusion retry loop exited unexpectedly")
+}
+
+// decodeConclusionResponse extracts the `conclusion` field from the LLM's
+// raw response, applying the validations whose violations should drive a
+// retry: empty / nil response, malformed JSON, missing or whitespace-only
+// `conclusion`. It returns (trimmed body, nil) on success, or ("", err)
+// otherwise.
+func decodeConclusionResponse(resp *gollem.ExecuteResponse) (string, error) {
 	if resp == nil || len(resp.Texts) == 0 {
 		return "", goerr.New("LLM returned no conclusion body")
 	}
@@ -352,7 +406,12 @@ func buildConclusion(ctx context.Context, llm gollem.LLMClient, ticket *model.Ti
 	if err := json.Unmarshal([]byte(raw), &out); err != nil {
 		return "", goerr.Wrap(err, "decode conclusion json", goerr.V("raw", raw))
 	}
-	return strings.TrimSpace(out.Conclusion), nil
+
+	body := strings.TrimSpace(out.Conclusion)
+	if body == "" {
+		return "", goerr.New("LLM returned empty conclusion field", goerr.V("raw", raw))
+	}
+	return body, nil
 }
 
 func conclusionComments(in []*model.Comment) []prompt.ConclusionComment {

@@ -3,6 +3,7 @@ package usecase_test
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"testing"
 
 	"github.com/m-mizutani/goerr/v2"
@@ -552,4 +553,92 @@ func TestTicketUseCase_Update_LLMFailureKeepsClose(t *testing.T) {
 		t.Errorf("notifyTicketChange must still fire even when conclusion generation fails")
 	}
 	gt.A(t, notifier.conclusionCalls).Length(0)
+}
+
+// scriptedConclusionLLM returns an LLMClientMock whose session emits a
+// pre-recorded sequence of responses (one per Generate call). Each entry
+// is the raw text the model returns; tests use this to script "first
+// attempt malformed → retry succeeds" lifecycles. After the scripted
+// turns are exhausted, further calls fail the test.
+func scriptedConclusionLLM(t *testing.T, responses []string) (*mock.LLMClientMock, func() int) {
+	t.Helper()
+	var calls int32
+	session := &mock.SessionMock{
+		GenerateFunc: func(_ context.Context, _ []gollem.Input, _ ...gollem.GenerateOption) (*gollem.Response, error) {
+			n := int(atomic.AddInt32(&calls, 1))
+			if n > len(responses) {
+				t.Fatalf("LLM was invoked more than the scripted %d times (call %d)", len(responses), n)
+				return nil, nil
+			}
+			return &gollem.Response{Texts: []string{responses[n-1]}}, nil
+		},
+		HistoryFunc:       func() (*gollem.History, error) { return &gollem.History{LLType: gollem.LLMTypeOpenAI, Version: gollem.HistoryVersion}, nil },
+		AppendHistoryFunc: func(_ *gollem.History) error { return nil },
+	}
+	llm := &mock.LLMClientMock{
+		NewSessionFunc: func(_ context.Context, _ ...gollem.SessionOption) (gollem.Session, error) {
+			return session, nil
+		},
+	}
+	return llm, func() int { return int(atomic.LoadInt32(&calls)) }
+}
+
+func TestTicketUseCase_Update_RetriesOnMalformedJSONThenSucceeds(t *testing.T) {
+	llm, callCount := scriptedConclusionLLM(t, []string{
+		`not valid json at all`,
+		`{"conclusion":"Recovered after one retry."}`,
+	})
+	uc, repo, notifier := setupTicketUseCaseWithLLM(t, llm)
+	ctx := context.Background()
+	ticket := seedClosableTicket(t, uc, repo)
+
+	closed := types.StatusID("closed")
+	gt.R1(uc.Update(ctx, "ws-test", ticket.ID, nil, nil, &closed, nil, nil, nil)).NoError(t)
+	async.Wait()
+
+	got := gt.R1(repo.Ticket().Get(ctx, "ws-test", ticket.ID)).NoError(t)
+	gt.S(t, got.Conclusion).Equal("Recovered after one retry.")
+	gt.A(t, notifier.conclusionCalls).Length(1)
+	gt.Equal(t, callCount(), 2)
+}
+
+func TestTicketUseCase_Update_RetriesOnEmptyConclusionThenSucceeds(t *testing.T) {
+	llm, callCount := scriptedConclusionLLM(t, []string{
+		`{"conclusion":""}`,
+		`{"conclusion":"   "}`,
+		`{"conclusion":"Third time is the charm."}`,
+	})
+	uc, repo, _ := setupTicketUseCaseWithLLM(t, llm)
+	ctx := context.Background()
+	ticket := seedClosableTicket(t, uc, repo)
+
+	closed := types.StatusID("closed")
+	gt.R1(uc.Update(ctx, "ws-test", ticket.ID, nil, nil, &closed, nil, nil, nil)).NoError(t)
+	async.Wait()
+
+	got := gt.R1(repo.Ticket().Get(ctx, "ws-test", ticket.ID)).NoError(t)
+	gt.S(t, got.Conclusion).Equal("Third time is the charm.")
+	gt.Equal(t, callCount(), 3)
+}
+
+func TestTicketUseCase_Update_RetriesExhaustedKeepsConclusionEmpty(t *testing.T) {
+	// 4 malformed responses = initial attempt + 3 retries (the cap).
+	llm, callCount := scriptedConclusionLLM(t, []string{
+		`garbage 1`,
+		`garbage 2`,
+		`garbage 3`,
+		`garbage 4`,
+	})
+	uc, repo, notifier := setupTicketUseCaseWithLLM(t, llm)
+	ctx := context.Background()
+	ticket := seedClosableTicket(t, uc, repo)
+
+	closed := types.StatusID("closed")
+	gt.R1(uc.Update(ctx, "ws-test", ticket.ID, nil, nil, &closed, nil, nil, nil)).NoError(t)
+	async.Wait()
+
+	got := gt.R1(repo.Ticket().Get(ctx, "ws-test", ticket.ID)).NoError(t)
+	gt.S(t, got.Conclusion).Equal("")
+	gt.A(t, notifier.conclusionCalls).Length(0)
+	gt.Equal(t, callCount(), 4)
 }
