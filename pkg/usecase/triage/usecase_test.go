@@ -208,9 +208,9 @@ func TestHandleSubmit_LatestPlanNotAsk_Invalidates(t *testing.T) {
 	uc, _, repo, hist, slack := newRig(t, nil)
 	ticket := mustCreateTicket(t, repo, false)
 
-	// Seed plan history with a propose_investigate (not an Ask).
+	// Seed plan history with a probe plan (not an Ask).
 	h := &gollem.History{Version: gollem.HistoryVersion}
-	h.Messages = append(h.Messages, mustAssistantPlanMessage(t, investigatePlanJSON))
+	h.Messages = append(h.Messages, mustAssistantPlanMessage(t, probePlanJSON))
 	gt.NoError(t, hist.Save(context.Background(), triage.PlanSessionIDForTest(tWS, ticket.ID), h))
 
 	gt.NoError(t, uc.HandleSubmit(context.Background(), triage.Submission{
@@ -226,7 +226,7 @@ func TestHandleSubmit_NotWaiting_Invalidates(t *testing.T) {
 	uc, _, repo, hist, slack := newRig(t, nil)
 	ticket := mustCreateTicket(t, repo, false)
 
-	// Seed: propose_ask followed by an already-recorded user response. That
+	// Seed: ask plan followed by an already-recorded user response. That
 	// is the "answers already submitted" condition — the form is stale.
 	h := &gollem.History{Version: gollem.HistoryVersion}
 	h.Messages = append(h.Messages,
@@ -395,7 +395,7 @@ func (f *fakeUserSlack) ListUsers(_ context.Context) ([]*slackService.UserInfo, 
 // state machine end-to-end through the public entry points
 // (HandleNewMessage and HandleSubmit), with no hand-rolled intermediate
 // state. The LLM mock is sequenced so the first planner turn returns
-// propose_ask and the second (resumed by Submit) returns propose_complete.
+// ask plan and the second (resumed by Submit) returns complete plan.
 //
 // Assertions are layered at every observable transition: agent history
 // shape, Slack call ordering, and finally the persisted ticket fields.
@@ -507,7 +507,7 @@ func TestLifecycle_TicketCreate_Ask_Submit_Complete(t *testing.T) {
 	gt.A(t, userSlack.ticketCreated).Length(1)
 	gt.S(t, userSlack.ticketCreated[0].channelID).Equal(channel)
 
-	// First planner turn ran and produced propose_ask in plan history.
+	// First planner turn ran and produced an ask plan in plan history.
 	plan := gt.R1(triage.LoadLatestTriagePlanForTest(ctx, hist, wsID, ticket.ID)).NoError(t)
 	gt.NotNil(t, plan)
 	gt.Equal(t, plan.Kind, types.PlanAsk)
@@ -539,7 +539,7 @@ func TestLifecycle_TicketCreate_Ask_Submit_Complete(t *testing.T) {
 	gt.S(t, triageSlack.updates[0].messageTS).Equal(askMessageTS)
 
 	// History: the formatted answers landed as a user-role text message
-	// after the propose_ask tool call.
+	// after the ask plan turn.
 	hh := gt.R1(hist.Load(ctx, triage.PlanSessionIDForTest(wsID, ticket.ID))).NoError(t)
 	gt.NotNil(t, hh)
 	var userTexts []string
@@ -578,7 +578,7 @@ func TestLifecycle_TicketCreate_Ask_Submit_Complete(t *testing.T) {
 	// LLM was driven exactly twice — turn 1 (ask) + turn 2 (complete).
 	gt.N(t, int(atomic.LoadInt32(&llmCalls))).Equal(2)
 
-	// Latest plan in history is now propose_complete, confirming the
+	// Latest plan in history is now a complete plan, confirming the
 	// resumed turn was persisted.
 	finalPlan := gt.R1(triage.LoadLatestTriagePlanForTest(ctx, hist, wsID, ticket.ID)).NoError(t)
 	gt.Equal(t, finalPlan.Kind, types.PlanComplete)

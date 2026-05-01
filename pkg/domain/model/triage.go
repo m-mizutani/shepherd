@@ -6,19 +6,18 @@ import (
 )
 
 // TriagePlan is the decoded LLM response for a single planning turn. The LLM
-// chooses exactly one of propose_investigate / propose_ask / propose_complete,
-// and the corresponding payload field (Investigate / Ask / Complete) is set
-// while the others remain nil.
+// chooses exactly one of probe / ask / complete, and the corresponding
+// payload field (Probe / Ask / Complete) is set while the others remain nil.
 //
 // The plan itself is not persisted; the canonical record of past plans lives
 // in the gollem agent history (session "{wsID}/{ticketID}/plan"). Use
 // LoadLatestTriagePlan to recover the most recent plan from that history.
 type TriagePlan struct {
-	Kind        types.PlanKind `json:"kind"`
-	Message     string         `json:"message"` // Reporter-facing short status update; required for every plan.
-	Investigate *Investigate   `json:"investigate,omitempty"`
-	Ask         *Ask           `json:"ask,omitempty"`
-	Complete    *Complete      `json:"complete,omitempty"`
+	Kind     types.PlanKind `json:"kind"`
+	Message  string         `json:"message"` // Reporter-facing short status update; required for every plan.
+	Probe    *Probe         `json:"probe,omitempty"`
+	Ask      *Ask           `json:"ask,omitempty"`
+	Complete *Complete      `json:"complete,omitempty"`
 }
 
 // Validate ensures Kind matches the populated payload and that Message is set.
@@ -30,19 +29,19 @@ func (p *TriagePlan) Validate() error {
 		return goerr.New("triage plan message is empty")
 	}
 	switch p.Kind {
-	case types.PlanInvestigate:
-		if p.Investigate == nil {
-			return goerr.New("investigate payload missing", goerr.V("kind", p.Kind))
+	case types.PlanProbe:
+		if p.Probe == nil {
+			return goerr.New("probe payload missing", goerr.V("kind", p.Kind))
 		}
 		if p.Ask != nil || p.Complete != nil {
-			return goerr.New("only investigate payload should be set", goerr.V("kind", p.Kind))
+			return goerr.New("only probe payload should be set", goerr.V("kind", p.Kind))
 		}
-		return p.Investigate.Validate()
+		return p.Probe.Validate()
 	case types.PlanAsk:
 		if p.Ask == nil {
 			return goerr.New("ask payload missing", goerr.V("kind", p.Kind))
 		}
-		if p.Investigate != nil || p.Complete != nil {
+		if p.Probe != nil || p.Complete != nil {
 			return goerr.New("only ask payload should be set", goerr.V("kind", p.Kind))
 		}
 		return p.Ask.Validate()
@@ -50,7 +49,7 @@ func (p *TriagePlan) Validate() error {
 		if p.Complete == nil {
 			return goerr.New("complete payload missing", goerr.V("kind", p.Kind))
 		}
-		if p.Investigate != nil || p.Ask != nil {
+		if p.Probe != nil || p.Ask != nil {
 			return goerr.New("only complete payload should be set", goerr.V("kind", p.Kind))
 		}
 		return p.Complete.Validate()
@@ -59,17 +58,17 @@ func (p *TriagePlan) Validate() error {
 	}
 }
 
-// Investigate launches one or more child investigation subtasks in parallel.
-type Investigate struct {
+// Probe launches one or more child investigation subtasks in parallel.
+type Probe struct {
 	Subtasks []Subtask `json:"subtasks"`
 }
 
-func (i *Investigate) Validate() error {
-	if len(i.Subtasks) == 0 {
-		return goerr.New("investigate must have at least one subtask")
+func (p *Probe) Validate() error {
+	if len(p.Subtasks) == 0 {
+		return goerr.New("probe must have at least one subtask")
 	}
-	seen := make(map[types.SubtaskID]struct{}, len(i.Subtasks))
-	for idx, st := range i.Subtasks {
+	seen := make(map[types.SubtaskID]struct{}, len(p.Subtasks))
+	for idx, st := range p.Subtasks {
 		if err := st.Validate(); err != nil {
 			return goerr.Wrap(err, "invalid subtask", goerr.V("index", idx))
 		}

@@ -229,13 +229,13 @@ func (e *PlanExecutor) run(ctx context.Context, workspaceID types.WorkspaceID, t
 		}
 
 		switch plan.Kind {
-		case types.PlanInvestigate:
-			progress, perr := newProgressMessage(ctx, e.slack, ticket.SlackChannelID, ticket.SlackThreadTS, e.ticketRef(ticket), plan.Message, plan.Investigate.Subtasks)
+		case types.PlanProbe:
+			progress, perr := newProgressMessage(ctx, e.slack, ticket.SlackChannelID, ticket.SlackThreadTS, e.ticketRef(ticket), plan.Message, plan.Probe.Subtasks)
 			if perr != nil {
 				return goerr.Wrap(perr, "post progress message")
 			}
-			if err := e.runInvestigate(ctx, ticket, plan, progress); err != nil {
-				return goerr.Wrap(err, "investigate")
+			if err := e.runProbe(ctx, ticket, plan, progress); err != nil {
+				return goerr.Wrap(err, "probe")
 			}
 			// Loop back: ask the LLM what to do next.
 			continue
@@ -293,7 +293,7 @@ func (e *PlanExecutor) reportFailure(ctx context.Context, ticket *model.Ticket, 
 // postAsk renders and posts the question form. There is no Slack-side state
 // to remember beyond what the message itself encodes (block_id = question
 // id; action.value = ticket id) — re-deriving the questions on submit comes
-// from the agent history's latest propose_ask tool call.
+// from the agent history's latest ask plan.
 func (e *PlanExecutor) postAsk(ctx context.Context, ticket *model.Ticket, plan *model.TriagePlan) error {
 	if plan.Ask == nil {
 		return goerr.New("plan kind ask without payload")

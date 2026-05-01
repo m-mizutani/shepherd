@@ -66,9 +66,9 @@ func TestRenderTriagePlan_FullInput(t *testing.T) {
 	gt.NoError(t, err)
 
 	for _, want := range []string{
-		"propose_investigate",
-		"propose_ask",
-		"propose_complete",
+		"`probe`",
+		"`ask`",
+		"`complete`",
 		"Sign-in broken on Safari",
 		"Users on Safari 17",
 		"<@U123>",
@@ -258,7 +258,7 @@ func TestRenderTriagePlan_NoToolsFallback(t *testing.T) {
 	got, err := prompt.RenderTriagePlan(prompt.TriagePlanInput{Title: "x"})
 	gt.NoError(t, err)
 	gt.S(t, got).Contains("No investigation tools are enabled for this workspace")
-	gt.S(t, got).Contains("Do not call `propose_investigate`")
+	gt.S(t, got).Contains("Do not choose `probe`")
 }
 
 func TestRenderTriagePlan_ProviderWithEmptyDescriptionStillListsTools(t *testing.T) {
