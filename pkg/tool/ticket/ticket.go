@@ -17,18 +17,21 @@ import (
 
 // Factory implements tool.ToolFactory for ticket tools.
 type Factory struct {
-	repo  interfaces.Repository
-	tools []gollem.Tool
+	repo     interfaces.Repository
+	embedder interfaces.Embedder
+	tools    []gollem.Tool
 }
 
-func New(repo interfaces.Repository) *Factory { return &Factory{repo: repo} }
+func New(repo interfaces.Repository, embedder interfaces.Embedder) *Factory {
+	return &Factory{repo: repo, embedder: embedder}
+}
 
 func (f *Factory) ID() tool.ProviderID { return tool.ProviderTicket }
 func (f *Factory) Flags() []cli.Flag   { return nil }
 
 func (f *Factory) Init(_ context.Context) error {
 	f.tools = []gollem.Tool{
-		newSearchTool(f.repo),
+		newSearchTool(f.repo, f.embedder),
 		newGetTool(f.repo),
 		newGetCommentsTool(f.repo),
 		newGetHistoryTool(f.repo),

@@ -17,8 +17,9 @@ The Shepherd binary has two layers of flags:
 - **Root flags** (`shepherd <flag> <subcommand> ...`) — currently logging only
 - **Subcommand flags** (`shepherd serve <flag>`) — everything else
 
-Subcommands: `serve` (run the HTTP server), `migrate` (placeholder for future
-data migrations), `validate` (validate workspace TOML files).
+Subcommands: `serve` (run the HTTP server), `migrate` (apply Firestore index
+configuration via [fireconf](https://github.com/m-mizutani/fireconf)),
+`validate` (validate workspace TOML files).
 
 ## Logging (root flags)
 
@@ -104,6 +105,32 @@ Required combinations per provider:
 For Claude on Google Cloud, leave `--llm-claude-api-key` unset and provide
 the Google Cloud project + location instead. Application Default Credentials
 must be available to the process.
+
+### Embedding (semantic ticket search)
+
+Shepherd embeds each ticket's title, description, and conclusion via Google
+Cloud Vertex AI Gemini and persists the resulting vector on the ticket.
+The `ticket_search` tool exposed to the triage planner uses these vectors
+for semantic similarity search.
+
+The chat-side `--llm-provider` is independent of these settings: even when
+chat runs on OpenAI or Anthropic Claude, embeddings continue to be produced
+by Gemini. The embedding service performs a self-test against the live API
+during startup, so misconfiguration (wrong project, missing credentials,
+unreachable region) is reported up-front.
+
+`--embedding-gemini-project` is **required** — `serve` aborts at startup
+when it is empty.
+
+| Flag | Env var | Default | Description |
+|---|---|---|---|
+| `--embedding-gemini-project` | `SHEPHERD_EMBEDDING_GEMINI_PROJECT` | _(empty)_ | Google Cloud project ID. Required. |
+| `--embedding-gemini-location` | `SHEPHERD_EMBEDDING_GEMINI_LOCATION` | `global` | One of `global`, `us`, `eu`. `global` has the highest availability and is the recommended default. |
+| `--embedding-gemini-model` | `SHEPHERD_EMBEDDING_GEMINI_MODEL` | `gemini-embedding-2` | Embedding model name. Newer model versions can be selected without a code change. |
+| `--embedding-dim` | `SHEPHERD_EMBEDDING_DIM` | `768` | Output dimension. Must match the Firestore vector index — see the migrate section. Recommended values are `768` or `1536` (Gemini also supports `3072` but Firestore vector indexes cap at `2048`). |
+
+Application Default Credentials with Vertex AI access must be available to
+the `serve` process.
 
 ### Agent storage
 
@@ -261,6 +288,41 @@ shepherd validate --config ./workspaces/
 
 Use it in CI or before rolling out a new workspace file.
 
+## Applying Firestore configuration (`migrate`)
+
+Shepherd's `migrate` subcommand declaratively applies Firestore index and TTL
+configuration via [fireconf](https://github.com/m-mizutani/fireconf). The
+desired configuration lives in code at
+`pkg/repository/firestore/migrate.go::DesiredConfig`; right now the only
+declared resource is the **vector index on `tickets.Embedding`** required by
+the semantic ticket search (`gemini-embedding-2`, 768 dimensions, collection
+group scope).
+
+Run it any time the desired configuration changes — initial setup, embedding
+dimension change, or fireconf upgrade. The operation is idempotent.
+
+```bash
+# Preview changes
+shepherd migrate \
+  --repository-backend=firestore \
+  --firestore-project-id=$PROJECT \
+  --firestore-database-id=$DATABASE \
+  --dry-run
+
+# Apply
+shepherd migrate \
+  --repository-backend=firestore \
+  --firestore-project-id=$PROJECT \
+  --firestore-database-id=$DATABASE
+```
+
+Application Default Credentials with the Firestore Admin role on the project
+must be available to the process.
+
+If you ever change `--embedding-dim` away from `768`, edit the constant in
+`pkg/repository/firestore/migrate.go` so the new index dimension matches and
+re-run `shepherd migrate`.
+
 ## Common startup errors
 
 Pointers for the most frequent misconfigurations:
@@ -268,6 +330,8 @@ Pointers for the most frequent misconfigurations:
 | Symptom | Likely cause |
 |---|---|
 | `--llm-provider is required` | No LLM provider set. Pick `openai`, `claude`, or `gemini`. |
+| `embedding-gemini-project is required` | `--embedding-gemini-project` is empty. Set it to enable ticket embeddings and semantic search. |
+| `embedding self-test failed` | The Vertex AI embedding self-test failed at startup. Check Application Default Credentials, IAM permissions for the project, and that the location/model combination exists. |
 | `agent storage is required: set either --agent-storage-fs-dir or --agent-storage-gcs-bucket` | Neither agent-storage backend was configured. |
 | `--agent-storage-fs-dir and --agent-storage-gcs-bucket are mutually exclusive` | Both backends were set; pick one. |
 | `--base-url is required when Slack OAuth is enabled` | Slack OAuth flags are set but `--base-url` is empty. |

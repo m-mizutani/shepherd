@@ -2,9 +2,12 @@ package memory
 
 import (
 	"context"
+	"math"
+	"sort"
 	"sync"
 	"time"
 
+	"cloud.google.com/go/firestore"
 	"github.com/google/uuid"
 	"github.com/m-mizutani/goerr/v2"
 	"github.com/m-mizutani/shepherd/pkg/domain/interfaces"
@@ -165,6 +168,84 @@ func (r *TicketRepo) FinalizeTriage(ctx context.Context, workspaceID types.Works
 		r.history.mu.Unlock()
 	}
 	return nil
+}
+
+func (r *TicketRepo) UpdateEmbedding(ctx context.Context, workspaceID types.WorkspaceID, ticketID types.TicketID, embedding firestore.Vector32, modelID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	ws, ok := r.tickets[string(workspaceID)]
+	if !ok {
+		return goerr.New("ticket not found", goerr.V("ticket_id", ticketID))
+	}
+	t, ok := ws[string(ticketID)]
+	if !ok {
+		return goerr.New("ticket not found", goerr.V("ticket_id", ticketID))
+	}
+	t.Embedding = append(firestore.Vector32(nil), embedding...)
+	t.EmbeddingModel = modelID
+	return nil
+}
+
+func (r *TicketRepo) FindSimilar(ctx context.Context, workspaceID types.WorkspaceID, queryVector firestore.Vector32, limit int, statusIDs []types.StatusID) ([]interfaces.TicketWithDistance, error) {
+	if len(queryVector) == 0 {
+		return nil, goerr.New("query vector is empty")
+	}
+	if limit <= 0 {
+		return nil, nil
+	}
+
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	statusSet := make(map[types.StatusID]struct{}, len(statusIDs))
+	for _, id := range statusIDs {
+		statusSet[id] = struct{}{}
+	}
+
+	ws := r.tickets[string(workspaceID)]
+	candidates := make([]interfaces.TicketWithDistance, 0, len(ws))
+	for _, t := range ws {
+		if len(t.Embedding) != len(queryVector) {
+			continue
+		}
+		if len(statusSet) > 0 {
+			if _, ok := statusSet[t.StatusID]; !ok {
+				continue
+			}
+		}
+		copied := *t
+		candidates = append(candidates, interfaces.TicketWithDistance{
+			Ticket:   &copied,
+			Distance: cosineDistance(queryVector, t.Embedding),
+		})
+	}
+	sort.SliceStable(candidates, func(i, j int) bool {
+		return candidates[i].Distance < candidates[j].Distance
+	})
+	if len(candidates) > limit {
+		candidates = candidates[:limit]
+	}
+	return candidates, nil
+}
+
+// cosineDistance returns 1 - cosine_similarity, matching Firestore's
+// DistanceMeasureCosine semantics. Vectors with zero norm produce
+// distance 1 (orthogonal), since "no information" should not collide with
+// any other ticket.
+func cosineDistance(a, b firestore.Vector32) float64 {
+	var dot, na, nb float64
+	for i := range a {
+		x, y := float64(a[i]), float64(b[i])
+		dot += x * y
+		na += x * x
+		nb += y * y
+	}
+	if na == 0 || nb == 0 {
+		return 1
+	}
+	sim := dot / (math.Sqrt(na) * math.Sqrt(nb))
+	return 1 - sim
 }
 
 func (r *TicketRepo) GetBySlackThreadTS(ctx context.Context, workspaceID types.WorkspaceID, channelID types.SlackChannelID, threadTS types.SlackThreadTS) (*model.Ticket, error) {

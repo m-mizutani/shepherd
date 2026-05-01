@@ -3,9 +3,11 @@ package usecase_test
 import (
 	"context"
 	"errors"
+	"sync"
 	"sync/atomic"
 	"testing"
 
+	"cloud.google.com/go/firestore"
 	"github.com/m-mizutani/goerr/v2"
 	"github.com/m-mizutani/gollem"
 	"github.com/m-mizutani/gollem/mock"
@@ -90,7 +92,7 @@ func setupTicketUseCaseFull(t *testing.T, notifier usecase.TicketChangeNotifier)
 		notifier = fake
 	}
 
-	uc := usecase.NewTicketUseCase(repo, registry, notifier, nil)
+	uc := usecase.NewTicketUseCase(repo, registry, notifier, nil, nil)
 	return uc, repo, fake, registry
 }
 
@@ -392,7 +394,7 @@ func setupTicketUseCaseWithLLM(t *testing.T, llm gollem.LLMClient) (*usecase.Tic
 		SlackChannelID: "C111",
 	})
 	notifier := &fakeTicketChangeNotifier{}
-	uc := usecase.NewTicketUseCase(repo, registry, notifier, llm)
+	uc := usecase.NewTicketUseCase(repo, registry, notifier, llm, nil)
 	return uc, repo, notifier
 }
 
@@ -641,4 +643,140 @@ func TestTicketUseCase_Update_RetriesExhaustedKeepsConclusionEmpty(t *testing.T)
 	gt.S(t, got.Conclusion).Equal("")
 	gt.A(t, notifier.conclusionCalls).Length(0)
 	gt.Equal(t, callCount(), 4)
+}
+
+// recordingEmbedder captures every Generate invocation so tests can assert
+// when (and with what input) the embedding refresh fired.
+type recordingEmbedder struct {
+	mu    sync.Mutex
+	calls []string
+	vec   firestore.Vector32
+	model string
+	err   error
+}
+
+func newRecordingEmbedder(vec firestore.Vector32, model string) *recordingEmbedder {
+	return &recordingEmbedder{vec: vec, model: model}
+}
+
+func (e *recordingEmbedder) Generate(_ context.Context, text string) (firestore.Vector32, string, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.calls = append(e.calls, text)
+	if e.err != nil {
+		return nil, "", e.err
+	}
+	return append(firestore.Vector32(nil), e.vec...), e.model, nil
+}
+
+func (e *recordingEmbedder) Calls() []string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return append([]string(nil), e.calls...)
+}
+
+func setupTicketUseCaseWithEmbedder(t *testing.T, embedder interfaces.Embedder) (*usecase.TicketUseCase, interfaces.Repository) {
+	t.Helper()
+	repo := memory.New()
+	t.Cleanup(func() { _ = repo.Close() })
+
+	registry := model.NewWorkspaceRegistry()
+	registry.Register(&model.WorkspaceEntry{
+		Workspace: model.Workspace{ID: "ws-test", Name: "Test"},
+		FieldSchema: &config.FieldSchema{
+			Statuses: []config.StatusDef{
+				{ID: "open", Name: "Open"},
+				{ID: "closed", Name: "Closed"},
+			},
+			TicketConfig: config.TicketConfig{
+				DefaultStatusID: "open",
+				ClosedStatusIDs: []types.StatusID{"closed"},
+			},
+		},
+		SlackChannelID: "C111",
+	})
+
+	notifier := &fakeTicketChangeNotifier{}
+	uc := usecase.NewTicketUseCase(repo, registry, notifier, nil, embedder)
+	return uc, repo
+}
+
+func TestTicketUseCase_Create_RefreshesEmbedding(t *testing.T) {
+	embedder := newRecordingEmbedder(firestore.Vector32{0.1, 0.2, 0.3, 0.4}, "fake:model")
+	uc, repo := setupTicketUseCaseWithEmbedder(t, embedder)
+	ctx := context.Background()
+
+	created, err := uc.Create(ctx, "ws-test", "DB outage", "users cannot sign in", "", nil, nil)
+	gt.NoError(t, err)
+	async.Wait()
+
+	calls := embedder.Calls()
+	gt.A(t, calls).Length(1)
+	gt.S(t, calls[0]).Contains("DB outage")
+	gt.S(t, calls[0]).Contains("users cannot sign in")
+
+	got := gt.R1(repo.Ticket().Get(ctx, "ws-test", created.ID)).NoError(t)
+	gt.S(t, got.EmbeddingModel).Equal("fake:model")
+	gt.A(t, got.Embedding).Length(4)
+}
+
+func TestTicketUseCase_Update_RefreshesEmbeddingOnContentChange(t *testing.T) {
+	embedder := newRecordingEmbedder(firestore.Vector32{1, 0, 0, 0}, "fake:model")
+	uc, repo := setupTicketUseCaseWithEmbedder(t, embedder)
+	ctx := context.Background()
+
+	created, err := uc.Create(ctx, "ws-test", "Original", "Original body", "", nil, nil)
+	gt.NoError(t, err)
+	async.Wait()
+	gt.A(t, embedder.Calls()).Length(1)
+
+	newTitle := "Edited title"
+	_, err = uc.Update(ctx, "ws-test", created.ID, &newTitle, nil, nil, nil, nil, nil)
+	gt.NoError(t, err)
+	async.Wait()
+
+	calls := embedder.Calls()
+	gt.A(t, calls).Length(2)
+	gt.S(t, calls[1]).Contains("Edited title")
+
+	got := gt.R1(repo.Ticket().Get(ctx, "ws-test", created.ID)).NoError(t)
+	gt.S(t, got.Title).Equal("Edited title")
+	gt.A(t, got.Embedding).Length(4)
+}
+
+func TestTicketUseCase_Update_NoEmbeddingRefreshOnStatusOnlyChange(t *testing.T) {
+	embedder := newRecordingEmbedder(firestore.Vector32{1, 0, 0, 0}, "fake:model")
+	uc, repo := setupTicketUseCaseWithEmbedder(t, embedder)
+	ctx := context.Background()
+
+	created, err := uc.Create(ctx, "ws-test", "Title", "Body", "", nil, nil)
+	gt.NoError(t, err)
+	async.Wait()
+	gt.A(t, embedder.Calls()).Length(1)
+
+	newStatus := types.StatusID("closed")
+	_, err = uc.Update(ctx, "ws-test", created.ID, nil, nil, &newStatus, nil, nil, nil)
+	gt.NoError(t, err)
+	async.Wait()
+
+	// Status changes leave the canonical text untouched, so no second
+	// embed call should have fired.
+	gt.A(t, embedder.Calls()).Length(1)
+	got := gt.R1(repo.Ticket().Get(ctx, "ws-test", created.ID)).NoError(t)
+	gt.S(t, string(got.StatusID)).Equal("closed")
+}
+
+func TestTicketUseCase_Create_EmbedderFailureSwallowed(t *testing.T) {
+	embedder := newRecordingEmbedder(nil, "")
+	embedder.err = errors.New("upstream timeout")
+	uc, repo := setupTicketUseCaseWithEmbedder(t, embedder)
+	ctx := context.Background()
+
+	created, err := uc.Create(ctx, "ws-test", "Title", "Body", "", nil, nil)
+	gt.NoError(t, err)
+	async.Wait()
+
+	got := gt.R1(repo.Ticket().Get(ctx, "ws-test", created.ID)).NoError(t)
+	gt.A(t, got.Embedding).Length(0)
+	gt.S(t, got.EmbeddingModel).Equal("")
 }

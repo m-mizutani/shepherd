@@ -25,6 +25,7 @@ type Server struct {
 	catalog  *tool.Catalog
 	promptUC *prompt.UseCase
 	llm      gollem.LLMClient
+	embedder interfaces.Embedder
 }
 
 type ServerOption func(*Server)
@@ -51,6 +52,16 @@ func WithPrompt(promptUC *prompt.UseCase) ServerOption {
 func WithLLM(llm gollem.LLMClient) ServerOption {
 	return func(s *Server) {
 		s.llm = llm
+	}
+}
+
+// WithEmbedder wires the embedding service used to refresh ticket embeddings
+// after Create / Update and to power the semantic ticket_search tool. When
+// omitted, embedding refresh becomes a no-op and similarity search is
+// effectively disabled.
+func WithEmbedder(embedder interfaces.Embedder) ServerOption {
+	return func(s *Server) {
+		s.embedder = embedder
 	}
 }
 
@@ -96,7 +107,7 @@ func New(registry *model.WorkspaceRegistry, repo interfaces.Repository, authUC u
 		notifier = s.slackCfg.Notifier
 		slackUC = s.slackCfg.SlackUC
 	}
-	apiHandler := NewAPIHandler(registry, repo, notifier, s.llm, slackUC, s.sourceUC, s.catalog, s.promptUC)
+	apiHandler := NewAPIHandler(registry, repo, notifier, s.llm, s.embedder, slackUC, s.sourceUC, s.catalog, s.promptUC)
 	s.mux.Group(func(r chi.Router) {
 		r.Use(authMiddleware(authUC))
 		HandlerFromMux(apiHandler, r)
