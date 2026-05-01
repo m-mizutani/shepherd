@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"strings"
 	"time"
@@ -285,19 +286,28 @@ func (uc *TicketUseCase) generateConclusion(ctx context.Context, workspaceID typ
 		return nil
 	}
 
-	ticket.Conclusion = body
-	ticket.UpdatedAt = time.Now()
-	if _, err := uc.repo.Ticket().Update(ctx, workspaceID, ticket); err != nil {
+	// Persist through the canonical Update path so we re-load the ticket
+	// inside Update (the LLM call may have taken seconds while operators
+	// edited title / description / fields concurrently — a direct
+	// read-modify-write here would clobber those edits with stale data).
+	// Routing through Update also makes the close-time conclusion writer
+	// itself honour the "Entry-point unification" rule, and re-open races
+	// surface as ErrConclusionEditNotAllowed which we treat as a no-op.
+	updated, err := uc.Update(ctx, workspaceID, ticketID, nil, nil, nil, nil, nil, &body)
+	if err != nil {
+		if errors.Is(err, ErrConclusionEditNotAllowed) {
+			return nil
+		}
 		errutil.Handle(ctx, goerr.Wrap(err, "persist generated conclusion",
 			goerr.V("ticket_id", string(ticketID)),
 		))
 		return nil
 	}
 
-	if uc.notifier == nil || ticket.SlackChannelID == "" || ticket.SlackThreadTS == "" {
+	if uc.notifier == nil || updated.SlackChannelID == "" || updated.SlackThreadTS == "" {
 		return nil
 	}
-	if err := uc.notifier.PostConclusion(ctx, string(ticket.SlackChannelID), string(ticket.SlackThreadTS), body); err != nil {
+	if err := uc.notifier.PostConclusion(ctx, string(updated.SlackChannelID), string(updated.SlackThreadTS), body); err != nil {
 		errutil.Handle(ctx, goerr.Wrap(err, "post conclusion to slack",
 			goerr.V("ticket_id", string(ticketID)),
 		))
