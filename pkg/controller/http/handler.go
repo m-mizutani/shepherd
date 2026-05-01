@@ -16,6 +16,7 @@ import (
 	"github.com/m-mizutani/shepherd/pkg/usecase/prompt"
 	"github.com/m-mizutani/shepherd/pkg/usecase/source"
 	"github.com/m-mizutani/shepherd/pkg/utils/errutil"
+	"github.com/m-mizutani/shepherd/pkg/utils/ptr"
 )
 
 type APIHandler struct {
@@ -274,25 +275,11 @@ func toTicketResponse(t *model.Ticket) Ticket {
 		UpdatedAt:   t.UpdatedAt,
 	}
 
-	if t.Description != "" {
-		ticket.Description = &t.Description
-	}
-	if t.ReporterSlackUserID != "" {
-		s := string(t.ReporterSlackUserID)
-		ticket.ReporterSlackUserId = &s
-	}
-	if t.SlackChannelID != "" {
-		s := string(t.SlackChannelID)
-		ticket.SlackChannelId = &s
-	}
-	if t.SlackThreadTS != "" {
-		s := string(t.SlackThreadTS)
-		ticket.SlackThreadTs = &s
-	}
-	if t.Conclusion != "" {
-		s := t.Conclusion
-		ticket.Conclusion = &s
-	}
+	ticket.Description = ptr.NonZero(t.Description)
+	ticket.ReporterSlackUserId = ptr.NonZero(string(t.ReporterSlackUserID))
+	ticket.SlackChannelId = ptr.NonZero(string(t.SlackChannelID))
+	ticket.SlackThreadTs = ptr.NonZero(string(t.SlackThreadTS))
+	ticket.Conclusion = ptr.NonZero(t.Conclusion)
 
 	return ticket
 }
