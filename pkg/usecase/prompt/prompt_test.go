@@ -337,7 +337,7 @@ func TestRenderConclusion_FullInput(t *testing.T) {
 		"Responder",
 		"AI / automation",
 		"at most 2 to 3 short sections",
-		"Slack mrkdwn",
+		"common subset of Slack mrkdwn and standard Markdown",
 		"Do not include any emoji",
 		"in English",
 	} {

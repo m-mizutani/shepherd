@@ -1,4 +1,4 @@
-You are summarizing a ticket that has just been closed in Shepherd. The reader already has the title and description in front of them, so do **not** restate them. Instead, write a focused retrospective in Slack-flavored markdown (mrkdwn) covering the points below.
+You are summarizing a ticket that has just been closed in Shepherd. The output is rendered both in a Slack context block and in the web UI, so format it with the **common subset of Slack mrkdwn and standard Markdown** — syntax that renders cleanly in *both*. The reader already has the title and description in front of them, so do **not** restate them. Instead, write a focused retrospective covering the points below.
 
 ## Ticket context
 
@@ -28,7 +28,7 @@ Respond with a JSON object that matches this schema exactly:
 
 ```json
 {
-  "conclusion": "<focused retrospective in {{ .Language }}, formatted as Slack mrkdwn>"
+  "conclusion": "<focused retrospective in {{ .Language }}, formatted with the common subset of Slack mrkdwn and standard Markdown>"
 }
 ```
 
@@ -45,7 +45,15 @@ Cover the perspectives below. Pick the 2–3 that actually have something concre
 
 Style rules for the `conclusion` field:
 
-- **Slack mrkdwn only**, not GitHub markdown. Allowed: bold (`*bold*`), italic (`_italic_`), bullet lists with `-` or `•`, inline code with backticks, line breaks. **Do not** use `#` headings, ordered numeric lists with leading `1.`, tables, or block quotes — Slack will render them as raw characters.
+- Use only the **common subset of Slack mrkdwn and standard Markdown**. Allowed and safe in both renderers:
+  - bold using `*bold*`,
+  - italic using `_italic_`,
+  - inline code with backticks `` ` ``,
+  - fenced code blocks with triple backticks,
+  - unordered bullet lists with `-`,
+  - block quotes with `>`,
+  - blank-line paragraph breaks.
+- **Do not use** `#`-style headings, ordered numeric lists (`1.` / `2.`), tables, or HTML — Slack renders them as raw characters and the result looks broken.
 - Section labels must be translated into {{ .Language }} along with the body. Render each section label as a bold line on its own (e.g. `*<translated label>*`), then the body underneath. Do not number the sections.
 - Keep each section to roughly 1–3 short sentences or 2–4 short bullet points. Be specific; concrete > exhaustive.
 - **Do not include any emoji.** A single decorative emoji is added by the system later — your output must not contain any.
