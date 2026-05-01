@@ -70,7 +70,7 @@ func (e *PlanExecutor) llmPlan(ctx context.Context, ticket *model.Ticket) (*mode
 	)
 
 	// Non-empty kickoff text: Gemini's GenerateContent rejects empty parts.
-	kickoff := gollem.Text("Decide and return a TriagePlan choosing exactly one of investigate / ask / complete based on the ticket and any prior context above.")
+	kickoff := gollem.Text("Decide and return a TriagePlan choosing exactly one of probe / ask / complete based on the ticket and any prior context above.")
 
 	cap := e.cfg.PlanRetryCap
 	for attempt := 0; attempt <= cap; attempt++ {

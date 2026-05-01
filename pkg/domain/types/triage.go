@@ -18,12 +18,12 @@ type ChoiceID string
 func (id ChoiceID) String() string { return string(id) }
 
 // PlanKind discriminates which action the LLM proposed for the current
-// iteration. Exactly one of TriagePlan.Investigate / Ask / Complete must be
+// iteration. Exactly one of TriagePlan.Probe / Ask / Complete must be
 // non-nil based on this Kind.
 type PlanKind string
 
 const (
-	PlanInvestigate PlanKind = "investigate"
-	PlanAsk         PlanKind = "ask"
-	PlanComplete    PlanKind = "complete"
+	PlanProbe    PlanKind = "probe"
+	PlanAsk      PlanKind = "ask"
+	PlanComplete PlanKind = "complete"
 )

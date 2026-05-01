@@ -8,7 +8,7 @@ import (
 
 // triagePlanSchema is the JSON shape the LLM must return on every planner
 // turn. It mirrors model.TriagePlan: a discriminated union keyed on `kind`
-// where exactly one of `investigate` / `ask` / `complete` is populated.
+// where exactly one of `probe` / `ask` / `complete` is populated.
 //
 // autoFill is the subset of the workspace schema's custom fields whose
 // AutoFill flag is set; the function uses it to constrain the
@@ -20,14 +20,14 @@ import (
 func triagePlanSchema(autoFill []domainConfig.FieldDefinition) *gollem.Parameter {
 	return &gollem.Parameter{
 		Title:       "TriagePlan",
-		Description: "Decision the planner makes for one triage turn. Set kind to exactly one of investigate / ask / complete and populate the matching payload (the other two payload fields must be omitted).",
+		Description: "Decision the planner makes for one triage turn. Set kind to exactly one of probe / ask / complete and populate the matching payload (the other two payload fields must be omitted).",
 		Type:        gollem.TypeObject,
 		Properties: map[string]*gollem.Parameter{
 			"kind": {
 				Type:        gollem.TypeString,
 				Description: "Which action this plan represents. Must match the populated payload.",
 				Required:    true,
-				Enum:        []string{"investigate", "ask", "complete"},
+				Enum:        []string{"probe", "ask", "complete"},
 			},
 			"message": {
 				Type:        gollem.TypeString,
@@ -35,17 +35,17 @@ func triagePlanSchema(autoFill []domainConfig.FieldDefinition) *gollem.Parameter
 				Required:    true,
 				MinLength:   intPtr(1),
 			},
-			"investigate": investigateSchema(),
-			"ask":         askSchema(),
-			"complete":    completeSchema(autoFill),
+			"probe":    probeSchema(),
+			"ask":      askSchema(),
+			"complete": completeSchema(autoFill),
 		},
 	}
 }
 
-func investigateSchema() *gollem.Parameter {
+func probeSchema() *gollem.Parameter {
 	return &gollem.Parameter{
 		Type:        gollem.TypeObject,
-		Description: "Populated when kind=investigate. Schedules subtasks to run in parallel.",
+		Description: "Populated when kind=probe. Schedules subtasks to run in parallel.",
 		Properties: map[string]*gollem.Parameter{
 			"subtasks": {
 				Type:        gollem.TypeArray,

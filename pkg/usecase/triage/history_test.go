@@ -58,10 +58,10 @@ func mustUserTextMessage(t *testing.T, text string) gollem.Message {
 	}
 }
 
-const investigatePlanJSON = `{
-  "kind": "investigate",
+const probePlanJSON = `{
+  "kind": "probe",
   "message": "Investigating now",
-  "investigate": {
+  "probe": {
     "subtasks": [
       {
         "id": "st1",
@@ -144,19 +144,19 @@ func TestLoadLatestTriagePlan_Empty(t *testing.T) {
 	gt.Nil(t, plan)
 }
 
-func TestLoadLatestTriagePlan_Investigate(t *testing.T) {
+func TestLoadLatestTriagePlan_Probe(t *testing.T) {
 	repo := newFakeHistory()
 	ctx := context.Background()
 	h := &gollem.History{Version: gollem.HistoryVersion}
-	h.Messages = append(h.Messages, mustAssistantPlanMessage(t, investigatePlanJSON))
+	h.Messages = append(h.Messages, mustAssistantPlanMessage(t, probePlanJSON))
 	gt.NoError(t, repo.Save(ctx, "ws/tk/plan", h))
 
 	plan := gt.R1(triage.LoadLatestTriagePlanForTest(ctx, repo, "ws", "tk")).NoError(t)
 	gt.NotNil(t, plan)
-	gt.Equal(t, plan.Kind, types.PlanInvestigate)
-	gt.NotNil(t, plan.Investigate)
-	gt.N(t, len(plan.Investigate.Subtasks)).Equal(1)
-	gt.S(t, plan.Investigate.Subtasks[0].Request).Equal("Collect related Slack posts")
+	gt.Equal(t, plan.Kind, types.PlanProbe)
+	gt.NotNil(t, plan.Probe)
+	gt.N(t, len(plan.Probe.Subtasks)).Equal(1)
+	gt.S(t, plan.Probe.Subtasks[0].Request).Equal("Collect related Slack posts")
 	gt.S(t, plan.Message).Equal("Investigating now")
 }
 
@@ -179,7 +179,7 @@ func TestLoadLatestTriagePlan_PicksLatest(t *testing.T) {
 	ctx := context.Background()
 	h := &gollem.History{Version: gollem.HistoryVersion}
 	h.Messages = append(h.Messages,
-		mustAssistantPlanMessage(t, investigatePlanJSON),
+		mustAssistantPlanMessage(t, probePlanJSON),
 		mustUserTextMessage(t, "Investigate result: ..."),
 		mustAssistantPlanMessage(t, askPlanJSON),
 	)
@@ -219,7 +219,7 @@ func TestIsWaitingUserSubmit(t *testing.T) {
 
 	t.Run("investigate trailing", func(t *testing.T) {
 		h := &gollem.History{Version: gollem.HistoryVersion}
-		h.Messages = append(h.Messages, mustAssistantPlanMessage(t, investigatePlanJSON))
+		h.Messages = append(h.Messages, mustAssistantPlanMessage(t, probePlanJSON))
 		gt.NoError(t, repo.Save(ctx, "ws/tk-inv/plan", h))
 		ok := gt.R1(triage.IsWaitingUserSubmitForTest(ctx, repo, "ws", "tk-inv")).NoError(t)
 		gt.False(t, ok)
@@ -238,7 +238,7 @@ func TestCountPlannerTurns(t *testing.T) {
 	t.Run("multiple plans", func(t *testing.T) {
 		h := &gollem.History{Version: gollem.HistoryVersion}
 		h.Messages = append(h.Messages,
-			mustAssistantPlanMessage(t, investigatePlanJSON),
+			mustAssistantPlanMessage(t, probePlanJSON),
 			mustUserTextMessage(t, "Investigate result"),
 			mustAssistantPlanMessage(t, askPlanJSON),
 			mustUserTextMessage(t, "Q1=A1"),

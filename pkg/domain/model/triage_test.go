@@ -9,13 +9,13 @@ import (
 	"github.com/m-mizutani/shepherd/pkg/domain/types"
 )
 
-func validInvestigatePlan() *model.TriagePlan {
+func validProbePlan() *model.TriagePlan {
 	uid := types.SlackUserID("U1")
 	_ = uid
 	return &model.TriagePlan{
-		Kind:    types.PlanInvestigate,
-		Message: "調査を開始します",
-		Investigate: &model.Investigate{
+		Kind:    types.PlanProbe,
+		Message: "Starting investigation",
+		Probe: &model.Probe{
 			Subtasks: []model.Subtask{
 				{
 					ID:                 "st1",
@@ -31,16 +31,16 @@ func validInvestigatePlan() *model.TriagePlan {
 func validAskPlan() *model.TriagePlan {
 	return &model.TriagePlan{
 		Kind:    types.PlanAsk,
-		Message: "確認させてください",
+		Message: "Please clarify a few points",
 		Ask: &model.Ask{
-			Title: "詳細確認",
+			Title: "Details",
 			Questions: []model.Question{
 				{
 					ID:    "q1",
-					Label: "影響範囲は？",
+					Label: "What is the scope of impact?",
 					Choices: []model.Choice{
-						{ID: "c1", Label: "本番"},
-						{ID: "c2", Label: "ステージング"},
+						{ID: "c1", Label: "Production"},
+						{ID: "c2", Label: "Staging"},
 					},
 				},
 			},
@@ -63,8 +63,8 @@ func validCompletePlan() *model.TriagePlan {
 }
 
 func TestTriagePlanValidate_Valid(t *testing.T) {
-	t.Run("investigate", func(t *testing.T) {
-		gt.NoError(t, validInvestigatePlan().Validate())
+	t.Run("probe", func(t *testing.T) {
+		gt.NoError(t, validProbePlan().Validate())
 	})
 	t.Run("ask", func(t *testing.T) {
 		gt.NoError(t, validAskPlan().Validate())
@@ -80,28 +80,28 @@ func TestTriagePlanValidate_NilOrEmpty(t *testing.T) {
 		gt.Error(t, p.Validate())
 	})
 	t.Run("empty message", func(t *testing.T) {
-		p := validInvestigatePlan()
+		p := validProbePlan()
 		p.Message = ""
 		err := p.Validate()
 		gt.Error(t, err)
 		gt.S(t, err.Error()).Contains("message")
 	})
 	t.Run("unknown kind", func(t *testing.T) {
-		p := validInvestigatePlan()
+		p := validProbePlan()
 		p.Kind = types.PlanKind("bogus")
 		gt.Error(t, p.Validate())
 	})
 }
 
 func TestTriagePlanValidate_PayloadMismatch(t *testing.T) {
-	t.Run("investigate kind missing payload", func(t *testing.T) {
-		p := validInvestigatePlan()
-		p.Investigate = nil
+	t.Run("probe kind missing payload", func(t *testing.T) {
+		p := validProbePlan()
+		p.Probe = nil
 		gt.Error(t, p.Validate())
 	})
-	t.Run("ask kind with extra investigate payload", func(t *testing.T) {
+	t.Run("ask kind with extra probe payload", func(t *testing.T) {
 		p := validAskPlan()
-		p.Investigate = validInvestigatePlan().Investigate
+		p.Probe = validProbePlan().Probe
 		gt.Error(t, p.Validate())
 	})
 	t.Run("complete kind missing payload", func(t *testing.T) {
@@ -111,18 +111,18 @@ func TestTriagePlanValidate_PayloadMismatch(t *testing.T) {
 	})
 }
 
-func TestInvestigateValidate(t *testing.T) {
+func TestProbeValidate(t *testing.T) {
 	t.Run("empty subtasks", func(t *testing.T) {
-		gt.Error(t, (&model.Investigate{}).Validate())
+		gt.Error(t, (&model.Probe{}).Validate())
 	})
 	t.Run("invalid subtask propagates", func(t *testing.T) {
-		inv := &model.Investigate{Subtasks: []model.Subtask{{ID: "", Request: "x", AcceptanceCriteria: []string{"y"}}}}
-		gt.Error(t, inv.Validate())
+		pr := &model.Probe{Subtasks: []model.Subtask{{ID: "", Request: "x", AcceptanceCriteria: []string{"y"}}}}
+		gt.Error(t, pr.Validate())
 	})
 	t.Run("duplicate subtask id", func(t *testing.T) {
 		st := model.Subtask{ID: "a", Request: "r", AcceptanceCriteria: []string{"c"}}
-		inv := &model.Investigate{Subtasks: []model.Subtask{st, st}}
-		err := inv.Validate()
+		pr := &model.Probe{Subtasks: []model.Subtask{st, st}}
+		err := pr.Validate()
 		gt.Error(t, err)
 		gt.S(t, err.Error()).Contains("duplicate")
 	})

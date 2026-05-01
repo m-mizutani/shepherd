@@ -16,17 +16,17 @@ import (
 	"github.com/m-mizutani/shepherd/pkg/utils/msg"
 )
 
-// runInvestigate executes the planner's Investigate decision: spin up a
-// child gollem agent per subtask in parallel, surface progress through the
-// per-subtask Slack context blocks, and feed the aggregated summaries back
-// to the planner via the plan-level history.
+// runProbe executes the planner's Probe decision: spin up a child gollem
+// agent per subtask in parallel, surface progress through the per-subtask
+// Slack context blocks, and feed the aggregated summaries back to the
+// planner via the plan-level history.
 //
 // Each subtask gets its own gollem session ("{ws}/{ticket}/sub/{subtaskID}")
 // so its tool-call traces stay isolated from the planner agent.
-func (e *PlanExecutor) runInvestigate(ctx context.Context, ticket *model.Ticket, plan *model.TriagePlan, progress *progressMessage) error {
-	inv := plan.Investigate
-	if inv == nil {
-		return goerr.New("runInvestigate called without Investigate payload")
+func (e *PlanExecutor) runProbe(ctx context.Context, ticket *model.Ticket, plan *model.TriagePlan, progress *progressMessage) error {
+	pr := plan.Probe
+	if pr == nil {
+		return goerr.New("runProbe called without Probe payload")
 	}
 
 	allTools, err := e.catalog.For(ctx, ticket.WorkspaceID)
@@ -37,13 +37,13 @@ func (e *PlanExecutor) runInvestigate(ctx context.Context, ticket *model.Ticket,
 
 	var (
 		mu        sync.Mutex
-		summaries = make(map[types.SubtaskID]string, len(inv.Subtasks))
-		failures  = make(map[types.SubtaskID]string, len(inv.Subtasks))
+		summaries = make(map[types.SubtaskID]string, len(pr.Subtasks))
+		failures  = make(map[types.SubtaskID]string, len(pr.Subtasks))
 	)
 
-	fns := make([]func(context.Context) error, 0, len(inv.Subtasks))
-	for i := range inv.Subtasks {
-		st := inv.Subtasks[i]
+	fns := make([]func(context.Context) error, 0, len(pr.Subtasks))
+	for i := range pr.Subtasks {
+		st := pr.Subtasks[i]
 		fns = append(fns, func(ctx context.Context) error {
 			return e.runSubtask(ctx, ticket, st, allTools, progress, &mu, summaries, failures)
 		})
@@ -55,13 +55,13 @@ func (e *PlanExecutor) runInvestigate(ctx context.Context, ticket *model.Ticket,
 		// partial results to the planner — losing one subtask should not
 		// kill the iteration — but the error is surfaced via errutil so it
 		// reaches logs and Sentry.
-		errutil.Handle(ctx, goerr.Wrap(err, "investigate subtasks"))
+		errutil.Handle(ctx, goerr.Wrap(err, "probe subtasks"))
 	}
 
 	// Feed aggregated results back as a user message so the planner sees them.
-	contextMsg := formatInvestigationContext(inv.Subtasks, summaries, failures)
+	contextMsg := formatProbeContext(pr.Subtasks, summaries, failures)
 	if err := appendUserMessage(ctx, e.historyRepo, ticket.WorkspaceID, ticket.ID, contextMsg); err != nil {
-		return goerr.Wrap(err, "append investigate result to plan history")
+		return goerr.Wrap(err, "append probe result to plan history")
 	}
 	return nil
 }
@@ -123,9 +123,9 @@ func (e *PlanExecutor) runSubtask(ctx context.Context, ticket *model.Ticket, st 
 	return nil
 }
 
-func formatInvestigationContext(subtasks []model.Subtask, summaries, failures map[types.SubtaskID]string) string {
+func formatProbeContext(subtasks []model.Subtask, summaries, failures map[types.SubtaskID]string) string {
 	var b strings.Builder
-	b.WriteString("Investigate result:\n")
+	b.WriteString("Probe result:\n")
 	for _, st := range subtasks {
 		b.WriteString("\n- Subtask ")
 		b.WriteString(string(st.ID))

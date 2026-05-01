@@ -94,7 +94,7 @@ func TestExecutorRun_IterationCapExceeded_FinalizesAsAborted(t *testing.T) {
 	// sees count >= cap and short-circuits to abort. cap is 5 per newRig.
 	h := &gollem.History{Version: gollem.HistoryVersion}
 	for range 5 {
-		h.Messages = append(h.Messages, mustAssistantPlanMessage(t, investigatePlanJSON))
+		h.Messages = append(h.Messages, mustAssistantPlanMessage(t, probePlanJSON))
 		// Pair each plan turn with a user-role message so IsWaitingUserSubmit
 		// stays false (no trailing ask).
 		h.Messages = append(h.Messages, mustUserTextMessage(t, "result"))
@@ -358,7 +358,7 @@ func TestExecutorRun_NoToolsConfigured_FallbackInSystemPrompt(t *testing.T) {
 	gt.NoError(t, exec2.RunForTest(context.Background(), tWS, ticket.ID))
 
 	gt.S(t, captured).Contains("No investigation tools are enabled for this workspace")
-	gt.S(t, captured).Contains("Do not call `propose_investigate`")
+	gt.S(t, captured).Contains("Do not choose `probe`")
 }
 
 // TestExecutorRun_LLMProposesComplete_DefaultRequiresReview_PostsReviewWithoutFinalize
