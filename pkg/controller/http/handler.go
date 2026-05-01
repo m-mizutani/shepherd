@@ -31,10 +31,10 @@ type APIHandler struct {
 
 var _ ServerInterface = (*APIHandler)(nil)
 
-func NewAPIHandler(registry *model.WorkspaceRegistry, repo interfaces.Repository, notifier usecase.TicketChangeNotifier, llm gollem.LLMClient, slackUC *usecase.SlackUseCase, sourceUC *source.UseCase, catalog *tool.Catalog, promptUC *prompt.UseCase) *APIHandler {
+func NewAPIHandler(registry *model.WorkspaceRegistry, repo interfaces.Repository, notifier usecase.TicketChangeNotifier, llm gollem.LLMClient, embedder interfaces.Embedder, slackUC *usecase.SlackUseCase, sourceUC *source.UseCase, catalog *tool.Catalog, promptUC *prompt.UseCase) *APIHandler {
 	return &APIHandler{
 		workspaceUC: usecase.NewWorkspaceUseCase(registry),
-		ticketUC:    usecase.NewTicketUseCase(repo, registry, notifier, llm),
+		ticketUC:    usecase.NewTicketUseCase(repo, registry, notifier, llm, embedder),
 		slackUC:     slackUC,
 		sourceUC:    sourceUC,
 		promptUC:    promptUC,

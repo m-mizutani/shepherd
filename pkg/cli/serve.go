@@ -50,6 +50,7 @@ func cmdServe() *cli.Command {
 		slackCfg        config.Slack
 		sentryCfg       config.Sentry
 		llmCfg          config.LLM
+		embeddingCfg    config.Embedding
 		agentStorageCfg config.AgentStorage
 
 		triageIterationCap int
@@ -94,6 +95,7 @@ func cmdServe() *cli.Command {
 	flags = append(flags, slackCfg.Flags()...)
 	flags = append(flags, sentryCfg.Flags()...)
 	flags = append(flags, llmCfg.Flags()...)
+	flags = append(flags, embeddingCfg.Flags()...)
 	flags = append(flags, agentStorageCfg.Flags()...)
 	flags = append(flags, notionFactory.Flags()...)
 
@@ -147,6 +149,17 @@ func cmdServe() *cli.Command {
 			}
 			logger.Info("LLM integration enabled")
 
+			embedder, err := embeddingCfg.NewService(ctx)
+			if err != nil {
+				return goerr.Wrap(err, "failed to configure embedding service")
+			}
+			logger.Info("Embedding service enabled",
+				"project", embeddingCfg.ProjectID(),
+				"location", embeddingCfg.Location(),
+				"model", embeddingCfg.Model(),
+				"dim", embeddingCfg.Dim(),
+			)
+
 			historyRepo, traceRepo, agentBackend, err := agentStorageCfg.Configure(ctx)
 			if err != nil {
 				return goerr.Wrap(err, "failed to configure agent storage")
@@ -174,7 +187,7 @@ func cmdServe() *cli.Command {
 
 			factories := []tool.ToolFactory{
 				meta.New(registry, time.Now),
-				ticket.New(repo),
+				ticket.New(repo, embedder),
 				tslack.New(slackToolerOrNil(slackCfg)),
 				notionFactory,
 			}
@@ -219,7 +232,7 @@ func cmdServe() *cli.Command {
 			}
 
 			if slackUC != nil {
-				ticketUC := usecaseroot.NewTicketUseCase(repo, registry, slackClient, llmClient)
+				ticketUC := usecaseroot.NewTicketUseCase(repo, registry, slackClient, llmClient, embedder)
 				quickUC := usecaseroot.NewQuickActionsUseCase(repo, registry, ticketUC)
 				serverOpts = append(serverOpts, httpController.WithSlack(httpController.SlackConfig{
 					SigningSecret: slackCfg.SignSecret(),
@@ -236,6 +249,7 @@ func cmdServe() *cli.Command {
 			if llmClient != nil {
 				serverOpts = append(serverOpts, httpController.WithLLM(llmClient))
 			}
+			serverOpts = append(serverOpts, httpController.WithEmbedder(embedder))
 
 			httpServer := httpController.New(registry, repo, authUC, serverOpts...)
 

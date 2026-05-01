@@ -7,6 +7,7 @@ import (
 	"cloud.google.com/go/firestore"
 	"github.com/google/uuid"
 	"github.com/m-mizutani/goerr/v2"
+	"github.com/m-mizutani/shepherd/pkg/domain/interfaces"
 	"github.com/m-mizutani/shepherd/pkg/domain/model"
 	"github.com/m-mizutani/shepherd/pkg/domain/types"
 	"google.golang.org/api/iterator"
@@ -180,6 +181,104 @@ func (r *ticketRepository) FinalizeTriage(ctx context.Context, workspaceID types
 		}
 		return nil
 	})
+}
+
+func (r *ticketRepository) UpdateEmbedding(ctx context.Context, workspaceID types.WorkspaceID, ticketID types.TicketID, embedding firestore.Vector32, modelID string) error {
+	ref := r.ticketsCollection(workspaceID).Doc(string(ticketID))
+	patch := map[string]any{
+		"Embedding":      embedding,
+		"EmbeddingModel": modelID,
+	}
+	if _, err := ref.Set(ctx, patch, firestore.Merge(
+		[]string{"Embedding"},
+		[]string{"EmbeddingModel"},
+	)); err != nil {
+		return goerr.Wrap(err, "failed to update ticket embedding",
+			goerr.V("ticket_id", ticketID),
+		)
+	}
+	return nil
+}
+
+func (r *ticketRepository) FindSimilar(ctx context.Context, workspaceID types.WorkspaceID, queryVector firestore.Vector32, limit int, statusIDs []types.StatusID) ([]interfaces.TicketWithDistance, error) {
+	if len(queryVector) == 0 {
+		return nil, goerr.New("query vector is empty")
+	}
+	if limit <= 0 {
+		return nil, nil
+	}
+
+	// Status filtering happens in Go after FindNearest returns. Combining
+	// Where + FindNearest at the Firestore level would require a composite
+	// vector index (StatusID + Embedding), which CLAUDE.md forbids: the
+	// only Firestore index this codebase declares is the single-field
+	// vector index on Embedding (managed via fireconf in `migrate`). When
+	// the caller passes status_ids we therefore over-fetch the nearest
+	// vectors and discard ones outside the filter; the cap bounds the
+	// over-fetch so a malicious limit cannot blow up the request.
+	const (
+		distanceField    = "vector_distance"
+		statusOverFetchN = 5  // fetch up to N*limit before filtering by status
+		hardFetchCap     = 200
+	)
+	fetchLimit := limit
+	if len(statusIDs) > 0 {
+		fetchLimit = limit * statusOverFetchN
+		if fetchLimit > hardFetchCap {
+			fetchLimit = hardFetchCap
+		}
+	}
+	statusSet := make(map[types.StatusID]struct{}, len(statusIDs))
+	for _, id := range statusIDs {
+		statusSet[id] = struct{}{}
+	}
+
+	col := r.ticketsCollection(workspaceID)
+	vq := col.FindNearest("Embedding", queryVector, fetchLimit, firestore.DistanceMeasureCosine, &firestore.FindNearestOptions{
+		DistanceResultField: distanceField,
+	})
+
+	iter := vq.Documents(ctx)
+	defer iter.Stop()
+
+	out := make([]interfaces.TicketWithDistance, 0, limit)
+	for {
+		doc, err := iter.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return nil, goerr.Wrap(err, "failed to iterate similar tickets")
+		}
+		var t model.Ticket
+		if err := doc.DataTo(&t); err != nil {
+			return nil, goerr.Wrap(err, "failed to decode similar ticket",
+				goerr.V("ticket_id", doc.Ref.ID),
+			)
+		}
+		t.ID = types.TicketID(doc.Ref.ID)
+		t.WorkspaceID = workspaceID
+		if len(statusSet) > 0 {
+			if _, ok := statusSet[t.StatusID]; !ok {
+				continue
+			}
+		}
+
+		distance := 0.0
+		if v, ok := doc.Data()[distanceField]; ok {
+			if f, ok := v.(float64); ok {
+				distance = f
+			}
+		}
+		out = append(out, interfaces.TicketWithDistance{
+			Ticket:   &t,
+			Distance: distance,
+		})
+		if len(out) >= limit {
+			break
+		}
+	}
+	return out, nil
 }
 
 func (r *ticketRepository) GetBySlackThreadTS(ctx context.Context, workspaceID types.WorkspaceID, channelID types.SlackChannelID, threadTS types.SlackThreadTS) (*model.Ticket, error) {

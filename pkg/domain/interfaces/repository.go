@@ -3,11 +3,20 @@ package interfaces
 import (
 	"context"
 
+	"cloud.google.com/go/firestore"
 	"github.com/m-mizutani/goerr/v2"
 	"github.com/m-mizutani/shepherd/pkg/domain/model"
 	"github.com/m-mizutani/shepherd/pkg/domain/model/auth"
 	"github.com/m-mizutani/shepherd/pkg/domain/types"
 )
+
+// TicketWithDistance pairs a ticket with the cosine distance produced by a
+// vector similarity search. Smaller is closer; the exact range depends on
+// the distance measure (cosine distance: 0..2).
+type TicketWithDistance struct {
+	Ticket   *model.Ticket
+	Distance float64
+}
 
 type Repository interface {
 	Ticket() TicketRepository
@@ -93,6 +102,18 @@ type TicketRepository interface {
 	// history.ID may be empty; implementations must populate it with a
 	// generated identifier.
 	FinalizeTriage(ctx context.Context, workspaceID types.WorkspaceID, ticketID types.TicketID, assignees *[]types.SlackUserID, history *model.TicketHistory) error
+
+	// UpdateEmbedding rewrites only the Embedding and EmbeddingModel fields
+	// of the ticket and leaves every other field (title, description, status,
+	// etc.) untouched. Concurrent edits to those other fields are therefore
+	// not clobbered when a delayed embedding refresh lands.
+	UpdateEmbedding(ctx context.Context, workspaceID types.WorkspaceID, ticketID types.TicketID, embedding firestore.Vector32, modelID string) error
+
+	// FindSimilar returns the tickets whose Embedding is closest to
+	// queryVector under cosine distance, ordered nearest first and capped
+	// at limit. Tickets without an embedding are skipped. When statusIDs is
+	// non-empty the search is restricted to those statuses.
+	FindSimilar(ctx context.Context, workspaceID types.WorkspaceID, queryVector firestore.Vector32, limit int, statusIDs []types.StatusID) ([]TicketWithDistance, error)
 }
 
 type CommentRepository interface {

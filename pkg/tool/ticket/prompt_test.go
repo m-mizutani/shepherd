@@ -10,7 +10,7 @@ import (
 )
 
 func TestFactory_Prompt(t *testing.T) {
-	f := tticket.New(nil)
+	f := tticket.New(nil, nil)
 	got, err := f.Prompt(context.Background(), types.WorkspaceID(""))
 	gt.NoError(t, err)
 	gt.S(t, got).Contains("ticket_search")

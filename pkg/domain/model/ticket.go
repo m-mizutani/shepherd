@@ -3,6 +3,7 @@ package model
 import (
 	"time"
 
+	"cloud.google.com/go/firestore"
 	"github.com/m-mizutani/shepherd/pkg/domain/types"
 )
 
@@ -21,8 +22,16 @@ type Ticket struct {
 	FieldValues         map[string]FieldValue
 	Triaged             bool
 	Conclusion          string
-	CreatedAt           time.Time
-	UpdatedAt           time.Time
+	// Embedding is the semantic embedding of canonicalText(t). It is nil for
+	// tickets that have not been embedded yet (legacy rows pre-rollout, or
+	// brand-new ones whose async refresh has not yet completed).
+	Embedding firestore.Vector32
+	// EmbeddingModel records the producer of Embedding (e.g.
+	// "gemini:gemini-embedding-2") so a model migration can detect rows that
+	// need re-embedding without comparing vectors directly.
+	EmbeddingModel string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
 
 type FieldValue struct {

@@ -36,7 +36,7 @@ func setupQuickActionsRig(t *testing.T) (*usecase.QuickActionsUseCase, *memory.R
 	})
 
 	notifier := &fakeTicketChangeNotifier{}
-	ticketUC := usecase.NewTicketUseCase(repo, registry, notifier, nil)
+	ticketUC := usecase.NewTicketUseCase(repo, registry, notifier, nil, nil)
 	uc := usecase.NewQuickActionsUseCase(repo, registry, ticketUC)
 	return uc, repo, notifier
 }
@@ -154,7 +154,7 @@ func setupQuickActionsRigWithLLM(t *testing.T, llm gollem.LLMClient) (*usecase.Q
 	})
 
 	notifier := &fakeTicketChangeNotifier{}
-	ticketUC := usecase.NewTicketUseCase(repo, registry, notifier, llm)
+	ticketUC := usecase.NewTicketUseCase(repo, registry, notifier, llm, nil)
 	uc := usecase.NewQuickActionsUseCase(repo, registry, ticketUC)
 	return uc, repo, notifier
 }

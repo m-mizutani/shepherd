@@ -49,17 +49,20 @@ type TicketUseCase struct {
 	registry *model.WorkspaceRegistry
 	notifier TicketChangeNotifier
 	llm      gollem.LLMClient
+	embedder interfaces.Embedder
 }
 
-// NewTicketUseCase wires the usecase dependencies. The llm argument is
-// optional: when nil, close-time conclusion generation is skipped (status
-// updates and notifications still run as usual).
-func NewTicketUseCase(repo interfaces.Repository, registry *model.WorkspaceRegistry, notifier TicketChangeNotifier, llm gollem.LLMClient) *TicketUseCase {
+// NewTicketUseCase wires the usecase dependencies. The llm and embedder
+// arguments are optional: when llm is nil, close-time conclusion generation
+// is skipped; when embedder is nil, ticket embeddings are not refreshed.
+// Status updates and notifications run as usual either way.
+func NewTicketUseCase(repo interfaces.Repository, registry *model.WorkspaceRegistry, notifier TicketChangeNotifier, llm gollem.LLMClient, embedder interfaces.Embedder) *TicketUseCase {
 	return &TicketUseCase{
 		repo:     repo,
 		registry: registry,
 		notifier: notifier,
 		llm:      llm,
+		embedder: embedder,
 	}
 }
 
@@ -102,6 +105,10 @@ func (uc *TicketUseCase) Create(ctx context.Context, workspaceID types.Workspace
 	if _, err := uc.repo.TicketHistory().Create(ctx, workspaceID, created.ID, history); err != nil {
 		errutil.Handle(ctx, goerr.Wrap(err, "failed to create ticket history"))
 	}
+
+	// New tickets always have fresh content to embed. Dispatch the refresh
+	// asynchronously so the request goroutine returns immediately.
+	uc.dispatchEmbedding(ctx, workspaceID, created.ID)
 
 	return created, nil
 }
@@ -159,6 +166,9 @@ func (uc *TicketUseCase) Update(ctx context.Context, workspaceID types.Workspace
 
 	oldStatusID := existing.StatusID
 	oldAssigneeIDs := append([]types.SlackUserID(nil), existing.AssigneeIDs...)
+	oldTitle := existing.Title
+	oldDescription := existing.Description
+	oldConclusion := existing.Conclusion
 
 	if title != nil {
 		existing.Title = *title
@@ -226,7 +236,71 @@ func (uc *TicketUseCase) Update(ctx context.Context, workspaceID types.Workspace
 		})
 	}
 
+	// Refresh the embedding only when the canonical text inputs change.
+	// Status / assignee / custom-field flips do not affect the vector and
+	// would only burn embedding API calls.
+	if oldTitle != updated.Title ||
+		oldDescription != updated.Description ||
+		oldConclusion != updated.Conclusion {
+		uc.dispatchEmbedding(ctx, workspaceID, updated.ID)
+	}
+
 	return updated, nil
+}
+
+// dispatchEmbedding kicks off the async embedding refresh for a ticket. The
+// usecase has already gated on "content actually changed" before reaching
+// here, so the async tail just embeds and writes back without any extra
+// staleness check.
+func (uc *TicketUseCase) dispatchEmbedding(ctx context.Context, workspaceID types.WorkspaceID, ticketID types.TicketID) {
+	if uc.embedder == nil {
+		return
+	}
+	wsCopy := workspaceID
+	idCopy := ticketID
+	async.Dispatch(ctx, func(ctx context.Context) error {
+		return uc.refreshEmbedding(ctx, wsCopy, idCopy)
+	})
+}
+
+// refreshEmbedding reloads the ticket, embeds its canonical text, and
+// writes the vector back through the field-merging UpdateEmbedding path so
+// that concurrent edits to title / description / conclusion are not
+// clobbered by a delayed embedding response.
+//
+// All failures are routed through errutil.Handle and swallowed: an empty
+// or stale embedding only degrades search recall until the next content
+// change re-triggers the refresh, while a propagated error would surface
+// nowhere visible (the request goroutine has already returned).
+func (uc *TicketUseCase) refreshEmbedding(ctx context.Context, workspaceID types.WorkspaceID, ticketID types.TicketID) error {
+	if uc.embedder == nil {
+		return nil
+	}
+	ticket, err := uc.repo.Ticket().Get(ctx, workspaceID, ticketID)
+	if err != nil {
+		errutil.Handle(ctx, goerr.Wrap(err, "load ticket for embedding refresh",
+			goerr.V("workspace_id", string(workspaceID)),
+			goerr.V("ticket_id", string(ticketID)),
+		))
+		return nil
+	}
+	text := model.CanonicalText(ticket)
+	if text == "" {
+		return nil
+	}
+	vec, modelID, err := uc.embedder.Generate(ctx, text)
+	if err != nil {
+		errutil.Handle(ctx, goerr.Wrap(err, "generate ticket embedding",
+			goerr.V("ticket_id", string(ticketID)),
+		))
+		return nil
+	}
+	if err := uc.repo.Ticket().UpdateEmbedding(ctx, workspaceID, ticketID, vec, modelID); err != nil {
+		errutil.Handle(ctx, goerr.Wrap(err, "persist ticket embedding",
+			goerr.V("ticket_id", string(ticketID)),
+		))
+	}
+	return nil
 }
 
 // generateConclusion runs in the async tail after a ticket transitions into

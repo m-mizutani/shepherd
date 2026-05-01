@@ -12,6 +12,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/lestrrat-go/jwx/v2 v2.1.6
 	github.com/m-mizutani/clog v0.2.1
+	github.com/m-mizutani/fireconf v0.3.0
 	github.com/m-mizutani/goerr/v2 v2.0.1
 	github.com/m-mizutani/gollem v0.24.2
 	github.com/m-mizutani/gt v0.2.1
@@ -52,6 +53,7 @@ require (
 	github.com/go-openapi/jsonpointer v0.23.1 // indirect
 	github.com/go-openapi/swag/jsonname v0.26.0 // indirect
 	github.com/goccy/go-json v0.10.6 // indirect
+	github.com/goccy/go-yaml v1.18.0 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.15 // indirect
