@@ -18,7 +18,7 @@ require (
 	github.com/m-mizutani/masq v0.2.1
 	github.com/oapi-codegen/runtime v1.4.0
 	github.com/pelletier/go-toml/v2 v2.3.0
-	github.com/slack-go/slack v0.23.0
+	github.com/slack-go/slack v0.23.1
 	github.com/urfave/cli/v3 v3.8.0
 	google.golang.org/api v0.276.0
 	google.golang.org/grpc v1.80.0
